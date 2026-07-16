@@ -1,17 +1,21 @@
 import { StatCard } from "@/components/ui/StatCard";
 
 type DashboardSummaryProps = {
+  projectCount: number | null;
   pendingRequests: number | null;
 };
 
-export function DashboardSummary({ pendingRequests }: DashboardSummaryProps) {
+export function DashboardSummary({
+  projectCount,
+  pendingRequests,
+}: DashboardSummaryProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard
         label="Projects"
-        value="—"
-        detail="Not configured"
-        state="unavailable"
+        value={projectCount !== null ? String(projectCount) : "—"}
+        detail={projectCount !== null ? "Visible to you" : "Unavailable"}
+        state={projectCount !== null ? "default" : "unavailable"}
       />
       <StatCard
         label="Online Displays"

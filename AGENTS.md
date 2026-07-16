@@ -112,7 +112,7 @@ Before making a large change:
 
 ## Current phase
 
-The current phase is **interface design system and portal shell**.
+The current phase is **Projects foundation**.
 
 Completed foundation:
 
@@ -121,19 +121,24 @@ Completed foundation:
 - Platform roles in `profiles` (`owner`, `admin`, `user`)
 - Dark operational portal UI with public and authenticated shells
 - Protected routes for dashboard, projects, admin, users, activity, and settings
+- `projects` and `project_members` tables with RLS
+- Functional Project creation, list, overview, and member management
+- Slug-based Project URLs and sequential Project numbers
 
 Use [docs/design-system.md](./docs/design-system.md) for tokens, components, layout rules, and terminology.
+Use [docs/projects.md](./docs/projects.md) for Projects schema, authorization, and URL structure.
 
 User-facing term remains **Projects** (not Graphics).
 
 Do not add the following until explicitly requested:
 
-- `projects` and `project_members` database tables
-- Functional project creation and persistence
 - BAG controller, display, and worker migration
 - Puppeteer and BAG scraper code
 - Functional graphics controllers and displays
+- Public OBS/vMix display routes using `display_token`
 - Activity logging and audit events
 - Command palette (`Ctrl/Command + K`)
 - Billing, organizations, and team permissions
+- Project archive/restore UI
+- Logo file uploads and Supabase Storage buckets
 

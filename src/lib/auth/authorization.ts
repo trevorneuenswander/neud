@@ -60,15 +60,3 @@ export async function requireAdmin(redirectTo = "/dashboard") {
 
   return { claims, profile };
 }
-
-// Future project authorization helpers (not yet implemented):
-//
-// export async function requireProjectAccess(projectId: string) { ... }
-// export async function requireProjectRole(
-//   projectId: string,
-//   allowedRoles: ProjectAccessLevel[],
-// ) { ... }
-//
-// Owners and platform admins may access all projects.
-// Regular users may only access projects where they have a project_members row.
-// Every project page, query, and Server Action must verify membership on the server.

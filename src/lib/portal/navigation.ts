@@ -28,6 +28,30 @@ export function getPageTitle(pathname: string): string {
     return PAGE_TITLES[pathname];
   }
 
+  if (pathname.endsWith("/members")) {
+    return "Members";
+  }
+
+  if (pathname.endsWith("/displays")) {
+    return "Displays";
+  }
+
+  if (pathname.endsWith("/controllers")) {
+    return "Controllers";
+  }
+
+  if (pathname.endsWith("/workers")) {
+    return "Workers";
+  }
+
+  if (pathname.endsWith("/activity")) {
+    return "Activity";
+  }
+
+  if (pathname.endsWith("/settings")) {
+    return "Settings";
+  }
+
   if (pathname.startsWith("/projects/")) {
     return "Projects";
   }

@@ -47,28 +47,29 @@ HMG Graphics Server uses two independent authorization layers.
 
 | Role | Access |
 |------|--------|
-| `owner` | Full platform control; may access all projects (future) |
-| `admin` | Platform administration; may access all projects (future) |
+| `owner` | Full platform control; may access all Projects |
+| `admin` | Platform administration; may access all Projects |
 | `user` | General portal access only |
 
-Platform roles are stored in `profiles` and checked by `requireAdmin()` / `isAdmin()` on the server. They control portal administration, not project-specific access.
+Platform roles are stored in `profiles` and checked by `requireAdmin()` / `isAdmin()` on the server. They control portal administration and bypass Project membership checks.
 
-### Layer 2: Project memberships (`project_members`, future)
+### Layer 2: Project memberships (`project_members`)
 
 | Access level | Purpose |
 |--------------|---------|
-| `manager` | Manage a specific graphics project |
-| `operator` | Operate a specific graphics project |
-| `viewer` | View a specific graphics project |
+| `manager` | Manage a specific Project and its members |
+| `operator` | Operate a specific Project (future controllers) |
+| `viewer` | View a specific Project (future read-only access) |
 
-An approved portal user with `profiles.role = 'user'` does **not** automatically receive access to any graphics project. Project access requires a separate `project_members` record.
+An approved portal user with `profiles.role = 'user'` does **not** automatically receive access to any Project. Project access requires a separate `project_members` record.
 
-Future helpers:
+Server-side helpers in `src/lib/projects/authorization.ts`:
 
-- `requireProjectAccess(projectId)`
-- `requireProjectRole(projectId, allowedRoles)`
+- `getProjectAccess(slug)` / `requireProjectAccess(slug)`
+- `requireProjectRole(slug, allowedRoles)`
+- `requireProjectMemberManagement(slug)`
 
-Owners and platform admins may access all projects. Regular users may only access projects where they have a membership record. Every project page, query, and Server Action must verify membership on the server.
+Owners and platform admins may access all Projects. Regular users may only access Projects where they have a membership record. Unauthorized slug access returns `notFound()` and does not reveal whether a private Project exists.
 
 ## Code organization
 
@@ -78,7 +79,7 @@ Owners and platform admins may access all projects. Regular users may only acces
 | Portal pages | `src/app/(portal)/` | Dashboard, projects, admin, users, activity, settings |
 | Auth routes | `src/app/auth/` | Token confirmation (`/auth/confirm`) |
 | Shared UI | `src/components/` | Layout shells, portal navigation, and UI primitives |
-| Shared utilities | `src/lib/` | Platform helpers, Supabase clients, auth, and access requests |
+| Shared utilities | `src/lib/` | Platform helpers, Supabase clients, auth, access requests, and projects |
 | Shared types | `src/types/` | Platform TypeScript types |
 | Graphic modules | `src/graphics/[project-type]/` | Project-type-specific web code |
 | Workers | `workers/[project-type]/` | Background data collection processes |
@@ -115,11 +116,19 @@ Public self-service signup is disabled. New users request access, are reviewed b
 
 See [authentication.md](./authentication.md) for setup and route details.
 
-## Planned data layer
+## Data layer
 
-Future phases will add:
+Implemented:
 
-- `projects` table and graphics project data
-- `project_members` table for per-project access control
+- `profiles` and `access_requests` (migration `001`)
+- `projects` and `project_members` with RLS (migration `002`)
+- Transactional Project creation via `create_project_with_manager()`
+- Last-manager protection at application and database layers
+
+Planned:
+
 - Supabase Realtime for live updates
-- Row Level Security for project data
+- BAG-specific controllers, displays, and workers
+- Activity logging and audit events
+
+See [projects.md](./projects.md) for Projects schema, authorization, and URL structure.

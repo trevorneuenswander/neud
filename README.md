@@ -26,7 +26,7 @@ See [docs/bag-graphics.md](./docs/bag-graphics.md) for details.
 - **TypeScript** — application code
 - **Tailwind CSS** — styling
 - **Supabase Auth** — email/password authentication and invitations
-- **Supabase Postgres** — profiles and access requests
+- **Supabase Postgres** — profiles, access requests, and projects
 - **Supabase Realtime** — live updates (planned)
 - **Vercel** — web hosting
 - **Node.js + Puppeteer** — BAG background worker (planned)
@@ -76,8 +76,10 @@ npm run start   # Run production build locally
 | `/auth/confirm` | Verify invitation or recovery tokens |
 | `/admin/access-requests` | Review access requests (owner/admin) |
 | `/dashboard` | Protected portal home |
-| `/projects` | Protected Projects list |
-| `/projects/new` | New Project foundation page |
+| `/projects` | Projects list (authorized Projects only) |
+| `/projects/new` | Create a Project (owner/admin only) |
+| `/projects/[slug]` | Project overview |
+| `/projects/[slug]/members` | Project member management |
 | `/users` | User management placeholder (owner/admin) |
 | `/activity` | Activity log placeholder (owner/admin) |
 | `/settings` | Settings placeholder (authenticated) |
@@ -87,9 +89,9 @@ npm run start   # Run production build locally
 HMG Graphics Server uses two authorization layers:
 
 1. **Platform roles** (`owner`, `admin`, `user`) in `profiles` — control portal administration
-2. **Project memberships** (`manager`, `operator`, `viewer`) in future `project_members` — control per-project access
+2. **Project memberships** (`manager`, `operator`, `viewer`) in `project_members` — control per-project access
 
-Approved users receive general portal access only. They are not automatically assigned to any graphics project.
+Approved users receive general portal access only. They are not automatically assigned to any Project.
 
 ## Architecture
 
@@ -108,13 +110,14 @@ See [docs/architecture.md](./docs/architecture.md) for the full architecture ove
 - [Architecture](./docs/architecture.md)
 - [Design system](./docs/design-system.md)
 - [Authentication](./docs/authentication.md)
+- [Projects](./docs/projects.md)
 - [Project types](./docs/project-types.md)
 - [BAG-Graphics](./docs/bag-graphics.md)
 - [Deployment](./docs/deployment.md)
 
 ## Current status
 
-**Phase: interface design system and portal shell**
+**Phase: Projects foundation**
 
 Completed:
 
@@ -126,13 +129,15 @@ Completed:
 - Dark operational portal UI with sidebar, top bar, and mobile drawer
 - Public and portal route-group layouts
 - Protected routes for dashboard, projects, admin, users, activity, and settings
+- `projects` and `project_members` tables with RLS
+- Project creation, list, overview, and member management
+- Slug-based Project URLs and sequential Project numbers
 
 Not yet implemented:
 
-- `projects` and `project_members` tables
-- Functional project creation and persistence
 - BAG controller, display, and worker migration
-- Activity logging, workers, and displays monitoring
+- Public display routes, workers, and controllers
+- Activity logging and audit events
 - Command palette
 
 See [AGENTS.md](./AGENTS.md) for development guidelines and phase constraints.
