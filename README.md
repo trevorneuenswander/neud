@@ -1,1 +1,1 @@
-# bag-graphics
+# hmg-graphics-server
