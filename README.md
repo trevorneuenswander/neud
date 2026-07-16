@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HMG Graphics Server
 
-## Getting Started
+Centralized web platform for HMG's live graphics projects.
 
-First, run the development server:
+## Purpose
+
+HMG Graphics Server gives operators a single portal to:
+
+- Log in to a secure portal
+- Create and manage graphics projects
+- Operate project-specific web controllers
+- Preview live graphics
+- Copy display URLs into OBS or other broadcast software
+- Connect graphics to live data sources
+- Monitor worker and data-source status
+
+## First project type: BAG-Graphics
+
+BAG-Graphics is the first graphics project implemented on the platform. It monitors an auction website and provides live lot, bid, and sold information for broadcast overlays.
+
+See [docs/bag-graphics.md](./docs/bag-graphics.md) for details.
+
+## Technology stack
+
+- **Next.js** (App Router) — web application
+- **TypeScript** — application code
+- **Tailwind CSS** — styling
+- **Supabase Auth** — authentication (planned)
+- **Supabase Postgres** — database (planned)
+- **Supabase Realtime** — live updates (planned)
+- **Vercel** — web hosting
+- **Node.js + Puppeteer** — BAG background worker (planned)
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Other commands:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint    # ESLint
+npm run build   # Production build
+npm run start   # Run production build locally
+```
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+The platform separates reusable portal services from graphic-specific modules.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Portal (shared):** authentication, user and project management, realtime state, display URLs, controllers, worker commands, monitoring, and event logging.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Graphic modules:** each project type keeps its controller, display, validation, state, and worker logic under `src/graphics/[project-type]/` and `workers/[project-type]/`.
 
-## Deploy on Vercel
+**Workers:** long-running data collectors (such as the BAG Puppeteer scraper) run outside Vercel on dedicated hosts.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See [docs/architecture.md](./docs/architecture.md) for the full architecture overview.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Documentation
+
+- [Architecture](./docs/architecture.md)
+- [Project types](./docs/project-types.md)
+- [BAG-Graphics](./docs/bag-graphics.md)
+- [Deployment](./docs/deployment.md)
+
+## Current status
+
+**Phase: foundation setup**
+
+Completed in this phase:
+
+- Next.js App Router scaffold with TypeScript, Tailwind, and ESLint
+- Landing page and placeholder portal routes (`/login`, `/signup`, `/dashboard`, `/projects`, `/projects/new`)
+- Shared site header and folder structure for platform and BAG-Graphics modules
+- Architecture and deployment documentation
+
+Not yet implemented:
+
+- Supabase, authentication, and database
+- BAG controller, display, and worker migration
+- Functional project creation and realtime state
+
+See [AGENTS.md](./AGENTS.md) for development guidelines and phase constraints.
