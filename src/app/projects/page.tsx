@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { requireAuth } from "@/lib/auth/session";
 
-export default function ProjectsPage() {
+export default async function ProjectsPage() {
+  await requireAuth();
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

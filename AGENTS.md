@@ -110,20 +110,49 @@ Before making a large change:
 
 
 
-## Current phase
+## ## Current phase
 
-The current phase is foundation setup.
+The current phase is Supabase authentication.
+
+Implement only:
+
+- Supabase browser and server clients
+
+- Cookie-based session handling
+
+- Email and password signup
+
+- Email and password login
+
+- Logout
+
+- Email confirmation handling
+
+- Password reset request
+
+- Password update
+
+- Protected portal routes
 
 Do not add the following until explicitly requested:
 
-- Supabase
-- Authentication
-- Database migrations
+- Application database tables
+
+- Graphics projects
+
+- Row Level Security policies for project data
+
 - Puppeteer
+
 - BAG scraper code
-- Functional controllers
+
+- Functional graphics controllers
+
 - Functional graphic displays
+
 - Billing
+
 - Organizations
+
 - Team permissions
 

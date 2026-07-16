@@ -27,18 +27,45 @@ Responsibilities:
 
 Worker location in this repository: `workers/[project-type]/`
 
-## Planned services
+## Services
 
 | Service | Role |
 |---------|------|
 | Vercel | Hosts the Next.js web application |
-| Supabase Auth | User authentication |
-| Supabase Postgres | Projects, state, and event storage |
-| Supabase Realtime | Live state updates to controllers and displays |
+| Supabase Auth | User authentication (implemented) |
+| Supabase Postgres | Projects, state, and event storage (planned) |
+| Supabase Realtime | Live state updates to controllers and displays (planned) |
 
-## Environment variables (future)
+## Environment variables
 
-When Supabase and workers are configured, secrets such as service-role keys must remain server-side only. Never expose service-role keys to the browser.
+Set these in Vercel project settings and in local `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+```
+
+Only public Supabase values are used by the web application. Never add the service-role key to Vercel environment variables for this app.
+
+## Supabase redirect URLs
+
+Configure these in the Supabase dashboard under **Authentication → URL Configuration**:
+
+**Site URL**
+
+- Local: `http://localhost:3000`
+- Production: your deployed Vercel URL
+
+**Redirect URLs**
+
+```
+http://localhost:3000/auth/confirm
+http://localhost:3000/**
+https://your-production-domain.com/auth/confirm
+https://your-production-domain.com/**
+```
+
+See [authentication.md](./authentication.md) for full auth setup details.
 
 ## Local development
 

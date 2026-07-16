@@ -1,33 +1,28 @@
-import { LoginForm } from "@/components/auth/LoginForm";
+import { ForgotPasswordForm } from "@/components/auth/ForgotPasswordForm";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { getPageMessage } from "@/lib/auth/messages";
-import { getSafeRedirectPath } from "@/lib/auth/redirect";
-import { redirectIfAuthenticated } from "@/lib/auth/session";
 
-type LoginPageProps = {
+type ForgotPasswordPageProps = {
   searchParams: Promise<{
-    next?: string;
     error?: string;
-    message?: string;
   }>;
 };
 
-export default async function LoginPage({ searchParams }: LoginPageProps) {
-  await redirectIfAuthenticated();
-
+export default async function ForgotPasswordPage({
+  searchParams,
+}: ForgotPasswordPageProps) {
   const params = await searchParams;
-  const nextPath = getSafeRedirectPath(params.next, "/dashboard");
   const errorMessage = getPageMessage(params.error);
-  const successMessage = getPageMessage(params.message);
 
   return (
     <PageContainer>
       <div className="mx-auto max-w-md">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Log in
+          Forgot password
         </h1>
         <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          Sign in to access the HMG Graphics Server portal.
+          Enter your email address and we will send you a link to reset your
+          password.
         </p>
 
         {errorMessage ? (
@@ -39,17 +34,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </p>
         ) : null}
 
-        {successMessage ? (
-          <p
-            role="status"
-            className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
-          >
-            {successMessage}
-          </p>
-        ) : null}
-
         <div className="mt-6">
-          <LoginForm nextPath={nextPath} />
+          <ForgotPasswordForm />
         </div>
       </div>
     </PageContainer>

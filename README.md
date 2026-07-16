@@ -25,11 +25,24 @@ See [docs/bag-graphics.md](./docs/bag-graphics.md) for details.
 - **Next.js** (App Router) — web application
 - **TypeScript** — application code
 - **Tailwind CSS** — styling
-- **Supabase Auth** — authentication (planned)
+- **Supabase Auth** — email/password authentication
 - **Supabase Postgres** — database (planned)
 - **Supabase Realtime** — live updates (planned)
 - **Vercel** — web hosting
 - **Node.js + Puppeteer** — BAG background worker (planned)
+
+## Environment variables
+
+Copy `.env.example` to `.env.local` and set:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your_project_url
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+```
+
+Do not commit `.env.local`. Do not add the service-role key.
+
+See [docs/authentication.md](./docs/authentication.md) for Supabase redirect URL configuration.
 
 ## Local development
 
@@ -48,6 +61,19 @@ npm run build   # Production build
 npm run start   # Run production build locally
 ```
 
+## Authentication routes
+
+| Route | Purpose |
+|-------|---------|
+| `/signup` | Create an account |
+| `/login` | Sign in |
+| `/forgot-password` | Request a password reset email |
+| `/update-password` | Set a new password after recovery link |
+| `/auth/confirm` | Verify email confirmation or recovery tokens |
+| `/dashboard` | Protected portal page |
+| `/projects` | Protected portal page |
+| `/projects/new` | Protected portal page |
+
 ## Architecture
 
 The platform separates reusable portal services from graphic-specific modules.
@@ -63,24 +89,27 @@ See [docs/architecture.md](./docs/architecture.md) for the full architecture ove
 ## Documentation
 
 - [Architecture](./docs/architecture.md)
+- [Authentication](./docs/authentication.md)
 - [Project types](./docs/project-types.md)
 - [BAG-Graphics](./docs/bag-graphics.md)
 - [Deployment](./docs/deployment.md)
 
 ## Current status
 
-**Phase: foundation setup**
+**Phase: Supabase authentication**
 
-Completed in this phase:
+Completed:
 
 - Next.js App Router scaffold with TypeScript, Tailwind, and ESLint
-- Landing page and placeholder portal routes (`/login`, `/signup`, `/dashboard`, `/projects`, `/projects/new`)
-- Shared site header and folder structure for platform and BAG-Graphics modules
+- Landing page and portal routes
+- Supabase email/password signup, login, logout, and password reset
+- Cookie-based sessions with Next.js 16 proxy session refresh
+- Protected routes for dashboard and projects
 - Architecture and deployment documentation
 
 Not yet implemented:
 
-- Supabase, authentication, and database
+- Application database tables and project data
 - BAG controller, display, and worker migration
 - Functional project creation and realtime state
 
