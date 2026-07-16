@@ -66,6 +66,14 @@ export async function approveAccessRequest(
   const origin = await getSiteOrigin();
   const redirectTo = `${origin}/auth/confirm?next=${encodeURIComponent("/accept-invitation")}`;
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("[approveAccessRequest] invite redirectTo shape", {
+      hasAuthConfirmPath: redirectTo.includes("/auth/confirm"),
+      hasNextAcceptInvitation: redirectTo.includes("next="),
+      hasTypeInvite: redirectTo.includes("type=invite"),
+    });
+  }
+
   const { data: inviteData, error: inviteError } =
     await admin.auth.admin.inviteUserByEmail(request.email, {
       redirectTo,

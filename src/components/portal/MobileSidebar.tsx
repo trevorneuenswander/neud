@@ -49,7 +49,7 @@ export function MobileSidebar({
       <button
         type="button"
         onClick={openDrawer}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-surface text-foreground lg:hidden"
+        className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-foreground lg:hidden"
         aria-label="Open navigation menu"
       >
         <svg
@@ -85,7 +85,7 @@ export function MobileSidebar({
           <button
             type="button"
             onClick={closeDrawer}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted hover:text-foreground"
+            className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-border text-muted hover:text-foreground"
             aria-label="Close navigation menu"
           >
             <svg

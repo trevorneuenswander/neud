@@ -35,7 +35,7 @@ export function Button({
   disabled = false,
   className = "",
 }: ButtonProps) {
-  const classes = `inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none ${variantClasses[variant]} ${sizeClasses[size]} ${className}`;
+  const classes = `inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none cursor-pointer disabled:cursor-not-allowed ${variantClasses[variant]} ${sizeClasses[size]} ${className}`;
 
   if (href && !disabled) {
     return (

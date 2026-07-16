@@ -24,7 +24,7 @@ export function SidebarNavItem({
       href={href}
       onClick={onNavigate}
       aria-current={isActive ? "page" : undefined}
-      className={`flex h-10 items-center rounded-md px-3 text-sm font-medium transition-colors ${
+      className={`flex h-10 cursor-pointer items-center rounded-md px-3 text-sm font-medium transition-colors ${
         isActive
           ? "bg-primary/15 text-foreground"
           : "text-muted hover:bg-surface-raised hover:text-foreground"

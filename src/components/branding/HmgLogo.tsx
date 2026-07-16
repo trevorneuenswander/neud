@@ -51,7 +51,7 @@ export function HmgLogo({
 
   if (href) {
     return (
-      <Link href={href} className="inline-flex rounded focus-visible:outline-none">
+      <Link href={href} className="inline-flex cursor-pointer rounded focus-visible:outline-none">
         {content}
       </Link>
     );

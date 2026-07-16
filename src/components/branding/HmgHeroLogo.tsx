@@ -3,9 +3,20 @@ import { HMG_LOGO_PATH } from "@/lib/branding/logo";
 
 type HmgHeroLogoProps = {
   hasLogo: boolean;
+  size?: "hero" | "featured";
 };
 
-export function HmgHeroLogo({ hasLogo }: HmgHeroLogoProps) {
+const imageSizeClasses = {
+  hero: "max-w-[220px] sm:max-w-[280px] md:max-w-[340px] lg:max-w-[420px]",
+  featured: "max-w-[160px] sm:max-w-[200px] md:max-w-[240px]",
+};
+
+const fallbackSizeClasses = {
+  hero: "h-24 w-24 text-2xl sm:h-28 sm:w-28 sm:text-3xl",
+  featured: "h-20 w-20 text-xl sm:h-24 sm:w-24 sm:text-2xl",
+};
+
+export function HmgHeroLogo({ hasLogo, size = "hero" }: HmgHeroLogoProps) {
   if (hasLogo) {
     return (
       <Image
@@ -13,7 +24,7 @@ export function HmgHeroLogo({ hasLogo }: HmgHeroLogoProps) {
         alt="HMG"
         width={420}
         height={420}
-        className="h-auto w-full max-w-[220px] sm:max-w-[280px] md:max-w-[340px] lg:max-w-[420px]"
+        className={`h-auto w-full ${imageSizeClasses[size]}`}
         style={{ width: "auto", height: "auto" }}
         priority
       />
@@ -22,7 +33,7 @@ export function HmgHeroLogo({ hasLogo }: HmgHeroLogoProps) {
 
   return (
     <span
-      className="flex h-24 w-24 shrink-0 items-center justify-center rounded border border-border bg-surface-raised text-2xl font-semibold text-foreground sm:h-28 sm:w-28 sm:text-3xl"
+      className={`flex shrink-0 items-center justify-center rounded border border-border bg-surface-raised font-semibold text-foreground ${fallbackSizeClasses[size]}`}
       aria-hidden="true"
     >
       HMG

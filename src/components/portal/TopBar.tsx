@@ -1,8 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { HmgLogo } from "@/components/branding/HmgLogo";
 import { MobileSidebar } from "@/components/portal/MobileSidebar";
+import { SidebarBranding } from "@/components/portal/SidebarBranding";
 import { SidebarUserPanel } from "@/components/portal/SidebarUserPanel";
 import { getPageTitle, type NavItem } from "@/lib/portal/navigation";
 import type { Profile } from "@/types/database";
@@ -10,10 +10,9 @@ import type { Profile } from "@/types/database";
 type TopBarProps = {
   navItems: NavItem[];
   profile: Profile;
-  hasLogo: boolean;
 };
 
-export function TopBar({ navItems, profile, hasLogo }: TopBarProps) {
+export function TopBar({ navItems, profile }: TopBarProps) {
   const pathname = usePathname();
   const title = getPageTitle(pathname);
 
@@ -23,7 +22,7 @@ export function TopBar({ navItems, profile, hasLogo }: TopBarProps) {
         <MobileSidebar
           navItems={navItems}
           userPanel={<SidebarUserPanel profile={profile} />}
-          branding={<HmgLogo href="/dashboard" hasLogo={hasLogo} />}
+          branding={<SidebarBranding />}
         />
         <div className="min-w-0 lg:hidden">
           <p className="truncate text-xs font-medium text-muted">

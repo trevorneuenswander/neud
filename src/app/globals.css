@@ -51,3 +51,15 @@ body {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+a[href],
+button:not(:disabled),
+label[for],
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}

@@ -1,4 +1,4 @@
-import { HmgLogoServer } from "@/components/branding/HmgLogoServer";
+import { HmgHeroLogoServer } from "@/components/branding/HmgHeroLogoServer";
 
 type PublicPageProps = {
   children: React.ReactNode;
@@ -25,8 +25,8 @@ export function PublicPage({
     <div className="mx-auto w-full px-4 py-10 sm:px-6 lg:px-8">
       <div className={`mx-auto ${maxWidthClasses[maxWidth]}`}>
         {showLogo ? (
-          <div className="mb-6 flex justify-center">
-            <HmgLogoServer href={undefined} showText />
+          <div className="mb-8 flex justify-center">
+            <HmgHeroLogoServer size="featured" />
           </div>
         ) : null}
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">

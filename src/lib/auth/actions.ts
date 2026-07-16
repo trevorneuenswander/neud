@@ -6,6 +6,7 @@ import {
   clearInviteSessionCookie,
   INVITE_SESSION_COOKIE,
   clearRecoverySessionCookie,
+  logAuthConfirmDev,
   RECOVERY_SESSION_COOKIE,
 } from "@/lib/auth/confirm";
 import { toAuthErrorMessage } from "@/lib/auth/errors";
@@ -73,7 +74,7 @@ export async function requestPasswordReset(
 
   const supabase = await createClient();
   const origin = await getSiteOrigin();
-  const redirectTo = `${origin}/auth/confirm?next=/update-password`;
+  const redirectTo = `${origin}/auth/confirm?next=${encodeURIComponent("/update-password")}`;
 
   const { error } = await supabase.auth.resetPasswordForEmail(
     email.trim(),
@@ -175,5 +176,8 @@ export async function acceptInvitation(
   }
 
   await clearInviteSessionCookie();
+  logAuthConfirmDev("password-update-success", {
+    redirect: "/dashboard",
+  });
   redirect("/dashboard");
 }

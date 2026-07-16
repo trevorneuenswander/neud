@@ -99,17 +99,84 @@ https://your-domain.com/**
 
 ### Email templates
 
-**Invite user** — use this link format:
+HMG Graphics Server supports two invitation link formats. **This project uses Format A** (custom token-hash link in the **Invite user** template). Format B is also supported if you prefer Supabase's built-in `{{ .ConfirmationURL }}`.
+
+Public self-service signup is disabled. Do not use the **Confirm signup** template for invitations.
+
+#### Format A — custom token-hash link (recommended for this project)
+
+Use the **Invite user** email template in **Authentication → Email Templates**.
+
+`inviteUserByEmail()` sends `redirectTo` as:
+
+```
+{origin}/auth/confirm?next=/accept-invitation
+```
+
+The email template must supply the invitation token and type:
 
 ```html
-<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/accept-invitation">
-  Accept the invite
+<h2>You have been invited</h2>
+<p>You have been invited to create a user on {{ .SiteURL }}.</p>
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/accept-invitation">
+    Accept the invitation
+  </a>
+</p>
+```
+
+The application verifies the token at `/auth/confirm` with:
+
+```ts
+await supabase.auth.verifyOtp({
+  token_hash,
+  type: "invite",
+});
+```
+
+Both `token_hash` and `type=invite` are required. The `type` must come from the email template, not from `redirectTo`.
+
+#### Format B — Supabase `{{ .ConfirmationURL }}`
+
+Alternatively, the **Invite user** template may use Supabase's generated confirmation URL:
+
+```html
+<h2>You have been invited</h2>
+<p>You have been invited to create a user on {{ .SiteURL }}.</p>
+<p><a href="{{ .ConfirmationURL }}">Accept the invitation</a></p>
+```
+
+Supabase verifies the token at `/auth/v1/verify`, then redirects the browser to the configured `redirectTo`:
+
+```
+{origin}/auth/confirm?next=/accept-invitation
+```
+
+Session tokens arrive in the URL hash fragment. `/auth/confirm` establishes the browser session client-side, sets the short-lived `hmg-invite-session` cookie, and redirects to `/accept-invitation`.
+
+`inviteUserByEmail()` does not use PKCE for normal cross-browser invitation email links.
+
+#### Password reset template
+
+Use the **Reset password** template with a recovery token-hash link:
+
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/update-password">
+  Reset password
 </a>
 ```
 
-**Reset password** — continue linking to `/auth/confirm` with the recovery token.
+Or use `{{ .ConfirmationURL }}` with `redirectTo` set to `{origin}/auth/confirm?next=/update-password`.
 
 `{{ .SiteURL }}` is configured in **Authentication → URL Configuration**.
+
+#### Invitation errors
+
+| Login error | Meaning |
+|-------------|---------|
+| `invitation-invalid` | Invitation token missing, expired, or verification failed |
+| `invite-required` | `/accept-invitation` opened without a valid invitation session |
+| `confirmation-failed` | Non-invitation email confirmation or recovery verification failed |
 
 ## Access request workflow
 

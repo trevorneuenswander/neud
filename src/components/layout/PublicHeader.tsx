@@ -10,7 +10,7 @@ export async function PublicHeader() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="text-sm font-semibold tracking-tight text-foreground sm:text-base"
+          className="cursor-pointer text-sm font-semibold tracking-tight text-foreground sm:text-base"
         >
           HMG Graphics Server
         </Link>
