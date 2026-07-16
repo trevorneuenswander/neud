@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import { AuthFormField } from "@/components/auth/AuthFormField";
 import { SubmitButton } from "@/components/auth/SubmitButton";
+import { Alert } from "@/components/ui/Alert";
 import { signIn } from "@/lib/auth/actions";
 import { initialAuthState } from "@/lib/auth/state";
 
@@ -36,21 +37,14 @@ export function LoginForm({ nextPath }: LoginFormProps) {
         autoComplete="current-password"
       />
 
-      {state.error ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {state.error}
-        </p>
-      ) : null}
+      {state.error ? <Alert variant="error">{state.error}</Alert> : null}
 
       <SubmitButton>Log in</SubmitButton>
 
-      <div className="flex flex-col gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+      <div className="flex flex-col gap-2 text-sm text-muted">
         <Link
           href="/forgot-password"
-          className="font-medium text-zinc-900 underline-offset-4 hover:underline dark:text-zinc-50"
+          className="font-medium text-foreground underline-offset-4 hover:underline"
         >
           Forgot your password?
         </Link>
@@ -58,7 +52,7 @@ export function LoginForm({ nextPath }: LoginFormProps) {
           Don&apos;t have an account?{" "}
           <Link
             href="/request-access"
-            className="font-medium text-zinc-900 underline-offset-4 hover:underline dark:text-zinc-50"
+            className="font-medium text-foreground underline-offset-4 hover:underline"
           >
             Request access
           </Link>

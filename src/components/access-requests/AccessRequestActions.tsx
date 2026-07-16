@@ -2,6 +2,8 @@
 
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import { Button } from "@/components/ui/Button";
+import { Alert } from "@/components/ui/Alert";
 import {
   approveAccessRequest,
   rejectAccessRequest,
@@ -16,13 +18,9 @@ function ApproveButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex h-9 items-center justify-center rounded-lg bg-zinc-900 px-3 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-    >
+    <Button type="submit" size="sm" disabled={pending}>
       {pending ? "Approving…" : "Approve"}
-    </button>
+    </Button>
   );
 }
 
@@ -30,13 +28,9 @@ function RejectButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex h-9 items-center justify-center rounded-lg border border-zinc-300 px-3 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
-    >
+    <Button type="submit" variant="secondary" size="sm" disabled={pending}>
       {pending ? "Rejecting…" : "Reject"}
-    </button>
+    </Button>
   );
 }
 
@@ -66,16 +60,13 @@ export function AccessRequestActions({ requestId }: AccessRequestActionsProps) {
       </div>
 
       {feedback ? (
-        <p
-          role="status"
-          className={`text-sm ${
-            approveState.success || rejectState.success
-              ? "text-emerald-700 dark:text-emerald-300"
-              : "text-red-700 dark:text-red-300"
-          }`}
+        <Alert
+          variant={
+            approveState.success || rejectState.success ? "success" : "error"
+          }
         >
           {feedback}
-        </p>
+        </Alert>
       ) : null}
     </div>
   );

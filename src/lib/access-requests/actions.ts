@@ -11,12 +11,54 @@ import {
 import type { AccessRequestActionState } from "@/lib/access-requests/state";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-function toAccessRequestErrorMessage(error: { code?: string; message?: string }) {
+const GENERIC_ERROR =
+  "Unable to submit your request. Please try again.";
+
+function toAccessRequestErrorMessage(error: {
+  code?: string;
+  message?: string;
+}) {
   if (error.code === "23505") {
-    return "A pending request already exists for this email address.";
+    return "An access request for this email is already pending.";
   }
 
-  return "Unable to submit your request. Please try again.";
+  return GENERIC_ERROR;
+}
+
+function logAccessRequestInsertError(error: {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  console.error("Access request insert failed", {
+    message: error.message,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
+
+  if (error.code === "42P01") {
+    console.error(
+      "[submitAccessRequest] Table public.access_requests does not exist. Apply supabase/migrations/001_access_requests_and_profiles.sql.",
+    );
+  }
+
+  if (error.code === "23514") {
+    console.error(
+      "[submitAccessRequest] Check constraint violation on access_requests insert.",
+    );
+  }
+
+  if (error.code === "42501") {
+    console.error(
+      "[submitAccessRequest] Permission denied. Verify SUPABASE_SERVICE_ROLE_KEY is set correctly.",
+    );
+  }
 }
 
 export async function submitAccessRequest(
@@ -54,7 +96,21 @@ export async function submitAccessRequest(
     return { error: commentsError };
   }
 
-  const admin = createAdminClient();
+  let admin;
+
+  try {
+    admin = createAdminClient();
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error(
+        "Access request insert failed",
+        error instanceof Error ? error.message : error,
+      );
+    }
+
+    return { error: GENERIC_ERROR };
+  }
+
   const normalizedEmail = normalizeEmail(email);
 
   const { error } = await admin.from("access_requests").insert({
@@ -66,10 +122,7 @@ export async function submitAccessRequest(
   });
 
   if (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("[submitAccessRequest]", error.code, error.message);
-    }
-
+    logAccessRequestInsertError(error);
     return { error: toAccessRequestErrorMessage(error) };
   }
 

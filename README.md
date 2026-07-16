@@ -75,9 +75,12 @@ npm run start   # Run production build locally
 | `/update-password` | Set a new password after recovery link |
 | `/auth/confirm` | Verify invitation or recovery tokens |
 | `/admin/access-requests` | Review access requests (owner/admin) |
-| `/dashboard` | Protected portal page |
-| `/projects` | Protected portal page |
-| `/projects/new` | Protected portal page |
+| `/dashboard` | Protected portal home |
+| `/projects` | Protected Projects list |
+| `/projects/new` | New Project foundation page |
+| `/users` | User management placeholder (owner/admin) |
+| `/activity` | Activity log placeholder (owner/admin) |
+| `/settings` | Settings placeholder (authenticated) |
 
 ## Authorization
 
@@ -103,6 +106,7 @@ See [docs/architecture.md](./docs/architecture.md) for the full architecture ove
 ## Documentation
 
 - [Architecture](./docs/architecture.md)
+- [Design system](./docs/design-system.md)
 - [Authentication](./docs/authentication.md)
 - [Project types](./docs/project-types.md)
 - [BAG-Graphics](./docs/bag-graphics.md)
@@ -110,7 +114,7 @@ See [docs/architecture.md](./docs/architecture.md) for the full architecture ove
 
 ## Current status
 
-**Phase: access requests and platform authorization**
+**Phase: interface design system and portal shell**
 
 Completed:
 
@@ -119,12 +123,16 @@ Completed:
 - Cookie-based sessions with Next.js 16 proxy session refresh
 - Access request and admin invitation workflow
 - Platform roles in `profiles` (`owner`, `admin`, `user`)
-- Protected routes for dashboard, projects, and admin
+- Dark operational portal UI with sidebar, top bar, and mobile drawer
+- Public and portal route-group layouts
+- Protected routes for dashboard, projects, admin, users, activity, and settings
 
 Not yet implemented:
 
 - `projects` and `project_members` tables
+- Functional project creation and persistence
 - BAG controller, display, and worker migration
-- Functional project creation and realtime state
+- Activity logging, workers, and displays monitoring
+- Command palette
 
 See [AGENTS.md](./AGENTS.md) for development guidelines and phase constraints.

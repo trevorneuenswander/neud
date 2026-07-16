@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { AuthFormField, TextAreaField } from "@/components/auth/AuthFormField";
 import { SubmitButton } from "@/components/auth/SubmitButton";
+import { Alert } from "@/components/ui/Alert";
 import { submitAccessRequest } from "@/lib/access-requests/actions";
 import { initialAccessRequestState } from "@/lib/access-requests/state";
 
@@ -62,14 +63,7 @@ export function RequestAccessForm() {
         onChange={(event) => setComments(event.target.value)}
       />
 
-      {state.error ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {state.error}
-        </p>
-      ) : null}
+      {state.error ? <Alert variant="error">{state.error}</Alert> : null}
 
       <SubmitButton pendingLabel="Submitting…">Submit Request</SubmitButton>
     </form>

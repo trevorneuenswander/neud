@@ -18,3 +18,18 @@ export async function getAccessRequests(): Promise<AccessRequest[]> {
 
   return data as AccessRequest[];
 }
+
+export async function getPendingAccessRequestCount(): Promise<number> {
+  const supabase = await createClient();
+
+  const { count, error } = await supabase
+    .from("access_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending");
+
+  if (error || count === null) {
+    return 0;
+  }
+
+  return count;
+}

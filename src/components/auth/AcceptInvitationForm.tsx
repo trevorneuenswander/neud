@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthFormField } from "@/components/auth/AuthFormField";
 import { SubmitButton } from "@/components/auth/SubmitButton";
+import { Alert } from "@/components/ui/Alert";
 import { acceptInvitation } from "@/lib/auth/actions";
 import { initialAuthState } from "@/lib/auth/state";
 
@@ -61,23 +62,9 @@ export function AcceptInvitationForm() {
         inputRef={confirmPasswordRef}
       />
 
-      {mismatchError ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {mismatchError}
-        </p>
-      ) : null}
+      {mismatchError ? <Alert variant="error">{mismatchError}</Alert> : null}
 
-      {state.error ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {state.error}
-        </p>
-      ) : null}
+      {state.error ? <Alert variant="error">{state.error}</Alert> : null}
 
       <SubmitButton>Set password</SubmitButton>
     </form>

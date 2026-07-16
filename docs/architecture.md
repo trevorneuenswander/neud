@@ -74,13 +74,25 @@ Owners and platform admins may access all projects. Regular users may only acces
 
 | Area | Location | Purpose |
 |------|----------|---------|
-| Portal pages | `src/app/` | Routes for login, dashboard, projects, access requests, and admin |
-| Shared UI | `src/components/` | Reusable layout and UI components |
+| Public pages | `src/app/(public)/` | Landing, login, request access, and auth flows |
+| Portal pages | `src/app/(portal)/` | Dashboard, projects, admin, users, activity, settings |
+| Auth routes | `src/app/auth/` | Token confirmation (`/auth/confirm`) |
+| Shared UI | `src/components/` | Layout shells, portal navigation, and UI primitives |
 | Shared utilities | `src/lib/` | Platform helpers, Supabase clients, auth, and access requests |
 | Shared types | `src/types/` | Platform TypeScript types |
 | Graphic modules | `src/graphics/[project-type]/` | Project-type-specific web code |
 | Workers | `workers/[project-type]/` | Background data collection processes |
 | Migrations | `supabase/migrations/` | Database schema and RLS policies |
+
+## UI layout
+
+The application uses two route-group shells. See [design-system.md](./design-system.md) for tokens, components, and responsive behavior.
+
+**Public shell** (`src/app/(public)/layout.tsx`) — lighter layout with `PublicHeader` for marketing and auth pages.
+
+**Portal shell** (`src/app/(portal)/layout.tsx`) — dark operational layout with `AppShell` (sidebar, top bar, mobile drawer).
+
+Navigation visibility is not authorization. Portal routes enforce access with `requireUser()` or `requireAdmin()` on the server.
 
 ## Isolation rules
 

@@ -10,7 +10,7 @@ function LogoutButtonInner() {
     <button
       type="submit"
       disabled={pending}
-      className="text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-70 dark:text-zinc-400 dark:hover:text-zinc-50"
+      className="text-sm font-medium text-muted transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
     >
       {pending ? "Logging out…" : "Log out"}
     </button>

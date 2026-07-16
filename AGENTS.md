@@ -110,49 +110,30 @@ Before making a large change:
 
 
 
-## ## Current phase
+## Current phase
 
-The current phase is Supabase authentication.
+The current phase is **interface design system and portal shell**.
 
-Implement only:
+Completed foundation:
 
-- Supabase browser and server clients
+- Supabase authentication with cookie-based sessions
+- Access request and admin invitation workflow
+- Platform roles in `profiles` (`owner`, `admin`, `user`)
+- Dark operational portal UI with public and authenticated shells
+- Protected routes for dashboard, projects, admin, users, activity, and settings
 
-- Cookie-based session handling
+Use [docs/design-system.md](./docs/design-system.md) for tokens, components, layout rules, and terminology.
 
-- Email and password signup
-
-- Email and password login
-
-- Logout
-
-- Email confirmation handling
-
-- Password reset request
-
-- Password update
-
-- Protected portal routes
+User-facing term remains **Projects** (not Graphics).
 
 Do not add the following until explicitly requested:
 
-- Application database tables
-
-- Graphics projects
-
-- Row Level Security policies for project data
-
-- Puppeteer
-
-- BAG scraper code
-
-- Functional graphics controllers
-
-- Functional graphic displays
-
-- Billing
-
-- Organizations
-
-- Team permissions
+- `projects` and `project_members` database tables
+- Functional project creation and persistence
+- BAG controller, display, and worker migration
+- Puppeteer and BAG scraper code
+- Functional graphics controllers and displays
+- Activity logging and audit events
+- Command palette (`Ctrl/Command + K`)
+- Billing, organizations, and team permissions
 
