@@ -1,21 +1,18 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { AuthFormField } from "@/components/auth/AuthFormField";
 import { SubmitButton } from "@/components/auth/SubmitButton";
-import {
-  initialAuthState,
-} from "@/lib/auth/state";
-import {
-  requestPasswordReset,
-} from "@/lib/auth/actions";
+import { requestPasswordReset } from "@/lib/auth/actions";
+import { initialAuthState } from "@/lib/auth/state";
 
 export function ForgotPasswordForm() {
   const [state, formAction] = useActionState(
     requestPasswordReset,
     initialAuthState,
   );
+  const [email, setEmail] = useState("");
 
   return (
     <form action={formAction} className="space-y-4">
@@ -25,6 +22,8 @@ export function ForgotPasswordForm() {
         name="email"
         type="email"
         autoComplete="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
       />
 
       {state.error ? (

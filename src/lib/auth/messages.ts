@@ -3,6 +3,8 @@ const PAGE_MESSAGES: Record<string, string> = {
     "Email confirmation failed. Request a new link and try again.",
   "recovery-required":
     "Use the password reset link from your email to update your password.",
+  "invite-required":
+    "Use the invitation link from your email to set up your account.",
   "password-updated":
     "Your password has been updated. Log in with your new password.",
 };

@@ -1,24 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   getConfirmRedirectPath,
+  INVITE_SESSION_COOKIE,
+  isEmailOtpType,
+  logConfirmationError,
   RECOVERY_SESSION_COOKIE,
 } from "@/lib/auth/confirm";
 import { getSafeRedirectPath } from "@/lib/auth/redirect";
 
-const OTP_TYPES = new Set([
-  "signup",
-  "recovery",
-  "email",
-  "magiclink",
-  "invite",
-]);
-
-function copyCookies(source: NextResponse, target: NextResponse) {
-  source.cookies.getAll().forEach((cookie) => {
-    target.cookies.set(cookie.name, cookie.value);
-  });
-}
+type PendingCookie = {
+  name: string;
+  value: string;
+  options?: Parameters<NextResponse["cookies"]["set"]>[2];
+};
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -27,18 +23,19 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const next = searchParams.get("next");
 
-  const redirectWithError = () => {
+  const redirectWithError = (error?: unknown) => {
+    logConfirmationError(error);
     const loginUrl = new URL("/login", origin);
     loginUrl.searchParams.set("error", "confirmation-failed");
     return NextResponse.redirect(loginUrl);
   };
 
   if (!tokenHash && !code) {
-    return redirectWithError();
+    return redirectWithError("Missing token_hash and code");
   }
 
-  let confirmType = type;
-  let supabaseResponse = NextResponse.next({ request });
+  const pendingCookies: PendingCookie[] = [];
+  let confirmType: EmailOtpType | null = null;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,16 +46,11 @@ export async function GET(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet, headers) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) => {
-            supabaseResponse.cookies.set(name, value, options);
+            request.cookies.set(name, value);
+            pendingCookies.push({ name, value, options });
           });
-          Object.entries(headers).forEach(([key, value]) => {
-            supabaseResponse.headers.set(key, value);
-          });
+          void headers;
         },
       },
     },
@@ -68,21 +60,25 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-      return redirectWithError();
+      return redirectWithError(error);
     }
-  } else if (tokenHash && type && OTP_TYPES.has(type)) {
+
+    confirmType = type && isEmailOtpType(type) ? type : "email";
+  } else if (tokenHash && type && isEmailOtpType(type)) {
     const { error } = await supabase.auth.verifyOtp({
-      type: type as "signup" | "recovery" | "email" | "magiclink" | "invite",
       token_hash: tokenHash,
+      type,
     });
 
     if (error) {
-      return redirectWithError();
+      return redirectWithError(error);
     }
 
     confirmType = type;
   } else {
-    return redirectWithError();
+    return redirectWithError(
+      `Invalid confirmation parameters. type=${type ?? "missing"}`,
+    );
   }
 
   const redirectPath = getConfirmRedirectPath(confirmType, next);
@@ -90,10 +86,22 @@ export async function GET(request: NextRequest) {
     new URL(getSafeRedirectPath(redirectPath), origin),
   );
 
-  copyCookies(supabaseResponse, redirectResponse);
+  pendingCookies.forEach(({ name, value, options }) => {
+    redirectResponse.cookies.set(name, value, options);
+  });
 
   if (confirmType === "recovery") {
     redirectResponse.cookies.set(RECOVERY_SESSION_COOKIE, "1", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 15,
+      path: "/",
+    });
+  }
+
+  if (confirmType === "invite") {
+    redirectResponse.cookies.set(INVITE_SESSION_COOKIE, "1", {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",

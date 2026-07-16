@@ -2,8 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSafeRedirectPath } from "@/lib/auth/redirect";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/projects"];
-const AUTH_ROUTES = ["/login", "/signup"];
+const PROTECTED_PREFIXES = ["/dashboard", "/projects", "/admin"];
+const AUTH_ROUTES = ["/login", "/signup", "/request-access"];
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(

@@ -30,7 +30,7 @@ HMG Graphics Server is a centralized web platform for HMG's live graphics projec
 
 The portal provides shared capabilities used by every graphics project type:
 
-- Authentication
+- Authentication and access requests
 - User and project management
 - Realtime project state
 - Graphic display URLs
@@ -39,33 +39,67 @@ The portal provides shared capabilities used by every graphics project type:
 - Worker monitoring
 - Event logging
 
+## Authorization model
+
+HMG Graphics Server uses two independent authorization layers.
+
+### Layer 1: Platform roles (`profiles`)
+
+| Role | Access |
+|------|--------|
+| `owner` | Full platform control; may access all projects (future) |
+| `admin` | Platform administration; may access all projects (future) |
+| `user` | General portal access only |
+
+Platform roles are stored in `profiles` and checked by `requireAdmin()` / `isAdmin()` on the server. They control portal administration, not project-specific access.
+
+### Layer 2: Project memberships (`project_members`, future)
+
+| Access level | Purpose |
+|--------------|---------|
+| `manager` | Manage a specific graphics project |
+| `operator` | Operate a specific graphics project |
+| `viewer` | View a specific graphics project |
+
+An approved portal user with `profiles.role = 'user'` does **not** automatically receive access to any graphics project. Project access requires a separate `project_members` record.
+
+Future helpers:
+
+- `requireProjectAccess(projectId)`
+- `requireProjectRole(projectId, allowedRoles)`
+
+Owners and platform admins may access all projects. Regular users may only access projects where they have a membership record. Every project page, query, and Server Action must verify membership on the server.
+
 ## Code organization
 
 | Area | Location | Purpose |
 |------|----------|---------|
-| Portal pages | `src/app/` | Routes for login, dashboard, projects, and future portal features |
+| Portal pages | `src/app/` | Routes for login, dashboard, projects, access requests, and admin |
 | Shared UI | `src/components/` | Reusable layout and UI components |
-| Shared utilities | `src/lib/` | Platform helpers, Supabase clients, and auth logic |
+| Shared utilities | `src/lib/` | Platform helpers, Supabase clients, auth, and access requests |
 | Shared types | `src/types/` | Platform TypeScript types |
 | Graphic modules | `src/graphics/[project-type]/` | Project-type-specific web code |
 | Workers | `workers/[project-type]/` | Background data collection processes |
+| Migrations | `supabase/migrations/` | Database schema and RLS policies |
 
 ## Isolation rules
 
 - Graphic-specific controller, display, validation, state, and worker logic must stay inside each project type's directories.
 - Shared portal code must not assume every graphics project is an auction.
 - Continuous Puppeteer processes must not run in Vercel Functions.
+- Platform authorization must remain separate from project authorization.
 
-## Authentication
+## Authentication and access requests
 
 Supabase email/password authentication is implemented with:
 
 - Browser and server Supabase clients in `src/lib/supabase/`
+- Server-only admin client for access-request inserts and invitations
 - Cookie-based sessions refreshed by `src/proxy.ts`
 - Server-side route protection in `src/lib/auth/`
-- Auth UI in `src/components/auth/`
+- Access request workflow in `src/lib/access-requests/`
 
-Authentication is separate from future project authorization logic.
+Public self-service signup is disabled. New users request access, are reviewed by a platform administrator, and receive an email invitation.
 
 See [authentication.md](./authentication.md) for setup and route details.
 
@@ -73,6 +107,7 @@ See [authentication.md](./authentication.md) for setup and route details.
 
 Future phases will add:
 
-- Supabase Postgres for projects and state
+- `projects` table and graphics project data
+- `project_members` table for per-project access control
 - Supabase Realtime for live updates
-- Row Level Security for multi-user access
+- Row Level Security for project data

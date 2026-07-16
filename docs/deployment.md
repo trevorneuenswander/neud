@@ -8,7 +8,7 @@ The Next.js App Router application deploys to Vercel.
 
 Responsibilities:
 
-- Portal pages (login, dashboard, projects)
+- Portal pages (login, dashboard, projects, access requests)
 - Web controllers
 - Graphic display URLs for OBS
 - API routes for project and worker coordination (future)
@@ -32,8 +32,8 @@ Worker location in this repository: `workers/[project-type]/`
 | Service | Role |
 |---------|------|
 | Vercel | Hosts the Next.js web application |
-| Supabase Auth | User authentication (implemented) |
-| Supabase Postgres | Projects, state, and event storage (planned) |
+| Supabase Auth | User authentication and invitations |
+| Supabase Postgres | Profiles, access requests, and future project data |
 | Supabase Realtime | Live state updates to controllers and displays (planned) |
 
 ## Environment variables
@@ -43,20 +43,28 @@ Set these in Vercel project settings and in local `.env.local`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
-Only public Supabase values are used by the web application. Never add the service-role key to Vercel environment variables for this app.
+- Public keys are used by the browser and server session client.
+- The service-role key is used only in server-only modules.
+- Never expose the service-role key to the browser or client bundles.
 
-## Supabase redirect URLs
+## Database migration
 
-Configure these in the Supabase dashboard under **Authentication → URL Configuration**:
+Before deploying, apply `supabase/migrations/001_access_requests_and_profiles.sql` in the Supabase SQL editor.
 
-**Site URL**
+Then create the first owner profile using the SQL in [authentication.md](./authentication.md).
 
-- Local: `http://localhost:3000`
-- Production: your deployed Vercel URL
+## Supabase configuration
 
-**Redirect URLs**
+### Disable public signup
+
+In **Authentication → Providers → Email**, disable public signups.
+
+### Redirect URLs
+
+Configure under **Authentication → URL Configuration**:
 
 ```
 http://localhost:3000/auth/confirm
@@ -65,7 +73,15 @@ https://your-production-domain.com/auth/confirm
 https://your-production-domain.com/**
 ```
 
-See [authentication.md](./authentication.md) for full auth setup details.
+### Invite email template
+
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/accept-invitation">
+  Accept the invite
+</a>
+```
+
+See [authentication.md](./authentication.md) for full setup and testing steps.
 
 ## Local development
 

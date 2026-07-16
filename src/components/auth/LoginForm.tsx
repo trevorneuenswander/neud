@@ -1,15 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { AuthFormField } from "@/components/auth/AuthFormField";
 import { SubmitButton } from "@/components/auth/SubmitButton";
-import {
-  initialAuthState,
-} from "@/lib/auth/state";
-import {
-  signIn,
-} from "@/lib/auth/actions";
+import { signIn } from "@/lib/auth/actions";
+import { initialAuthState } from "@/lib/auth/state";
 
 type LoginFormProps = {
   nextPath?: string;
@@ -17,6 +13,7 @@ type LoginFormProps = {
 
 export function LoginForm({ nextPath }: LoginFormProps) {
   const [state, formAction] = useActionState(signIn, initialAuthState);
+  const [email, setEmail] = useState("");
 
   return (
     <form action={formAction} className="space-y-4">
@@ -28,6 +25,8 @@ export function LoginForm({ nextPath }: LoginFormProps) {
         name="email"
         type="email"
         autoComplete="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
       />
       <AuthFormField
         id="password"
@@ -58,10 +57,10 @@ export function LoginForm({ nextPath }: LoginFormProps) {
         <p>
           Don&apos;t have an account?{" "}
           <Link
-            href="/signup"
+            href="/request-access"
             className="font-medium text-zinc-900 underline-offset-4 hover:underline dark:text-zinc-50"
           >
-            Sign up
+            Request access
           </Link>
         </p>
       </div>

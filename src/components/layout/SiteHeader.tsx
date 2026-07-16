@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { LogoutButton } from "@/components/auth/LogoutButton";
+import { isAdmin } from "@/lib/auth/authorization";
 import { getAuthClaims } from "@/lib/auth/session";
 
 export async function SiteHeader() {
   const claims = await getAuthClaims();
   const isLoggedIn = claims !== null;
+  const showAdminLink = isLoggedIn && (await isAdmin());
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
@@ -30,6 +32,14 @@ export async function SiteHeader() {
               >
                 Projects
               </Link>
+              {showAdminLink ? (
+                <Link
+                  href="/admin/access-requests"
+                  className="text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                >
+                  Access Requests
+                </Link>
+              ) : null}
               <LogoutButton />
             </>
           ) : (
@@ -41,10 +51,10 @@ export async function SiteHeader() {
                 Login
               </Link>
               <Link
-                href="/signup"
+                href="/request-access"
                 className="text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
               >
-                Sign Up
+                Request Access
               </Link>
             </>
           )}

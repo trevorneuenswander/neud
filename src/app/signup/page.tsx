@@ -1,24 +1,5 @@
-import { SignupForm } from "@/components/auth/SignupForm";
-import { PageContainer } from "@/components/layout/PageContainer";
-import { redirectIfAuthenticated } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 
-export default async function SignupPage() {
-  await redirectIfAuthenticated();
-
-  return (
-    <PageContainer>
-      <div className="mx-auto max-w-md">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Sign up
-        </h1>
-        <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          Create a portal account. You will need to confirm your email before
-          logging in.
-        </p>
-        <div className="mt-6">
-          <SignupForm />
-        </div>
-      </div>
-    </PageContainer>
-  );
+export default function SignupPage() {
+  redirect("/request-access");
 }

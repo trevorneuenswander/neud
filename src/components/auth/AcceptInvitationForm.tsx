@@ -4,11 +4,11 @@ import { useActionState, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthFormField } from "@/components/auth/AuthFormField";
 import { SubmitButton } from "@/components/auth/SubmitButton";
-import { updatePassword } from "@/lib/auth/actions";
+import { acceptInvitation } from "@/lib/auth/actions";
 import { initialAuthState } from "@/lib/auth/state";
 
-export function UpdatePasswordForm() {
-  const [state, formAction] = useActionState(updatePassword, initialAuthState);
+export function AcceptInvitationForm() {
+  const [state, formAction] = useActionState(acceptInvitation, initialAuthState);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mismatchError, setMismatchError] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export function UpdatePasswordForm() {
     <form action={formAction} onSubmit={handleSubmit} className="space-y-4">
       <AuthFormField
         id="password"
-        label="New password"
+        label="Password"
         name="password"
         type="password"
         autoComplete="new-password"
@@ -52,7 +52,7 @@ export function UpdatePasswordForm() {
       />
       <AuthFormField
         id="confirmPassword"
-        label="Confirm new password"
+        label="Confirm password"
         name="confirmPassword"
         type="password"
         autoComplete="new-password"
@@ -79,7 +79,7 @@ export function UpdatePasswordForm() {
         </p>
       ) : null}
 
-      <SubmitButton>Update password</SubmitButton>
+      <SubmitButton>Set password</SubmitButton>
     </form>
   );
 }
