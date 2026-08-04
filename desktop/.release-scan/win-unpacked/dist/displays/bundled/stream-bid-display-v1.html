@@ -1,0 +1,1811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=3840, height=2160, initial-scale=1" />
+<title>Stream Bid Display</title>
+<style>
+  :root {
+    --canvas-w: 3840px;
+    --canvas-h: 2160px;
+    --main-w: 2743.55px;
+    --main-h: calc(var(--main-w) * 9 / 16);
+    --main-radius: 54px;
+    --pip-w: 882.77px;
+    --pip-h: calc(var(--pip-w) * 9 / 16);
+    --pip-radius: 50px;
+    --outer-margin: calc((var(--canvas-w) - var(--main-w) - var(--pip-w)) / 3);
+    --main-top: var(--outer-margin);
+    --main-left: var(--outer-margin);
+    --column-gap: var(--outer-margin);
+    --content-w: calc(var(--canvas-w) - (var(--outer-margin) * 2));
+    --side-left: calc(var(--outer-margin) + var(--main-w) + var(--column-gap));
+    --pip-top: var(--main-top);
+    --pip-to-info: 75px;
+    --ticker-h: 240px;
+    --title-size: 120px;
+    --title-line-height: 1.08;
+    --title-box-h: calc(var(--title-size) * var(--title-line-height));
+    --title-top: calc(
+      var(--main-top) + var(--main-h) +
+      (
+        (var(--canvas-h) - var(--ticker-h) - var(--main-top) - var(--main-h) - var(--title-box-h))
+        / 2
+      )
+    );
+    --lot-to-reserve-gap: 20px;
+    --reserve-to-bid-gap: 48px;
+    --bid-to-currencies-gap: 48px;
+    --currency-row-gap: 44px;
+    --currency-code-w: 130px;
+    --currency-code-gap: 28px;
+    --color-lot: #0087db;
+    --color-muted: #808080;
+    --color-text: #000000;
+    --color-bg: #ffffff;
+  }
+
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-weight: 400;
+    font-style: normal;
+    font-variant: normal;
+    color: var(--color-text);
+    user-select: none;
+  }
+
+  .bid-text {
+    margin: 0;
+    padding: 0;
+    font-weight: 400;
+    font-style: normal;
+    font-variant: normal;
+    line-height: 1;
+  }
+
+  .viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  .display-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--canvas-w);
+    height: var(--canvas-h);
+    transform-origin: top left;
+  }
+
+  .white-field-composite {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .white-field-fill {
+    position: absolute;
+    inset: 0;
+    background: var(--color-bg);
+    -webkit-mask: url(#stream-bid-pip-mask);
+    mask: url(#stream-bid-pip-mask);
+  }
+
+  .main-photo-wrap {
+    position: absolute;
+    left: var(--main-left);
+    top: var(--main-top);
+    width: var(--main-w);
+    height: var(--main-h);
+    aspect-ratio: 16 / 9;
+    border-radius: var(--main-radius);
+    overflow: hidden;
+    background: #ececec;
+    z-index: 2;
+  }
+
+  .main-photo-wrap img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .main-photo-current {
+    z-index: 1;
+  }
+
+  .main-photo-next {
+    z-index: 2;
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  .main-photo-next.photo-enter {
+    animation: photoEnter 650ms cubic-bezier(.16,.84,.24,1) both;
+  }
+
+  @keyframes photoEnter {
+    from { opacity: 0; transform: translateX(22px) scale(1.015); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
+
+  .photo-placeholder {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    font-weight: 400;
+    color: var(--color-muted);
+    letter-spacing: 0.08em;
+  }
+
+  .photo-placeholder.visible {
+    display: flex;
+  }
+
+  .pip-region {
+    position: absolute;
+    left: var(--side-left);
+    top: var(--main-top);
+    width: var(--pip-w);
+    height: var(--pip-h);
+    aspect-ratio: 16 / 9;
+    border-radius: var(--pip-radius);
+    background: transparent;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .bid-column {
+    position: absolute;
+    left: var(--side-left);
+    top: calc(var(--main-top) + var(--pip-h) + var(--pip-to-info));
+    width: var(--pip-w);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lot-number {
+    font-size: 55px;
+    color: var(--color-lot);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    margin-bottom: var(--lot-to-reserve-gap);
+  }
+
+  .reserve-status {
+    font-size: 55px;
+    color: var(--color-muted);
+    white-space: nowrap;
+    margin-bottom: var(--reserve-to-bid-gap);
+  }
+
+  .reserve-status.hidden {
+    visibility: hidden;
+    height: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+  }
+
+  .reserve-status.placeholder {
+    visibility: visible;
+    height: auto;
+    min-height: 55px;
+    margin-bottom: var(--reserve-to-bid-gap);
+    overflow: hidden;
+  }
+
+  .lot-number.header-enter-prep,
+  .reserve-status.header-enter-prep {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    transform: translateX(14px);
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .bid-block {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bid-block.collapsed {
+    visibility: hidden;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .bid-block.is-enter-prep .primary-bid,
+  .bid-block.is-enter-prep .currency-row {
+    transition: none !important;
+  }
+
+  .primary-bid {
+    font-size: 130px;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    white-space: nowrap;
+    overflow: hidden;
+    margin-bottom: var(--bid-to-currencies-gap);
+    letter-spacing: 0;
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity 350ms ease-in-out,
+      transform 350ms cubic-bezier(.16,.84,.24,1);
+    will-change: opacity, transform;
+  }
+
+  .primary-bid.pill-hidden,
+  .currency-row.pill-hidden {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  .primary-bid.bid-exit-fade,
+  .currency-row.bid-exit-fade {
+    opacity: 0;
+    transform: translateY(0);
+    transition: opacity 250ms ease-in-out;
+  }
+
+  .currency-row {
+    display: grid;
+    grid-template-columns: var(--currency-code-w) minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: var(--currency-code-gap);
+    height: 70px;
+    font-size: 70px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity 350ms ease-in-out,
+      transform 350ms cubic-bezier(.16,.84,.24,1);
+    will-change: opacity, transform;
+  }
+
+  .bid-block.collapsed .primary-bid {
+    margin-bottom: 0;
+  }
+
+  .currency-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--currency-row-gap);
+  }
+
+  .currency-code {
+    color: var(--color-muted);
+  }
+
+  .currency-value {
+    color: var(--color-text);
+  }
+
+  .vehicle-title.bid-text {
+    line-height: var(--title-line-height);
+  }
+
+  .vehicle-title {
+    position: absolute;
+    left: var(--main-left);
+    top: var(--title-top);
+    width: var(--content-w);
+    font-size: var(--title-size);
+    line-height: var(--title-line-height);
+    min-height: var(--title-box-h);
+    color: var(--color-text);
+    overflow: visible;
+    z-index: 2;
+  }
+
+  .vehicle-title.title-measuring {
+    visibility: hidden;
+  }
+
+  .title-scroll-viewport {
+    width: 100%;
+    min-height: var(--title-box-h);
+    line-height: var(--title-line-height);
+    overflow-x: hidden;
+    overflow-y: visible;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    display: flex;
+    align-items: center;
+  }
+
+  .title-scroll-viewport::-webkit-scrollbar {
+    display: none;
+  }
+
+  .title-scroll-track {
+    display: inline-block;
+    white-space: nowrap;
+    transform: translate3d(0, 0, 0);
+    will-change: transform;
+    backface-visibility: hidden;
+    font-size: var(--title-size);
+    line-height: var(--title-line-height);
+  }
+
+  .title-measure {
+    position: absolute;
+    left: -10000px;
+    top: 0;
+    visibility: hidden;
+    white-space: nowrap;
+    font-size: var(--title-size);
+    line-height: var(--title-line-height);
+    font-family: inherit;
+    font-weight: inherit;
+    font-style: inherit;
+  }
+
+  .fade-out {
+    animation: fadeOut 250ms ease-in-out both;
+    will-change: opacity;
+  }
+
+  .slide-in-right {
+    animation: slideInRight 250ms ease-in-out both;
+    will-change: transform, opacity;
+  }
+
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(14px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <svg aria-hidden="true" width="3840" height="2160" style="position:absolute;left:-10000px;top:0;pointer-events:none;">
+    <defs>
+      <mask id="stream-bid-pip-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="3840" height="2160">
+        <rect x="0" y="0" width="3840" height="2160" fill="white"></rect>
+        <rect id="pipCutoutRect" x="2886.0033333334" y="71.2266666667" width="882.77" height="496.558125" rx="50" ry="50" fill="black"></rect>
+      </mask>
+    </defs>
+  </svg>
+
+  <div class="viewport">
+    <div id="stage" class="display-stage">
+      <div class="white-field-composite" aria-hidden="true">
+        <div class="white-field-fill"></div>
+      </div>
+      <div class="pip-region" aria-hidden="true"></div>
+
+      <div class="main-photo-wrap">
+        <img id="mainPhoto" class="main-photo-current hidden" alt="" />
+        <img id="nextPhoto" class="main-photo-next hidden" alt="" />
+        <div id="photoPlaceholder" class="photo-placeholder"></div>
+      </div>
+
+      <section class="bid-column">
+        <div id="lotNumber" class="lot-number bid-text">Lot —</div>
+        <div id="reserveStatus" class="reserve-status bid-text hidden"></div>
+        <div id="bidBlock" class="bid-block collapsed">
+          <div id="primaryBid" class="primary-bid bid-text"></div>
+          <div id="currencyList" class="currency-list"></div>
+        </div>
+      </section>
+
+      <div id="vehicleTitle" class="vehicle-title bid-text title-measuring" data-title="">
+        <div class="title-scroll-viewport">
+          <div class="title-scroll-track"></div>
+        </div>
+      </div>
+      <div id="titleMeasure" class="title-measure bid-text" aria-hidden="true"></div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var CANVAS_W = 3840;
+  var CANVAS_H = 2160;
+  var CURRENCY_CODES = ["EUR", "GBP", "CHF", "JPY"];
+  var FADE_MS = 250;
+  var PHOTO_CYCLE_MS = 6000;
+  var PHOTO_TRANSITION_MS = 650;
+  var BID_PILL_HIDE_MS = 350;
+  var BID_PILL_STAGGER_BASE_MS = 380;
+  var BID_PILL_STAGGER_STEP_MS = 130;
+  var TITLE_SIZE_MAX = 120;
+  var TITLE_SIZE_MIN = 72;
+  var TITLE_SCROLL_CHARACTER_LIMIT = 50;
+  var TITLE_MARQUEE_V = 40;
+  var TITLE_MARQUEE_EASE_SEC = 1;
+  var TITLE_MARQUEE_PAUSE_MS = 4000;
+  var TITLE_MEASURE_EPS = 0.5;
+
+  var stage = document.getElementById("stage");
+  var lotNumberEl = document.getElementById("lotNumber");
+  var reserveStatusEl = document.getElementById("reserveStatus");
+  var bidBlockEl = document.getElementById("bidBlock");
+  var primaryBidEl = document.getElementById("primaryBid");
+  var currencyListEl = document.getElementById("currencyList");
+  var vehicleTitleEl = document.getElementById("vehicleTitle");
+  var titleMeasureEl = document.getElementById("titleMeasure");
+  var titleMarqueeRafs = new WeakMap();
+  var mainPhotoEl = document.getElementById("mainPhoto");
+  var nextPhotoEl = document.getElementById("nextPhoto");
+  var photoPlaceholderEl = document.getElementById("photoPlaceholder");
+
+  var photoList = [];
+  var photoIndex = 0;
+  var photoCycleTimer = null;
+  var lastBidVisibleState = null;
+  var pendingBidHideTimer = null;
+  var bidAnimationTimers = [];
+  var bidTransitionGeneration = 0;
+  var bidGroupVisible = false;
+  var lastCurrencySig = "";
+  var activeLotKey = null;
+  var renderedBidState = null;
+  var pendingBidFadeTimer = null;
+  var bidEntranceRafId = null;
+  var bidEntranceRafGeneration = 0;
+  var renderedHeaderState = null;
+  var currentHeaderLotKey = null;
+  var headerTransitionGeneration = 0;
+  var headerTransitionInProgress = false;
+  var headerAnimationTimers = [];
+  var headerEntranceRafId = null;
+  var headerEntranceRafGeneration = 0;
+
+  function textValue(value) {
+    if (value == null) return "";
+    return String(value).trim();
+  }
+
+  function isPresentText(value) {
+    var trimmed = textValue(value);
+    return Boolean(trimmed && trimmed !== "—" && trimmed !== "-");
+  }
+
+  function hasBidValue(value) {
+    var v = textValue(value);
+    if (!v || v === "—") return false;
+    if (/^\$?\s*0(?:\.00)?$/i.test(v)) return false;
+    return /\d/.test(v);
+  }
+
+  function resolveBiddingPrice(display) {
+    if (!display || typeof display !== "object") return "";
+    return textValue(display.biddingPrice) || textValue(display.price) || "";
+  }
+
+  function normalizeBidDisplayText(value) {
+    var text = textValue(value);
+    if (!text) return "";
+    return text.replace(/^\$\s+/, "$");
+  }
+
+  function escapeHTML(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function isUsablePhotoUrl(url) {
+    if (!url) return false;
+    var trimmed = String(url).trim();
+    if (!trimmed) return false;
+    if (/logo|icon|avatar|badge|spinner|placeholder|favicon|1x1|pixel|no-image|noimage|missing|pip/i.test(trimmed)) {
+      return false;
+    }
+    if (/no[-_]?photo|default[-_]?image|coming[-_]?soon/i.test(trimmed)) {
+      return false;
+    }
+    return /^https?:\/\//i.test(trimmed) || trimmed.indexOf("/api/offline-assets/") === 0;
+  }
+
+  function filterPhotos(photos) {
+    var ordered = [];
+    var seen = {};
+    if (!Array.isArray(photos)) return ordered;
+    for (var i = 0; i < photos.length; i += 1) {
+      var url = textValue(photos[i]);
+      if (!url || !isUsablePhotoUrl(url) || seen[url]) continue;
+      seen[url] = true;
+      ordered.push(url);
+    }
+    return ordered;
+  }
+
+  function syncPipMaskRect() {
+    var pipRegion = document.querySelector(".pip-region");
+    var cutout = document.getElementById("pipCutoutRect");
+    if (!pipRegion || !cutout || !stage) return;
+    var stageRect = stage.getBoundingClientRect();
+    var pipRect = pipRegion.getBoundingClientRect();
+    if (!stageRect.width) return;
+    var scale = stageRect.width / CANVAS_W;
+    cutout.setAttribute("x", String((pipRect.left - stageRect.left) / scale));
+    cutout.setAttribute("y", String((pipRect.top - stageRect.top) / scale));
+    cutout.setAttribute("width", String(pipRect.width / scale));
+    cutout.setAttribute("height", String(pipRect.height / scale));
+  }
+
+  function scaleStage() {
+    var scale = Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H);
+    var offsetX = (window.innerWidth - CANVAS_W * scale) / 2;
+    var offsetY = (window.innerHeight - CANVAS_H * scale) / 2;
+    stage.style.transform = "translate(" + offsetX + "px, " + offsetY + "px) scale(" + scale + ")";
+    syncPipMaskRect();
+  }
+
+  function fitTextToWidth(el, minPx, maxPx) {
+    if (!el) return;
+    var size = maxPx;
+    el.style.fontSize = size + "px";
+    while (el.scrollWidth > el.clientWidth && size > minPx) {
+      size -= 1;
+      el.style.fontSize = size + "px";
+    }
+  }
+
+  function transitionText(el, newText, afterUpdate) {
+    var next = textValue(newText) || "—";
+    var cur = el.getAttribute("data-text") ?? el.textContent ?? "";
+    if (cur === next) {
+      if (afterUpdate) afterUpdate();
+      return;
+    }
+
+    el.setAttribute("data-text", next);
+    el.classList.remove("fade-out", "slide-in-right");
+    void el.offsetWidth;
+    el.classList.add("fade-out");
+
+    setTimeout(function () {
+      el.textContent = next;
+      el.classList.remove("fade-out", "slide-in-right");
+      void el.offsetWidth;
+      el.classList.add("slide-in-right");
+
+      setTimeout(function () {
+        el.classList.remove("slide-in-right");
+        if (afterUpdate) afterUpdate();
+      }, FADE_MS);
+    }, FADE_MS);
+  }
+
+  function getTitleViewport(container) {
+    return container ? container.querySelector(".title-scroll-viewport") : null;
+  }
+
+  function getTitleTrack(container) {
+    return container ? container.querySelector(".title-scroll-track") : null;
+  }
+
+  function measureTitleWidth(el) {
+    var rect = el.getBoundingClientRect();
+    return rect.width || el.scrollWidth || 1e-6;
+  }
+
+  function cancelTitleMarquee(container) {
+    if (titleMarqueeRafs.has(container)) {
+      cancelAnimationFrame(titleMarqueeRafs.get(container));
+      titleMarqueeRafs.delete(container);
+    }
+  }
+
+  function measureTitlePresentation(text) {
+    var viewport = getTitleViewport(vehicleTitleEl);
+    if (!viewport || !titleMeasureEl) {
+      return { mode: "normal", fontSize: TITLE_SIZE_MAX, scroll: false };
+    }
+
+    var viewportW = viewport.clientWidth;
+    var trimmed = textValue(text);
+    if (!trimmed) {
+      return { mode: "empty", fontSize: TITLE_SIZE_MAX, scroll: false };
+    }
+
+    var len = trimmed.length;
+    titleMeasureEl.textContent = trimmed;
+
+    if (len >= TITLE_SCROLL_CHARACTER_LIMIT) {
+      return { mode: "scroll", fontSize: TITLE_SIZE_MAX, scroll: true };
+    }
+
+    var size = TITLE_SIZE_MAX;
+    titleMeasureEl.style.fontSize = size + "px";
+    if (measureTitleWidth(titleMeasureEl) <= viewportW + TITLE_MEASURE_EPS) {
+      return { mode: "normal", fontSize: size, scroll: false };
+    }
+
+    while (size > TITLE_SIZE_MIN) {
+      size -= 1;
+      titleMeasureEl.style.fontSize = size + "px";
+      if (measureTitleWidth(titleMeasureEl) <= viewportW + TITLE_MEASURE_EPS) {
+        return { mode: "scaled", fontSize: size, scroll: false };
+      }
+    }
+
+    return { mode: "scaled", fontSize: TITLE_SIZE_MIN, scroll: false };
+  }
+
+  function ensureTitleTrack(container) {
+    var viewport = getTitleViewport(container);
+    var inner = getTitleTrack(container);
+    if (!viewport || !inner) return { mode: "single", width: 0 };
+
+    var text = (container.getAttribute("data-title") || inner.textContent || "").trim();
+    if (!text) {
+      inner.setAttribute("data-built", "empty");
+      inner.style.transform = "translate3d(0,0,0)";
+      return { mode: "single", width: 0 };
+    }
+
+    var viewportW = viewport.clientWidth;
+
+    if (container.classList.contains("fade-out")) {
+      var fadeWidth = measureTitleWidth(inner);
+      if (fadeWidth <= viewportW + TITLE_MEASURE_EPS) return { mode: "single", width: fadeWidth };
+      return { mode: "loop", width: Math.max(fadeWidth, 1e-6) };
+    }
+
+    if (container.getAttribute("data-title-mode") !== "scroll") {
+      inner.textContent = text;
+      inner.setAttribute("data-built", "single");
+      inner.style.transform = "translate3d(0,0,0)";
+      return { mode: "single", width: measureTitleWidth(inner) };
+    }
+
+    var sig = "loop:" + text;
+    if (inner.getAttribute("data-built") !== sig) {
+      var gap = "\u00A0\u00A0\u00A0•\u00A0\u00A0\u00A0";
+      inner.innerHTML =
+        '<span class="copyA">' + escapeHTML(text) + "</span>" +
+        '<span class="gap">' + gap + "</span>" +
+        '<span class="copyB">' + escapeHTML(text) + "</span>";
+      inner.setAttribute("data-built", sig);
+    }
+
+    var copyA = inner.querySelector(".copyA");
+    var gapEl = inner.querySelector(".gap");
+    var loopW = (measureTitleWidth(copyA) + measureTitleWidth(gapEl)) || 1e-6;
+    return { mode: "loop", width: loopW };
+  }
+
+  function startTitleMarquee(container) {
+    cancelTitleMarquee(container);
+    var inner = getTitleTrack(container);
+    if (!inner) return;
+
+    var track = ensureTitleTrack(container);
+    if (track.mode === "single") {
+      inner.style.transform = "translate3d(0,0,0)";
+      return;
+    }
+
+    var a = TITLE_MARQUEE_V / TITLE_MARQUEE_EASE_SEC;
+    var easeDist = 0.5 * a * TITLE_MARQUEE_EASE_SEC * TITLE_MARQUEE_EASE_SEC;
+    var cruiseDist = Math.max(0, track.width - 2 * easeDist);
+    var cruiseSec = cruiseDist / TITLE_MARQUEE_V;
+    var totalSec = TITLE_MARQUEE_EASE_SEC + cruiseSec + TITLE_MARQUEE_EASE_SEC;
+    var totalMs = totalSec * 1000;
+
+    var phase = "prepause";
+    var t0 = performance.now();
+
+    function distanceAt(ms) {
+      var t = ms / 1000;
+      if (t <= 0) return 0;
+      if (t <= TITLE_MARQUEE_EASE_SEC) return 0.5 * a * t * t;
+      if (t <= TITLE_MARQUEE_EASE_SEC + cruiseSec) {
+        return easeDist + TITLE_MARQUEE_V * (t - TITLE_MARQUEE_EASE_SEC);
+      }
+      if (t <= totalSec) {
+        var u = t - (TITLE_MARQUEE_EASE_SEC + cruiseSec);
+        return easeDist + cruiseDist + (TITLE_MARQUEE_V * u - 0.5 * a * u * u);
+      }
+      return track.width;
+    }
+
+    function tick(now) {
+      var id = requestAnimationFrame(tick);
+      titleMarqueeRafs.set(container, id);
+
+      if (phase === "prepause") {
+        inner.style.transform = "translate3d(0,0,0)";
+        if (now - t0 >= TITLE_MARQUEE_PAUSE_MS) {
+          phase = "scroll";
+          t0 = now;
+        }
+        return;
+      }
+
+      var elapsed = now - t0;
+      if (elapsed >= totalMs - 0.1) {
+        inner.style.transform = "translate3d(" + -track.width + "px,0,0)";
+        inner.style.transform = "translate3d(0,0,0)";
+        phase = "prepause";
+        t0 = now;
+        return;
+      }
+
+      var distance = distanceAt(elapsed);
+      inner.style.transform = "translate3d(" + -distance + "px,0,0)";
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  function applyTitleLayout(container, text, presentation) {
+    var track = getTitleTrack(container);
+    if (!track) return;
+
+    container.classList.add("title-measuring");
+    container.setAttribute("data-title-mode", presentation.scroll ? "scroll" : "single");
+
+    var trimmed = textValue(text);
+    if (!trimmed || presentation.mode === "empty") {
+      cancelTitleMarquee(container);
+      track.textContent = "";
+      track.setAttribute("data-built", "empty");
+      track.style.fontSize = TITLE_SIZE_MAX + "px";
+      track.style.transform = "translate3d(0,0,0)";
+      revealTitleLayout(container);
+      return;
+    }
+
+    track.style.fontSize = presentation.fontSize + "px";
+
+    if (presentation.scroll) {
+      var sig = "loop:" + trimmed;
+      if (track.getAttribute("data-built") !== sig) {
+        var gap = "\u00A0\u00A0\u00A0•\u00A0\u00A0\u00A0";
+        track.innerHTML =
+          '<span class="copyA">' + escapeHTML(trimmed) + "</span>" +
+          '<span class="gap">' + gap + "</span>" +
+          '<span class="copyB">' + escapeHTML(trimmed) + "</span>";
+        track.setAttribute("data-built", sig);
+      }
+    } else {
+      cancelTitleMarquee(container);
+      track.textContent = trimmed;
+      track.setAttribute("data-built", "single");
+      track.style.transform = "translate3d(0,0,0)";
+    }
+
+    revealTitleLayout(container);
+  }
+
+  function revealTitleLayout(container) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        container.classList.remove("title-measuring");
+      });
+    });
+  }
+
+  function titleLotKey(lot, title) {
+    return textValue(lot) + "\0" + textValue(title);
+  }
+
+  function transitionTitle(newTextRaw, lotRaw) {
+    var newText = textValue(newTextRaw) || "";
+    var lot = textValue(lotRaw) || "";
+    var key = titleLotKey(lot, newText);
+    var prevKey = vehicleTitleEl.getAttribute("data-lot-key") || "";
+
+    if (prevKey === key) {
+      if (!titleMarqueeRafs.has(vehicleTitleEl)) {
+        requestAnimationFrame(function () {
+          startTitleMarquee(vehicleTitleEl);
+        });
+      }
+      return;
+    }
+
+    cancelTitleMarquee(vehicleTitleEl);
+    vehicleTitleEl.setAttribute("data-lot-key", key);
+    vehicleTitleEl.setAttribute("data-title", newText);
+
+    vehicleTitleEl.classList.remove("fade-out", "slide-in-right");
+    void vehicleTitleEl.offsetWidth;
+    vehicleTitleEl.classList.add("fade-out");
+
+    setTimeout(function () {
+      var presentation = measureTitlePresentation(newText);
+      applyTitleLayout(vehicleTitleEl, newText, presentation);
+
+      vehicleTitleEl.classList.remove("fade-out", "slide-in-right");
+      void vehicleTitleEl.offsetWidth;
+      vehicleTitleEl.classList.add("slide-in-right");
+
+      requestAnimationFrame(function () {
+        startTitleMarquee(vehicleTitleEl);
+      });
+    }, FADE_MS);
+  }
+
+  function transitionPhoto(src) {
+    var next = textValue(src);
+    var cur = mainPhotoEl.getAttribute("data-src") || "";
+    if (cur === next) return;
+
+    if (next) {
+      var preloaded = new Image();
+
+      preloaded.onload = function () {
+        photoPlaceholderEl.classList.remove("visible");
+
+        if (mainPhotoEl.classList.contains("hidden")) {
+          mainPhotoEl.src = next;
+          mainPhotoEl.setAttribute("data-src", next);
+          mainPhotoEl.classList.remove("hidden");
+          mainPhotoEl.classList.remove("fade-out", "slide-in-right");
+          return;
+        }
+
+        nextPhotoEl.src = next;
+        nextPhotoEl.setAttribute("data-src", next);
+        nextPhotoEl.classList.remove("hidden", "photo-enter");
+        void nextPhotoEl.offsetWidth;
+        nextPhotoEl.classList.add("photo-enter");
+
+        setTimeout(function () {
+          mainPhotoEl.src = next;
+          mainPhotoEl.setAttribute("data-src", next);
+
+          nextPhotoEl.classList.add("hidden");
+          nextPhotoEl.classList.remove("photo-enter");
+          nextPhotoEl.removeAttribute("src");
+          nextPhotoEl.setAttribute("data-src", "");
+        }, PHOTO_TRANSITION_MS);
+      };
+
+      preloaded.onerror = function () {
+        if (photoList.length <= 1) {
+          mainPhotoEl.classList.add("hidden");
+          mainPhotoEl.removeAttribute("src");
+          mainPhotoEl.setAttribute("data-src", "");
+          photoPlaceholderEl.classList.add("visible");
+        }
+      };
+
+      preloaded.src = next;
+      return;
+    }
+
+    mainPhotoEl.setAttribute("data-src", "");
+    mainPhotoEl.removeAttribute("src");
+    mainPhotoEl.classList.add("hidden");
+    mainPhotoEl.classList.remove("fade-out", "slide-in-right");
+
+    nextPhotoEl.setAttribute("data-src", "");
+    nextPhotoEl.removeAttribute("src");
+    nextPhotoEl.classList.add("hidden");
+    nextPhotoEl.classList.remove("photo-enter");
+
+    photoPlaceholderEl.classList.add("visible");
+    photoPlaceholderEl.classList.remove("fade-out", "slide-in-right");
+    void photoPlaceholderEl.offsetWidth;
+    photoPlaceholderEl.classList.add("slide-in-right");
+
+    setTimeout(function () {
+      photoPlaceholderEl.classList.remove("slide-in-right");
+    }, FADE_MS);
+  }
+
+  function setPhotos(photos) {
+    var nextList = filterPhotos(photos);
+    var sig = nextList.join("|");
+
+    if ((mainPhotoEl.getAttribute("data-photo-list") || "") === sig) return;
+
+    mainPhotoEl.setAttribute("data-photo-list", sig);
+    photoList = nextList;
+    photoIndex = 0;
+
+    if (photoCycleTimer) {
+      clearInterval(photoCycleTimer);
+      photoCycleTimer = null;
+    }
+
+    transitionPhoto(photoList[0] || "");
+
+    if (photoList.length > 1) {
+      photoCycleTimer = setInterval(function () {
+        photoIndex = (photoIndex + 1) % photoList.length;
+        transitionPhoto(photoList[photoIndex]);
+      }, PHOTO_CYCLE_MS);
+    }
+  }
+
+  function parseCurrencyRow(entry) {
+    var text = textValue(entry);
+    if (!text || !/\d/.test(text)) return null;
+    for (var i = 0; i < CURRENCY_CODES.length; i += 1) {
+      var code = CURRENCY_CODES[i];
+      var match = text.match(new RegExp("^" + code + "\\b[:\\s-]*(.+)$", "i"));
+      if (match) {
+        return { code: code, value: match[1].trim() };
+      }
+    }
+    return null;
+  }
+
+  function buildCurrencyHTML(rows, startHidden) {
+    return rows
+      .map(function (row) {
+        return (
+          '<div class="currency-row' +
+          (startHidden ? " pill-hidden" : "") +
+          '" data-code="' +
+          row.code +
+          '"><span class="currency-code">' +
+          row.code +
+          '</span><span class="currency-value">' +
+          escapeHTML(row.value) +
+          "</span></div>"
+        );
+      })
+      .join("");
+  }
+
+  function parseCurrencyRows(currencies) {
+    var rows = [];
+    if (Array.isArray(currencies)) {
+      for (var i = 0; i < currencies.length; i += 1) {
+        var parsed = parseCurrencyRow(currencies[i]);
+        if (parsed) rows.push(parsed);
+      }
+    }
+    return rows;
+  }
+
+  function clearBidAnimation() {
+    bidAnimationTimers.forEach(function (timer) {
+      clearTimeout(timer);
+    });
+    bidAnimationTimers = [];
+  }
+
+  function resolveLotKey(display) {
+    return textValue(display.lot) || "Lot —";
+  }
+
+  function cancelPendingBidTransitions() {
+    if (pendingBidHideTimer) {
+      clearTimeout(pendingBidHideTimer);
+      pendingBidHideTimer = null;
+    }
+    if (pendingBidFadeTimer) {
+      clearTimeout(pendingBidFadeTimer);
+      pendingBidFadeTimer = null;
+    }
+    clearBidAnimation();
+  }
+
+  function clearBidDomValues() {
+    primaryBidEl.textContent = "";
+    primaryBidEl.setAttribute("data-text", "");
+    primaryBidEl.classList.remove("pill-hidden", "bid-exit-fade");
+    currencyListEl.innerHTML = "";
+    currencyListEl.setAttribute("data-sig", "");
+    lastCurrencySig = "";
+  }
+
+  function isBidTransitionCurrent(generation, lotKey) {
+    return generation === bidTransitionGeneration && lotKey === activeLotKey;
+  }
+
+  function buildBidState(display) {
+    var lotKey = resolveLotKey(display);
+    var rows = parseCurrencyRows(Array.isArray(display.currencies) ? display.currencies : []);
+    var state = {
+      lotKey: lotKey,
+      bid: normalizeBidDisplayText(resolveBiddingPrice(display)),
+      eur: "",
+      gbp: "",
+      chf: "",
+      jpy: "",
+      currencyRows: rows,
+    };
+    rows.forEach(function (row) {
+      state[row.code.toLowerCase()] = row.value;
+    });
+    return state;
+  }
+
+  function bidStateHasValue(state) {
+    return Boolean(state && hasBidValue(state.bid));
+  }
+
+  function removeBidAnimationClasses() {
+    getBidPills().forEach(function (pill) {
+      pill.classList.remove("pill-hidden", "bid-exit-fade", "fade-out", "slide-in-right");
+    });
+    bidBlockEl.classList.remove("is-enter-prep", "is-entering", "is-visible");
+  }
+
+  function setBidGroupInstantlyHidden(hidden) {
+    if (hidden) {
+      bidBlockEl.classList.add("collapsed");
+      bidBlockEl.classList.remove("is-entering", "is-visible");
+      bidGroupVisible = false;
+      return;
+    }
+    bidBlockEl.classList.remove("collapsed");
+    bidGroupVisible = true;
+  }
+
+  function setBidGroupHidden(hidden) {
+    setBidGroupInstantlyHidden(hidden);
+  }
+
+  function applyBidEntranceInitialState() {
+    bidBlockEl.classList.add("is-enter-prep");
+    bidBlockEl.classList.remove("is-visible", "is-entering");
+    getBidPills().forEach(function (pill) {
+      pill.classList.remove("bid-exit-fade", "fade-out", "slide-in-right");
+      pill.classList.add("pill-hidden");
+    });
+  }
+
+  function markBidGroupEntranceRunning() {
+    bidBlockEl.classList.remove("is-enter-prep");
+    bidBlockEl.classList.add("is-entering");
+  }
+
+  function markBidGroupSettledVisible() {
+    bidBlockEl.classList.remove("is-enter-prep", "is-entering");
+    bidBlockEl.classList.add("is-visible");
+  }
+
+  function reportBidEntrancePhase(phase) {
+    if (typeof window.__streamBidEntranceFrames !== "function") return;
+    var primaryOpacity = "";
+    try {
+      primaryOpacity = getComputedStyle(primaryBidEl).opacity;
+    } catch (e) {
+      primaryOpacity = "";
+    }
+    window.__streamBidEntranceFrames({
+      phase: phase,
+      activeLotKey: activeLotKey,
+      collapsed: bidBlockEl.classList.contains("collapsed"),
+      isEnterPrep: bidBlockEl.classList.contains("is-enter-prep"),
+      isEntering: bidBlockEl.classList.contains("is-entering"),
+      isVisible: bidBlockEl.classList.contains("is-visible"),
+      domBid: textValue(primaryBidEl.textContent),
+      pillHidden: primaryBidEl.classList.contains("pill-hidden"),
+      primaryOpacity: primaryOpacity,
+      allPillsHidden: getBidPills().every(function (pill) {
+        return pill.classList.contains("pill-hidden");
+      }),
+    });
+  }
+
+  function writeBidStateToDom(state) {
+    primaryBidEl.textContent = state.bid;
+    primaryBidEl.setAttribute("data-text", state.bid);
+    fitTextToWidth(primaryBidEl, 72, 130);
+
+    var sig = state.currencyRows
+      .map(function (row) {
+        return row.code + ":" + row.value;
+      })
+      .join("|");
+    currencyListEl.innerHTML = buildCurrencyHTML(state.currencyRows, false);
+    currencyListEl.setAttribute("data-sig", sig);
+    lastCurrencySig = sig;
+    fitCurrencyValues();
+  }
+
+  function assertBidEntranceReady(expectedState) {
+    if (typeof window.__streamBidValidateEntrance !== "function") return;
+    window.__streamBidValidateEntrance({
+      activeLotKey: activeLotKey,
+      renderedLotKey: renderedBidState ? renderedBidState.lotKey : null,
+      expectedLotKey: expectedState.lotKey,
+      domBid: textValue(primaryBidEl.textContent),
+      domDataBid: textValue(primaryBidEl.getAttribute("data-text")),
+      expectedBid: expectedState.bid,
+    });
+  }
+
+  function clearBidDomAndState() {
+    clearBidDomValues();
+    renderedBidState = null;
+    lastBidVisibleState = false;
+    setBidGroupHidden(true);
+    removeBidAnimationClasses();
+  }
+
+  function cancelBidEntranceRaf() {
+    bidEntranceRafGeneration += 1;
+    if (bidEntranceRafId !== null) {
+      cancelAnimationFrame(bidEntranceRafId);
+      bidEntranceRafId = null;
+    }
+  }
+
+  function cancelBidTransitionWork() {
+    cancelBidEntranceRaf();
+    cancelPendingBidTransitions();
+  }
+
+  function scheduleBidEntranceStart(generation, lotKey, onStart) {
+    var rafGeneration = bidEntranceRafGeneration;
+    bidEntranceRafId = requestAnimationFrame(function () {
+      bidEntranceRafId = requestAnimationFrame(function () {
+        bidEntranceRafId = null;
+        if (rafGeneration !== bidEntranceRafGeneration) return;
+        if (!isBidTransitionCurrent(generation, lotKey)) return;
+        onStart();
+      });
+    });
+  }
+
+  function beginBidEntranceFromState(nextState) {
+    if (!nextState || nextState.lotKey !== activeLotKey) return;
+
+    var generation = ++bidTransitionGeneration;
+    var lotKey = activeLotKey;
+    cancelBidTransitionWork();
+    setBidGroupInstantlyHidden(true);
+    removeBidAnimationClasses();
+
+    writeBidStateToDom(nextState);
+    renderedBidState = nextState;
+    reportBidEntrancePhase("after-dom-write");
+
+    applyBidEntranceInitialState();
+    reportBidEntrancePhase("after-prep");
+
+    void bidBlockEl.offsetWidth;
+    if (nextState.lotKey !== activeLotKey) return;
+
+    assertBidEntranceReady(nextState);
+
+    scheduleBidEntranceStart(generation, lotKey, function () {
+      reportBidEntrancePhase("before-reveal");
+      markBidGroupEntranceRunning();
+      setBidGroupInstantlyHidden(false);
+      lastBidVisibleState = true;
+      reportBidEntrancePhase("after-reveal");
+
+      var pills = getBidPills();
+      pills.forEach(function (pill, i) {
+        void pill.offsetWidth;
+        var timer = setTimeout(function () {
+          if (!isBidTransitionCurrent(generation, lotKey)) return;
+          pill.classList.remove("pill-hidden");
+        }, BID_PILL_STAGGER_BASE_MS + i * BID_PILL_STAGGER_STEP_MS);
+        bidAnimationTimers.push(timer);
+      });
+
+      if (pills.length) {
+        var settleTimer = setTimeout(function () {
+          if (!isBidTransitionCurrent(generation, lotKey)) return;
+          markBidGroupSettledVisible();
+        }, BID_PILL_STAGGER_BASE_MS + (pills.length - 1) * BID_PILL_STAGGER_STEP_MS + 350);
+        bidAnimationTimers.push(settleTimer);
+      } else {
+        markBidGroupSettledVisible();
+      }
+    });
+  }
+
+  function fadeOutBidGroupForLotChange(generation, lotKey, onComplete) {
+    var pills = getBidPills();
+    pills.forEach(function (pill) {
+      pill.classList.remove("pill-hidden", "fade-out", "slide-in-right");
+      pill.classList.add("bid-exit-fade");
+    });
+
+    pendingBidFadeTimer = setTimeout(function () {
+      pendingBidFadeTimer = null;
+      if (!isBidTransitionCurrent(generation, lotKey)) return;
+      pills.forEach(function (pill) {
+        pill.classList.remove("bid-exit-fade");
+      });
+      clearBidDomAndState();
+      if (onComplete) onComplete();
+    }, FADE_MS);
+  }
+
+  function handleLotChange(nextState) {
+    var generation = ++bidTransitionGeneration;
+    var lotKey = nextState.lotKey;
+    var previousHadBid = Boolean(renderedBidState && bidStateHasValue(renderedBidState));
+    var bidVisible = bidGroupVisible && !bidBlockEl.classList.contains("collapsed");
+
+    activeLotKey = lotKey;
+    renderedBidState = null;
+    lastBidVisibleState = false;
+    cancelBidTransitionWork();
+
+    if (!bidStateHasValue(nextState)) {
+      if (previousHadBid && bidVisible) {
+        fadeOutBidGroupForLotChange(generation, lotKey);
+      } else {
+        clearBidDomAndState();
+      }
+      return;
+    }
+
+    if (previousHadBid && bidVisible) {
+      fadeOutBidGroupForLotChange(generation, lotKey, function () {
+        if (nextState.lotKey !== activeLotKey) return;
+        beginBidEntranceFromState(nextState);
+      });
+      return;
+    }
+
+    beginBidEntranceFromState(nextState);
+  }
+
+  function getBidPills() {
+    var pills = [primaryBidEl];
+    var rows = currencyListEl.querySelectorAll(".currency-row");
+    for (var i = 0; i < rows.length; i += 1) {
+      pills.push(rows[i]);
+    }
+    return pills;
+  }
+
+  function populateCurrencyRows(currencies, startHidden) {
+    var rows = parseCurrencyRows(currencies);
+    var sig = rows.map(function (row) { return row.code + ":" + row.value; }).join("|");
+    currencyListEl.innerHTML = buildCurrencyHTML(rows, startHidden);
+    currencyListEl.setAttribute("data-sig", sig);
+    lastCurrencySig = sig;
+    fitCurrencyValues();
+    return rows.length;
+  }
+
+  function fitCurrencyValues() {
+    Array.prototype.forEach.call(
+      currencyListEl.querySelectorAll(".currency-value"),
+      function (el) {
+        fitTextToWidth(el, 42, 70);
+      },
+    );
+  }
+
+  function transitionCurrencyRows(currencies) {
+    var rows = parseCurrencyRows(currencies);
+    var sig = rows.map(function (row) { return row.code + ":" + row.value; }).join("|");
+    var html = buildCurrencyHTML(rows, false);
+    var cur = currencyListEl.getAttribute("data-sig") || "";
+    if (cur === sig) return;
+
+    currencyListEl.setAttribute("data-sig", sig);
+    lastCurrencySig = sig;
+
+    var temp = document.createElement("div");
+    temp.innerHTML = html;
+
+    var oldRows = Array.prototype.slice.call(currencyListEl.querySelectorAll(".currency-row"));
+    var newRows = Array.prototype.slice.call(temp.querySelectorAll(".currency-row"));
+
+    if (!newRows.length) {
+      currencyListEl.innerHTML = "";
+      return;
+    }
+
+    if (!oldRows.length) {
+      currencyListEl.innerHTML = html;
+      fitCurrencyValues();
+      return;
+    }
+
+    newRows.forEach(function (newRow, i) {
+      var oldRow = oldRows[i];
+
+      if (!oldRow) {
+        currencyListEl.appendChild(newRow);
+        fitTextToWidth(newRow.querySelector(".currency-value"), 42, 70);
+        return;
+      }
+
+      var oldValue = oldRow.querySelector(".currency-value");
+      var newValue = newRow.querySelector(".currency-value");
+
+      if (!oldValue || !newValue) {
+        oldRow.innerHTML = newRow.innerHTML;
+        fitTextToWidth(oldRow.querySelector(".currency-value"), 42, 70);
+        return;
+      }
+
+      var oldText = oldValue.textContent.trim();
+      var newText = newValue.textContent.trim();
+
+      if (oldText === newText) return;
+
+      oldValue.classList.remove("fade-out", "slide-in-right");
+      void oldValue.offsetWidth;
+      oldValue.classList.add("fade-out");
+
+      setTimeout(function () {
+        oldValue.textContent = newText;
+        oldValue.classList.remove("fade-out", "slide-in-right");
+        void oldValue.offsetWidth;
+        oldValue.classList.add("slide-in-right");
+
+        setTimeout(function () {
+          oldValue.classList.remove("slide-in-right");
+          fitTextToWidth(oldValue, 42, 70);
+        }, FADE_MS);
+      }, FADE_MS);
+    });
+
+    while (currencyListEl.children.length > newRows.length) {
+      currencyListEl.removeChild(currencyListEl.lastElementChild);
+    }
+  }
+
+  function resetBidPillAnimationClasses() {
+    getBidPills().forEach(function (pill) {
+      pill.classList.remove("pill-hidden");
+    });
+  }
+
+  function ensureBidGroupSettled() {
+    if (!renderedBidState || renderedBidState.lotKey !== activeLotKey) return;
+    setBidGroupInstantlyHidden(false);
+    bidGroupVisible = true;
+    markBidGroupSettledVisible();
+    resetBidPillAnimationClasses();
+  }
+
+  function setBidVisibility(shouldShow) {
+    var hasRealBid = !!shouldShow;
+
+    if (pendingBidHideTimer) {
+      clearTimeout(pendingBidHideTimer);
+      pendingBidHideTimer = null;
+    }
+
+    if (lastBidVisibleState === hasRealBid) {
+      if (hasRealBid) {
+        ensureBidGroupSettled();
+        return;
+      }
+      if (!hasBidValue(primaryBidEl.textContent) && bidBlockEl.classList.contains("collapsed")) {
+        return;
+      }
+    }
+
+    if (hasRealBid) {
+      if (!renderedBidState || renderedBidState.lotKey !== activeLotKey) return;
+      lastBidVisibleState = true;
+      beginBidEntranceFromState(renderedBidState);
+      return;
+    }
+
+    var generation = ++bidTransitionGeneration;
+    var lotKey = activeLotKey;
+    clearBidAnimation();
+    lastBidVisibleState = false;
+
+    var pills = getBidPills();
+    pills.forEach(function (pill) {
+      pill.classList.add("pill-hidden");
+    });
+
+    pendingBidHideTimer = setTimeout(function () {
+      if (!isBidTransitionCurrent(generation, lotKey)) return;
+      pendingBidHideTimer = null;
+      clearBidDomAndState();
+    }, BID_PILL_HIDE_MS);
+  }
+
+  function renderBidSection(display) {
+    var nextState = buildBidState(display);
+    var lotKey = nextState.lotKey;
+    var lotChanged = activeLotKey !== null && lotKey !== activeLotKey;
+
+    if (activeLotKey === null) {
+      activeLotKey = lotKey;
+    }
+
+    if (lotChanged) {
+      handleLotChange(nextState);
+      return;
+    }
+
+    if (pendingBidHideTimer && bidStateHasValue(nextState)) {
+      clearTimeout(pendingBidHideTimer);
+      pendingBidHideTimer = null;
+      if (
+        primaryBidEl.classList.contains("pill-hidden") ||
+        bidBlockEl.classList.contains("collapsed")
+      ) {
+        beginBidEntranceFromState(nextState);
+        return;
+      }
+    }
+
+    if (pendingBidFadeTimer && bidStateHasValue(nextState)) {
+      cancelBidTransitionWork();
+      clearBidDomAndState();
+    }
+
+    if (!bidStateHasValue(nextState)) {
+      if (
+        (renderedBidState && bidStateHasValue(renderedBidState)) ||
+        hasBidValue(primaryBidEl.textContent)
+      ) {
+        setBidVisibility(false);
+      } else {
+        clearBidDomAndState();
+      }
+      return;
+    }
+
+    if (
+      !renderedBidState ||
+      !bidStateHasValue(renderedBidState) ||
+      bidBlockEl.classList.contains("collapsed")
+    ) {
+      beginBidEntranceFromState(nextState);
+      return;
+    }
+
+    if (renderedBidState.lotKey !== activeLotKey) return;
+
+    lastBidVisibleState = true;
+    setBidGroupHidden(false);
+
+    if (renderedBidState.bid !== nextState.bid) {
+      transitionText(primaryBidEl, nextState.bid, function () {
+        fitTextToWidth(primaryBidEl, 72, 130);
+      });
+    } else {
+      fitTextToWidth(primaryBidEl, 72, 130);
+    }
+
+    transitionCurrencyRows(nextState.currencyRows.map(function (row) {
+      return row.code + " " + row.value;
+    }));
+    renderedBidState = nextState;
+  }
+
+  function formatReserveStatusForStreamBid(value) {
+    var text = textValue(value);
+    if (!text || /^unknown$/i.test(text)) {
+      return { display: "", layout: "hidden" };
+    }
+    if (/offered\s+without\s+reserve|offered_without_reserve|no[-_]?reserve|without\s+reserve/i.test(text)) {
+      return { display: "Offered Without Reserve", layout: "visible" };
+    }
+    if (/has[-_\s]?reserve|with\s+reserve/i.test(text)) {
+      return { display: "", layout: "placeholder" };
+    }
+    return { display: text, layout: "visible" };
+  }
+
+  function buildHeaderState(display) {
+    var formatted = formatReserveStatusForStreamBid(display.reserveStatus);
+    return {
+      lotKey: resolveLotKey(display),
+      lotNumber: textValue(display.lot) || "Lot —",
+      reserveDisplay: formatted.display,
+      reserveLayout: formatted.layout,
+    };
+  }
+
+  function isHeaderTransitionCurrent(generation, lotKey) {
+    return generation === headerTransitionGeneration && renderedHeaderState && renderedHeaderState.lotKey === lotKey;
+  }
+
+  function reserveLayoutParticipatesInHeaderAnimation(reserveLayout) {
+    return reserveLayout !== "hidden";
+  }
+
+  function getOutgoingHeaderElements() {
+    var elements = [lotNumberEl];
+    if (renderedHeaderState && reserveLayoutParticipatesInHeaderAnimation(renderedHeaderState.reserveLayout)) {
+      elements.push(reserveStatusEl);
+    } else if (!reserveStatusEl.classList.contains("hidden")) {
+      elements.push(reserveStatusEl);
+    }
+    return elements;
+  }
+
+  function getIncomingHeaderElements(nextHeader) {
+    var elements = [lotNumberEl];
+    if (nextHeader && reserveLayoutParticipatesInHeaderAnimation(nextHeader.reserveLayout)) {
+      elements.push(reserveStatusEl);
+    }
+    return elements;
+  }
+
+  function prepHeaderElementsForIncomingWrite(elements) {
+    elements.forEach(function (el) {
+      el.classList.remove("fade-out", "slide-in-right");
+      el.classList.add("header-enter-prep");
+    });
+  }
+
+  function cancelHeaderEntranceRaf() {
+    headerEntranceRafGeneration += 1;
+    if (headerEntranceRafId !== null) {
+      cancelAnimationFrame(headerEntranceRafId);
+      headerEntranceRafId = null;
+    }
+  }
+
+  function cancelHeaderTransitionWork() {
+    cancelHeaderEntranceRaf();
+    headerAnimationTimers.forEach(function (timer) {
+      clearTimeout(timer);
+    });
+    headerAnimationTimers = [];
+  }
+
+  function removeHeaderAnimationClasses() {
+    [lotNumberEl, reserveStatusEl].forEach(function (el) {
+      el.classList.remove("fade-out", "slide-in-right", "header-enter-prep");
+    });
+  }
+
+  function writeLotNumberToDom(lotNumber) {
+    lotNumberEl.textContent = lotNumber;
+    lotNumberEl.setAttribute("data-text", lotNumber);
+  }
+
+  function writeReserveStatusToDom(reserveDisplay, reserveLayout) {
+    applyReserveStatusLayout(reserveLayout);
+    reserveStatusEl.textContent = reserveDisplay;
+    reserveStatusEl.setAttribute("data-text", reserveDisplay);
+  }
+
+  function applyReserveStatusLayout(layout) {
+    reserveStatusEl.classList.remove("hidden", "placeholder");
+    if (layout === "hidden") {
+      reserveStatusEl.classList.add("hidden");
+      return;
+    }
+    if (layout === "placeholder") {
+      reserveStatusEl.classList.add("placeholder");
+    }
+  }
+
+  function reportHeaderPhase(phase, lotKey) {
+    if (typeof window.__streamHeaderFrames !== "function") return;
+    var reserveVisible =
+      !reserveStatusEl.classList.contains("hidden") &&
+      !reserveStatusEl.classList.contains("header-enter-prep") &&
+      Boolean(reserveStatusEl.textContent);
+    window.__streamHeaderFrames({
+      phase: phase,
+      lotKey: lotKey,
+      lotText: lotNumberEl.textContent || "",
+      reserveText: reserveStatusEl.textContent || "",
+      reserveHidden: reserveStatusEl.classList.contains("hidden"),
+      reservePlaceholder: reserveStatusEl.classList.contains("placeholder"),
+      reserveVisible: reserveVisible,
+      lotFadeOut: lotNumberEl.classList.contains("fade-out"),
+      reserveFadeOut: reserveStatusEl.classList.contains("fade-out"),
+      lotEnterPrep: lotNumberEl.classList.contains("header-enter-prep"),
+      reserveEnterPrep: reserveStatusEl.classList.contains("header-enter-prep"),
+      lotSlideIn: lotNumberEl.classList.contains("slide-in-right"),
+      reserveSlideIn: reserveStatusEl.classList.contains("slide-in-right"),
+      headerTransitionInProgress: headerTransitionInProgress,
+    });
+  }
+
+  function scheduleHeaderEntranceStart(generation, lotKey, entranceElements, onStart) {
+    var rafGeneration = headerEntranceRafGeneration;
+    headerEntranceRafId = requestAnimationFrame(function () {
+      headerEntranceRafId = requestAnimationFrame(function () {
+        headerEntranceRafId = null;
+        if (rafGeneration !== headerEntranceRafGeneration) return;
+        if (generation !== headerTransitionGeneration) return;
+        if (!renderedHeaderState || renderedHeaderState.lotKey !== lotKey) return;
+        onStart();
+      });
+    });
+  }
+
+  function startHeaderEntrance(generation, lotKey, entranceElements) {
+    reportHeaderPhase("before-entrance", lotKey);
+    entranceElements.forEach(function (el) {
+      el.classList.remove("header-enter-prep", "fade-out");
+      void el.offsetWidth;
+      el.classList.add("slide-in-right");
+    });
+    reportHeaderPhase("entrance-start", lotKey);
+
+    var settleTimer = setTimeout(function () {
+      if (generation !== headerTransitionGeneration) return;
+      if (!renderedHeaderState || renderedHeaderState.lotKey !== lotKey) return;
+      entranceElements.forEach(function (el) {
+        el.classList.remove("slide-in-right");
+      });
+      headerTransitionInProgress = false;
+      reportHeaderPhase("entrance-settled", lotKey);
+    }, FADE_MS);
+    headerAnimationTimers.push(settleTimer);
+  }
+
+  function applyIncomingHeaderState(nextHeader, generation) {
+    var incomingElements = getIncomingHeaderElements(nextHeader);
+    prepHeaderElementsForIncomingWrite(incomingElements);
+    writeLotNumberToDom(nextHeader.lotNumber);
+    writeReserveStatusToDom(nextHeader.reserveDisplay, nextHeader.reserveLayout);
+    renderedHeaderState = nextHeader;
+    reportHeaderPhase("after-dom-write", nextHeader.lotKey);
+
+    void lotNumberEl.offsetWidth;
+    reportHeaderPhase("after-prep", nextHeader.lotKey);
+
+    scheduleHeaderEntranceStart(generation, nextHeader.lotKey, incomingElements, function () {
+      startHeaderEntrance(generation, nextHeader.lotKey, incomingElements);
+    });
+  }
+
+  function runHeaderExitAnimation(generation, nextHeader, onComplete) {
+    var exitElements = getOutgoingHeaderElements();
+    if (!exitElements.length) {
+      onComplete();
+      return;
+    }
+
+    exitElements.forEach(function (el) {
+      el.classList.remove("fade-out", "slide-in-right", "header-enter-prep");
+      void el.offsetWidth;
+      el.classList.add("fade-out");
+    });
+    reportHeaderPhase("exit-start", nextHeader.lotKey);
+
+    var exitTimer = setTimeout(function () {
+      if (generation !== headerTransitionGeneration) return;
+      onComplete();
+    }, FADE_MS);
+    headerAnimationTimers.push(exitTimer);
+  }
+
+  function transitionHeaderForLotChange(nextHeader) {
+    var generation = ++headerTransitionGeneration;
+    headerTransitionInProgress = true;
+    cancelHeaderTransitionWork();
+
+    if (!renderedHeaderState) {
+      applyIncomingHeaderState(nextHeader, generation);
+      return;
+    }
+
+    runHeaderExitAnimation(generation, nextHeader, function () {
+      if (generation !== headerTransitionGeneration) return;
+      applyIncomingHeaderState(nextHeader, generation);
+    });
+  }
+
+  function renderLotHeader(display) {
+    var nextHeader = buildHeaderState(display);
+    var lotChanged =
+      currentHeaderLotKey !== null && nextHeader.lotKey !== currentHeaderLotKey;
+
+    if (lotChanged || currentHeaderLotKey === null) {
+      currentHeaderLotKey = nextHeader.lotKey;
+      transitionHeaderForLotChange(nextHeader);
+      return;
+    }
+
+    if (headerTransitionInProgress) {
+      return;
+    }
+
+    if (renderedHeaderState && renderedHeaderState.lotNumber !== nextHeader.lotNumber) {
+      transitionText(lotNumberEl, nextHeader.lotNumber);
+    }
+
+    updateReserveStatus(display.reserveStatus);
+    renderedHeaderState = nextHeader;
+  }
+
+  function updateReserveStatus(rawValue) {
+    if (headerTransitionInProgress) {
+      return;
+    }
+    var formatted = formatReserveStatusForStreamBid(rawValue);
+    applyReserveStatusLayout(formatted.layout);
+    var next = formatted.display;
+    var cur = reserveStatusEl.getAttribute("data-text") ?? reserveStatusEl.textContent ?? "";
+
+    if (cur === next) {
+      reserveStatusEl.textContent = next;
+      return;
+    }
+
+    if (formatted.layout === "hidden") {
+      if (!reserveStatusEl.classList.contains("hidden") && reserveStatusEl.textContent) {
+        reserveStatusEl.classList.remove("fade-out", "slide-in-right");
+        void reserveStatusEl.offsetWidth;
+        reserveStatusEl.classList.add("fade-out");
+
+        setTimeout(function () {
+          reserveStatusEl.textContent = "";
+          reserveStatusEl.setAttribute("data-text", "");
+          reserveStatusEl.classList.add("hidden");
+          reserveStatusEl.classList.remove("fade-out", "slide-in-right", "placeholder");
+        }, FADE_MS);
+        return;
+      }
+
+      reserveStatusEl.textContent = "";
+      reserveStatusEl.setAttribute("data-text", "");
+      reserveStatusEl.classList.add("hidden");
+      return;
+    }
+
+    reserveStatusEl.classList.remove("hidden");
+
+    if (formatted.layout === "placeholder") {
+      reserveStatusEl.textContent = "";
+      reserveStatusEl.setAttribute("data-text", "");
+      return;
+    }
+
+    transitionText(reserveStatusEl, next);
+  }
+
+  window.render = function render(feed) {
+    var d = (feed && feed.auctionDisplay) || {};
+
+    renderLotHeader(d);
+
+    var titleText = textValue(d.title);
+    var yearText = textValue(d.year);
+    if (yearText && titleText && titleText.indexOf(yearText) !== 0) {
+      titleText = yearText + " " + titleText;
+    }
+    transitionTitle(titleText, d.lot || "Lot —");
+
+    setPhotos(Array.isArray(d.photos) ? d.photos : []);
+
+    renderBidSection(d);
+  };
+
+  scaleStage();
+  window.addEventListener("resize", scaleStage);
+
+  /*__NEUD_STREAM_BID_BRIDGE__*/
+})();
+</script>
+</body>
+</html>

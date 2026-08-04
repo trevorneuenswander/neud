@@ -7,9 +7,25 @@ export const PROJECT_STATUSES = [
 
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
-export const PROJECT_TYPES = ["bag-graphics"] as const;
+/** All stored `project_type` enum values, including legacy entries. */
+export const ALL_PROJECT_DATA_TYPES = [
+  "webpage-scraper",
+  "json-ingest",
+  "google-sheet-ingest",
+  "bag-graphics",
+] as const;
 
-export type ProjectType = (typeof PROJECT_TYPES)[number];
+export type ProjectDataType = (typeof ALL_PROJECT_DATA_TYPES)[number];
+
+/** Data types offered when creating a new Project. */
+export const CREATABLE_PROJECT_DATA_TYPES = [
+  "webpage-scraper",
+  "json-ingest",
+  "google-sheet-ingest",
+] as const;
+
+export type CreatableProjectDataType =
+  (typeof CREATABLE_PROJECT_DATA_TYPES)[number];
 
 export const PROJECT_ACCESS_LEVELS = [
   "manager",
@@ -28,8 +44,11 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   archived: "Archived",
 };
 
-export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
-  "bag-graphics": "BAG-Graphics",
+export const PROJECT_DATA_TYPE_LABELS: Record<ProjectDataType, string> = {
+  "webpage-scraper": "Webpage Scraper",
+  "json-ingest": "JSON Ingest",
+  "google-sheet-ingest": "Google Sheet Ingest",
+  "bag-graphics": "BAG Graphics",
 };
 
 export const PROJECT_ACCESS_LEVEL_LABELS: Record<
@@ -41,6 +60,10 @@ export const PROJECT_ACCESS_LEVEL_LABELS: Record<
   operator: "Operator",
   viewer: "Viewer",
 };
+
+export function projectSupportsBagController(projectType: string): boolean {
+  return projectType === "bag-graphics";
+}
 
 export const DEFAULT_PROJECT_THEME = "default";
 export const DEFAULT_PROJECT_ICON = "folder";

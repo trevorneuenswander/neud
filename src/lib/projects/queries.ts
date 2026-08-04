@@ -1,5 +1,19 @@
+import { shouldUseLocalData } from "@/lib/local/mode";
+import {
+  localListProjects,
+  localSlugExists,
+  localVerifyConnected,
+} from "@/lib/local/api";
+import { localGetProjectsMeta } from "@/lib/local/displays-api";
+import type { LocalProjectsListMeta } from "@/lib/displays/types";
 import { isAdmin } from "@/lib/auth/authorization";
 import type { ProjectListItem } from "@/lib/projects/types";
+import {
+  canManageProjectSettings,
+  normalizeProjectIsActive,
+  resolveLocalProjectRole,
+  resolveSupabaseProjectRole,
+} from "@/lib/projects/project-permissions";
 import type {
   Project,
   ProjectMemberWithProfile,
@@ -8,9 +22,21 @@ import type {
 import { createClient } from "@/lib/supabase/server";
 
 const PROJECT_COLUMNS =
-  "id, project_number, owner_id, name, slug, description, project_type, status, display_token, theme, logo_url, primary_color, secondary_color, icon, settings, metadata, archived_at, created_at, updated_at";
+  "id, project_number, owner_id, name, slug, description, project_type, status, is_active, display_token, theme, logo_url, primary_color, secondary_color, icon, settings, metadata, archived_at, created_at, updated_at";
 
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
+  if (shouldUseLocalData()) {
+    try {
+      const { projects } = await localListProjects();
+      const project = projects.find(
+        (entry) => String(entry.slug ?? "") === slug,
+      );
+      return project ? (project as Project) : null;
+    } catch {
+      return null;
+    }
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -27,6 +53,15 @@ export async function getProjectBySlug(slug: string): Promise<Project | null> {
 }
 
 export async function slugExists(slug: string): Promise<boolean> {
+  if (shouldUseLocalData()) {
+    try {
+      const { exists } = await localSlugExists(slug);
+      return exists;
+    } catch {
+      return false;
+    }
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -61,6 +96,29 @@ export async function resolveUniqueSlug(baseSlug: string): Promise<string | null
 export async function getVisibleProjects(
   query?: string,
 ): Promise<ProjectListItem[]> {
+  if (shouldUseLocalData()) {
+    try {
+      const { projects } = await localListProjects(query);
+      let meta: LocalProjectsListMeta | null = null;
+      try {
+        meta = await localGetProjectsMeta({ wait: false });
+      } catch {
+        meta = null;
+      }
+      const projectRole = resolveLocalProjectRole(meta?.authenticatedUserRole);
+      return (projects as Array<Project & { teams?: Array<{ id: string; name: string }> }>).map(
+        (project) => ({
+          ...project,
+          is_active: normalizeProjectIsActive(project),
+          teams: project.teams ?? [],
+          accessLevel: canManageProjectSettings(projectRole) ? ("admin" as const) : ("operator" as const),
+        }),
+      );
+    } catch {
+      return [];
+    }
+  }
+
   const supabase = await createClient();
   const platformAdmin = await isAdmin();
   const trimmedQuery = query?.trim() ?? "";
@@ -83,6 +141,7 @@ export async function getVisibleProjects(
 
     return (data as Project[]).map((project) => ({
       ...project,
+      is_active: normalizeProjectIsActive(project),
       accessLevel: "admin" as const,
     }));
   }
@@ -104,8 +163,22 @@ export async function getVisibleProjects(
         return null;
       }
 
+      const projectRole = resolveSupabaseProjectRole({
+        platformAdmin: false,
+        profileRole: null,
+        membershipAccessLevel: row.access_level,
+      });
+
+      if (
+        !canManageProjectSettings(projectRole) &&
+        !normalizeProjectIsActive(project)
+      ) {
+        return null;
+      }
+
       return {
         ...project,
+        is_active: normalizeProjectIsActive(project),
         accessLevel: row.access_level as ProjectListItem["accessLevel"],
       };
     })
@@ -137,6 +210,10 @@ export async function getRecentVisibleProjects(limit = 5): Promise<ProjectListIt
 }
 
 export async function getProjectMemberCount(projectId: string): Promise<number | null> {
+  if (shouldUseLocalData()) {
+    return 1;
+  }
+
   const supabase = await createClient();
 
   const { count, error } = await supabase
@@ -154,6 +231,10 @@ export async function getProjectMemberCount(projectId: string): Promise<number |
 export async function getProjectMembersDirectory(
   projectId: string,
 ): Promise<ProjectMemberWithProfile[]> {
+  if (shouldUseLocalData()) {
+    return [];
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("get_project_members_directory", {
@@ -171,8 +252,9 @@ export async function getProjectMembersDirectory(
     assigned_by: string | null;
     created_at: string;
     full_name: string | null;
-    company: string | null;
+    team: string | null;
     email: string;
+    role: string;
   }>).map((row) => ({
     project_id: row.project_id,
     user_id: row.user_id,
@@ -182,11 +264,12 @@ export async function getProjectMembersDirectory(
     profile: {
       id: row.user_id,
       full_name: row.full_name,
-      company: row.company,
-      role: "user",
+      email: row.email,
+      phone_number: null,
+      team: row.team,
+      role: row.role as ProfileWithEmail["role"],
       created_at: row.created_at,
       updated_at: row.created_at,
-      email: row.email,
     },
   }));
 }
@@ -194,6 +277,10 @@ export async function getProjectMembersDirectory(
 export async function getAssignableUsers(
   projectId: string,
 ): Promise<ProfileWithEmail[]> {
+  if (shouldUseLocalData()) {
+    return [];
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("get_assignable_users_for_project", {
@@ -207,26 +294,31 @@ export async function getAssignableUsers(
   return (data as Array<{
     id: string;
     full_name: string | null;
-    company: string | null;
+    team: string | null;
     role: ProfileWithEmail["role"];
     email: string;
   }>).map((row) => ({
     id: row.id,
     full_name: row.full_name,
-    company: row.company,
-    role: row.role,
     email: row.email,
+    phone_number: null,
+    team: row.team,
+    role: row.role,
     created_at: "",
     updated_at: "",
   }));
 }
 
 export async function getOwnerProfile(ownerId: string) {
+  if (shouldUseLocalData()) {
+    return null;
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, company, role, created_at, updated_at")
+    .select("id, full_name, email, phone_number, team, role, created_at, updated_at")
     .eq("id", ownerId)
     .maybeSingle();
 
@@ -238,6 +330,14 @@ export async function getOwnerProfile(ownerId: string) {
 }
 
 export async function verifyProjectsConnected(): Promise<boolean> {
+  if (shouldUseLocalData()) {
+    try {
+      return await localVerifyConnected();
+    } catch {
+      return false;
+    }
+  }
+
   const supabase = await createClient();
 
   const { error } = await supabase.from("projects").select("id").limit(1);

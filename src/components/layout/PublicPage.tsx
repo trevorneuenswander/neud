@@ -1,4 +1,4 @@
-import { HmgHeroLogoServer } from "@/components/branding/HmgHeroLogoServer";
+import { NeudLogo } from "@/components/branding/NeudLogo";
 
 type PublicPageProps = {
   children: React.ReactNode;
@@ -26,7 +26,7 @@ export function PublicPage({
       <div className={`mx-auto ${maxWidthClasses[maxWidth]}`}>
         {showLogo ? (
           <div className="mb-8 flex justify-center">
-            <HmgHeroLogoServer size="featured" />
+            <NeudLogo size="lg" />
           </div>
         ) : null}
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">

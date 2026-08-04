@@ -1,26 +1,39 @@
 "use client";
 
-import { useFormStatus } from "react-dom";
-import { signOut } from "@/lib/auth/actions";
-
-function LogoutButtonInner() {
-  const { pending } = useFormStatus();
-
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="cursor-pointer text-sm font-medium text-muted transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
-    >
-      {pending ? "Logging out…" : "Log out"}
-    </button>
-  );
-}
+import { useState } from "react";
+import { forceLocalSignOut } from "@/lib/auth/force-local-sign-out";
 
 export function LogoutButton() {
+  const [pending, setPending] = useState(false);
+
+  function handleClick() {
+    console.info("[logout] Sign Out clicked");
+    setPending(true);
+    void forceLocalSignOut("sidebar-sign-out").finally(() => {
+      setPending(false);
+    });
+  }
+
   return (
-    <form action={signOut}>
-      <LogoutButtonInner />
-    </form>
+    <div
+      className="space-y-1"
+      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+    >
+      <button
+        type="button"
+        disabled={pending}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleClick();
+        }}
+        className="cursor-pointer text-sm font-medium text-muted transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+      >
+        {pending ? "Signing out…" : "Sign Out"}
+      </button>
+    </div>
   );
 }

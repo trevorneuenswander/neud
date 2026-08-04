@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>New Ticker v1</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: #fff;
+  }
+
+  .viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  .display-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3840px;
+    height: 2160px;
+    transform-origin: top left;
+  }
+
+  .ticker-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 240px;
+    display: grid;
+    grid-template-columns: 520px 180px 1fr;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .logo-section {
+    background: #000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 36px;
+  }
+
+  .logo-section img {
+    max-width: 100%;
+    max-height: 170px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .up-next-label {
+    background: #0f1316;
+    color: #e6e6e6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 50px;
+    font-weight: 400;
+    line-height: 0.95;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    padding: 0 12px;
+  }
+
+  .lots-section {
+    background: #0f1316;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+    gap: 0;
+    padding: 0 28px;
+    min-width: 0;
+  }
+
+  .lot-entry {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+    padding: 0 24px;
+    position: relative;
+  }
+
+  .lot-entry:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin-top: -6px;
+    border-radius: 999px;
+    background: #ffffff;
+    opacity: 0.85;
+  }
+
+  .lot-number {
+    flex: 0 0 auto;
+    font-size: 45px;
+    font-weight: 400;
+    color: #0087db;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .title-scroll {
+    position: relative;
+    overflow: hidden;
+    flex: 1 1 auto;
+    min-width: 160px;
+    height: 1.35em;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    font-size: 45px;
+    font-weight: 400;
+    color: #ffffff;
+  }
+
+  .title-scroll .inner {
+    display: inline-block;
+    white-space: nowrap;
+    transform: translate3d(0,0,0);
+  }
+
+  .hidden { display: none !important; }
+
+  .fade-out { animation: fadeOut 250ms ease-in-out both; }
+  .slide-in-right { animation: slideInRight 250ms ease-in-out both; }
+  .pill-dissolve { animation: fadeOut 250ms ease-in-out both; }
+
+  @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(14px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .layout-guide {
+    position: absolute;
+    pointer-events: none;
+    box-sizing: border-box;
+    border: 2px dashed rgba(255, 0, 128, 0.55);
+    display: none;
+  }
+
+  body.show-guides .layout-guide { display: block; }
+  .guide-stage { inset: 0; }
+  .guide-ticker { left: 0; bottom: 0; width: 3840px; height: 240px; border-color: rgba(0,160,255,.8); }
+</style>
+</head>
+<body>
+  <div class="viewport">
+    <div id="stage" class="display-stage">
+      <div class="layout-guide guide-stage"></div>
+      <div class="ticker-bar">
+        <div class="layout-guide guide-ticker"></div>
+        <div class="logo-section">
+          <img src="/displays/pylon/logo.png" alt="Broad Arrow Auctions" onerror="console.warn('[new-ticker] Logo missing at /displays/pylon/logo.png')" />
+        </div>
+        <div class="up-next-label"><span>UP</span><span>NEXT</span></div>
+        <div class="lots-section" id="lotsSection">
+          <div id="slot1" class="lot-entry hidden">
+            <span id="slot1Lot" class="lot-number"></span>
+            <span id="slot1Title" class="title-scroll" data-title="—"><span class="inner">—</span></span>
+          </div>
+          <div id="slot2" class="lot-entry hidden">
+            <span id="slot2Lot" class="lot-number"></span>
+            <span id="slot2Title" class="title-scroll" data-title="—"><span class="inner">—</span></span>
+          </div>
+          <div id="slot3" class="lot-entry hidden">
+            <span id="slot3Lot" class="lot-number"></span>
+            <span id="slot3Title" class="title-scroll" data-title="—"><span class="inner">—</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.__NEUD_DISPLAY_CONFIG__ = {
+      displayId: "new-ticker-v1",
+      endpoint: "/api/displays/new-ticker-v1/data",
+      pollMs: 1000,
+    };
+  </script>
+  <script src="/displays/shared/display-connection.js?v=20260721"></script>
+  <script src="/displays/shared/new-auction-display-core.js?v=20260721"></script>
+  <script>
+    const core = window.NEUDAuctionDisplayCore;
+    const stage = document.getElementById("stage");
+    const slots = [
+      {
+        entry: document.getElementById("slot1"),
+        lot: document.getElementById("slot1Lot"),
+        title: document.getElementById("slot1Title"),
+      },
+      {
+        entry: document.getElementById("slot2"),
+        lot: document.getElementById("slot2Lot"),
+        title: document.getElementById("slot2Title"),
+      },
+      {
+        entry: document.getElementById("slot3"),
+        lot: document.getElementById("slot3Lot"),
+        title: document.getElementById("slot3Title"),
+      },
+    ];
+
+    const TICKER_MODE = "up-next";
+
+    function resizeStage() {
+      core.scaleStage(stage);
+    }
+
+    window.addEventListener("resize", resizeStage);
+    resizeStage();
+
+    if (core.LAYOUT_GUIDES) {
+      document.body.classList.add("show-guides");
+    }
+
+    function dissolveHide(entryEl) {
+      if (entryEl.classList.contains("hidden")) return;
+      entryEl.classList.remove("pill-dissolve");
+      void entryEl.offsetWidth;
+      entryEl.classList.add("pill-dissolve");
+      setTimeout(() => {
+        entryEl.classList.add("hidden");
+        entryEl.classList.remove("pill-dissolve");
+      }, core.FADE_MS);
+    }
+
+    function showEntry(entryEl) {
+      if (!entryEl.classList.contains("hidden")) return;
+      entryEl.classList.remove("hidden", "slide-in-right", "fade-out", "pill-dissolve");
+      void entryEl.offsetWidth;
+      entryEl.classList.add("slide-in-right");
+      setTimeout(() => entryEl.classList.remove("slide-in-right"), core.FADE_MS);
+    }
+
+    function applyLotToSlot(index, lot) {
+      const slot = slots[index];
+      if (!lot) return;
+      core.transitionText(slot.lot, core.formatLotLabel(lot.lot));
+      core.transitionTitle(slot.title, lot.title || "—");
+    }
+
+    function placeNextLots(nextArr) {
+      if (TICKER_MODE !== "up-next") return;
+
+      const items = Array.isArray(nextArr)
+        ? nextArr.filter((entry) => entry && entry.lot && entry.lot !== "—" && entry.title)
+        : [];
+      const count = items.length;
+
+      if (count >= 3) {
+        showEntry(slots[0].entry);
+        showEntry(slots[1].entry);
+        showEntry(slots[2].entry);
+        applyLotToSlot(0, items[0]);
+        applyLotToSlot(1, items[1]);
+        applyLotToSlot(2, items[2]);
+        return;
+      }
+
+      if (count === 2) {
+        showEntry(slots[0].entry);
+        showEntry(slots[1].entry);
+        dissolveHide(slots[2].entry);
+        applyLotToSlot(0, items[0]);
+        applyLotToSlot(1, items[1]);
+        return;
+      }
+
+      if (count === 1) {
+        showEntry(slots[0].entry);
+        dissolveHide(slots[1].entry);
+        dissolveHide(slots[2].entry);
+        applyLotToSlot(0, items[0]);
+        return;
+      }
+
+      dissolveHide(slots[0].entry);
+      dissolveHide(slots[1].entry);
+      dissolveHide(slots[2].entry);
+    }
+
+    function render(payload) {
+      placeNextLots(payload?.next || []);
+    }
+
+    const poller = core.createPoller((payload) => render(payload), {
+      onDisabled: () => core.showDisplayOffPage(),
+    });
+
+    async function bootstrapDisplayConnection() {
+      const endpoint =
+        window.__NEUD_DISPLAY_CONFIG__?.endpoint ||
+        new URLSearchParams(window.location.search).get("src");
+
+      if (window.NEUDDisplayConnection && endpoint) {
+        const connected = await window.NEUDDisplayConnection.fetchInitialConnectionState(endpoint);
+        if (!connected) {
+          core.showDisplayOffPage();
+          return;
+        }
+      }
+
+      poller.start();
+    }
+
+    void bootstrapDisplayConnection();
+  </script>
+</body>
+</html>

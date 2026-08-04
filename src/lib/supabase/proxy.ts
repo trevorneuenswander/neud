@@ -1,6 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSafeRedirectPath } from "@/lib/auth/redirect";
+import {
+  DEFAULT_HOSTED_LANDING_PATH,
+} from "@/lib/routing/startup-paths";
+import {
+  HOSTED_PORTAL_PREFIX,
+  isHostedDesktopOnlyPath,
+  isHostedLegacyPortalPath,
+  isHostedViewerPath,
+  mapHostedLegacyPathToPortal,
+} from "@/lib/routing/hosted-routes";
+import { shouldUseLocalData } from "@/lib/local/mode";
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
@@ -9,8 +20,17 @@ const PROTECTED_PREFIXES = [
   "/users",
   "/activity",
   "/settings",
+  HOSTED_PORTAL_PREFIX,
 ];
-const AUTH_ROUTES = ["/login", "/signup", "/request-access"];
+const AUTH_ROUTES = ["/", "/login", "/signup", "/request-access", "/forgot-password"];
+
+function isAuthRoute(pathname: string): boolean {
+  if (AUTH_ROUTES.includes(pathname)) {
+    return true;
+  }
+
+  return pathname.startsWith("/auth/reset-password");
+}
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(
@@ -19,6 +39,12 @@ function isProtectedPath(pathname: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  if (shouldUseLocalData()) {
+    return NextResponse.next({
+      request,
+    });
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -54,6 +80,22 @@ export async function updateSession(request: NextRequest) {
   const isAuthenticated = Boolean(data?.claims);
   const { pathname } = request.nextUrl;
 
+  if (!isHostedViewerPath(pathname) && isHostedDesktopOnlyPath(pathname)) {
+    const portalUrl = request.nextUrl.clone();
+    portalUrl.pathname = DEFAULT_HOSTED_LANDING_PATH;
+    portalUrl.search = "";
+    return NextResponse.redirect(portalUrl);
+  }
+
+  if (isHostedLegacyPortalPath(pathname)) {
+    const mapped = mapHostedLegacyPathToPortal(pathname);
+    if (mapped && mapped !== pathname) {
+      const portalUrl = request.nextUrl.clone();
+      portalUrl.pathname = mapped;
+      return NextResponse.redirect(portalUrl);
+    }
+  }
+
   if (!isAuthenticated && isProtectedPath(pathname)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
@@ -64,11 +106,11 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isAuthenticated && AUTH_ROUTES.includes(pathname)) {
-    const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/dashboard";
-    dashboardUrl.search = "";
-    return NextResponse.redirect(dashboardUrl);
+  if (isAuthenticated && isAuthRoute(pathname)) {
+    const landingUrl = request.nextUrl.clone();
+    landingUrl.pathname = DEFAULT_HOSTED_LANDING_PATH;
+    landingUrl.search = "";
+    return NextResponse.redirect(landingUrl);
   }
 
   return supabaseResponse;

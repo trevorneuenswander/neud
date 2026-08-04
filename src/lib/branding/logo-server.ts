@@ -1,13 +1,15 @@
-import "server-only";
-
-import { existsSync } from "fs";
+import fs from "fs";
 import path from "path";
-import { HMG_LOGO_PATH } from "@/lib/branding/logo";
+import { NEUD_LOGO_PATH } from "@/lib/branding/logo";
 
-export { HMG_LOGO_PATH };
+export { NEUD_LOGO_PATH };
 
-export function logoExists(): boolean {
-  return existsSync(
-    path.join(process.cwd(), "public", "branding", "hmg-logo.png"),
-  );
+export function readNeudLogoBase64(): string | null {
+  const logoPath = path.join(process.cwd(), "public", "branding", "neud-logo.png");
+  if (!fs.existsSync(logoPath)) {
+    return null;
+  }
+
+  const buffer = fs.readFileSync(logoPath);
+  return `data:image/png;base64,${buffer.toString("base64")}`;
 }

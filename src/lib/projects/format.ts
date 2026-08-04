@@ -1,10 +1,10 @@
 import {
   PROJECT_ACCESS_LEVEL_LABELS,
+  PROJECT_DATA_TYPE_LABELS,
   PROJECT_STATUS_LABELS,
-  PROJECT_TYPE_LABELS,
   type ProjectAccessLevelWithAdmin,
+  type ProjectDataType,
   type ProjectStatus,
-  type ProjectType,
 } from "@/lib/projects/constants";
 
 export function formatProjectNumber(projectNumber: number): string {
@@ -15,9 +15,12 @@ export function formatProjectStatus(status: ProjectStatus): string {
   return PROJECT_STATUS_LABELS[status] ?? status;
 }
 
-export function formatProjectType(projectType: ProjectType): string {
-  return PROJECT_TYPE_LABELS[projectType] ?? projectType;
+export function formatProjectDataType(dataType: ProjectDataType): string {
+  return PROJECT_DATA_TYPE_LABELS[dataType] ?? dataType;
 }
+
+/** @deprecated Use formatProjectDataType */
+export const formatProjectType = formatProjectDataType;
 
 export function formatProjectAccessLevel(
   accessLevel: ProjectAccessLevelWithAdmin,

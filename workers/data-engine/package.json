@@ -1,0 +1,22 @@
+{
+  "name": "@neud/data-engine-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-dist.mjs",
+    "build:local": "node scripts/build-local-dist.mjs",
+    "build:remote": "node scripts/build-dist.mjs",
+    "start": "node src/index.js",
+    "start:remote": "node dist/index.js",
+    "start:local": "node dist-local/index.js",
+    "browser:install": "npx puppeteer browsers install chrome",
+    "browser:diagnose": "node scripts/diagnose-browser-runtime.mjs",
+    "check": "node --check src/index.js && node --check src/engine-runtime.js && node --check src/commands.js && node --check src/config.js && node --check src/errors.js && node --check src/adapters/bag-auction.js && node --check src/adapters/generic-webpage.js && node --check src/adapters/registry.js && node --check src/adapters/webpage-scraper/browser.js && node --check src/browser/resolve-puppeteer-browser.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7",
+    "puppeteer": "^24.23.0"
+  }
+}

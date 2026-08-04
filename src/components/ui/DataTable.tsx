@@ -1,12 +1,13 @@
 type DataTableProps = {
   children: React.ReactNode;
   className?: string;
+  tableClassName?: string;
 };
 
-export function DataTable({ children, className = "" }: DataTableProps) {
+export function DataTable({ children, className = "", tableClassName = "" }: DataTableProps) {
   return (
     <div className={`overflow-x-auto rounded-lg border border-border ${className}`}>
-      <table className="min-w-full divide-y divide-border text-sm">
+      <table className={`min-w-full divide-y divide-border text-sm ${tableClassName}`}>
         {children}
       </table>
     </div>
@@ -40,8 +41,20 @@ export function DataTableBody({ children }: { children: React.ReactNode }) {
   return <tbody className="divide-y divide-border bg-surface">{children}</tbody>;
 }
 
-export function DataTableRow({ children }: { children: React.ReactNode }) {
-  return <tr className="align-top">{children}</tr>;
+export function DataTableRow({
+  children,
+  className = "",
+  onClick,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <tr className={`align-top ${className}`} onClick={onClick}>
+      {children}
+    </tr>
+  );
 }
 
 export function DataTableCell({

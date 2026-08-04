@@ -1,5 +1,5 @@
 -- =============================================================================
--- HMG Graphics Server: access requests, profiles, and future project access
+-- NEUD: access requests, profiles, and future project access
 -- =============================================================================
 --
 -- Authorization model (two layers):

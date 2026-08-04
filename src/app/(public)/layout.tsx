@@ -1,4 +1,5 @@
 import { PublicHeader } from "@/components/layout/PublicHeader";
+import { PublicHeaderGate } from "@/components/layout/PublicHeaderGate";
 
 export default function PublicLayout({
   children,
@@ -6,9 +7,11 @@ export default function PublicLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <PublicHeader />
-      <main className="flex-1">{children}</main>
+    <div className="flex h-full flex-col overflow-hidden">
+      <PublicHeaderGate>
+        <PublicHeader />
+      </PublicHeaderGate>
+      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
     </div>
   );
 }

@@ -19,8 +19,8 @@ export {
   logConfirmationError,
 } from "@/lib/auth/confirm-shared";
 
-export const RECOVERY_SESSION_COOKIE = "hmg-recovery-session";
-export const INVITE_SESSION_COOKIE = "hmg-invite-session";
+export const RECOVERY_SESSION_COOKIE = "neud-recovery-session";
+export const INVITE_SESSION_COOKIE = "neud-invite-session";
 
 export const FLOW_SESSION_COOKIE_OPTIONS = {
   httpOnly: true,

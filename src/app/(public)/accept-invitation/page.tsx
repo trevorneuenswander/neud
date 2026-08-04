@@ -8,7 +8,7 @@ export default async function AcceptInvitationPage() {
   return (
     <PublicPage
       title="Set your password"
-      description="Create a password for your HMG Graphics Server account. After setting your password, you will have general portal access. Project access will be assigned separately by a platform administrator."
+      description="Create a password for your NEUD account. After setting your password, you will have general portal access. Project access will be assigned separately by a platform administrator."
     >
       <AcceptInvitationForm />
     </PublicPage>

@@ -11,7 +11,6 @@ import {
 } from "@/lib/auth/confirm";
 import { toAuthErrorMessage } from "@/lib/auth/errors";
 import { getSafeRedirectPath } from "@/lib/auth/redirect";
-import { getSiteOrigin } from "@/lib/auth/site-origin";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthActionState } from "@/lib/auth/state";
 import {
@@ -58,38 +57,7 @@ export async function signIn(
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
-  redirect("/login");
-}
-
-export async function requestPasswordReset(
-  _prevState: AuthActionState,
-  formData: FormData,
-): Promise<AuthActionState> {
-  const email = String(formData.get("email") ?? "");
-
-  const emailError = validateEmail(email);
-  if (emailError) {
-    return { error: emailError, success: null };
-  }
-
-  const supabase = await createClient();
-  const origin = await getSiteOrigin();
-  const redirectTo = `${origin}/auth/confirm?next=${encodeURIComponent("/update-password")}`;
-
-  const { error } = await supabase.auth.resetPasswordForEmail(
-    email.trim(),
-    { redirectTo },
-  );
-
-  if (error) {
-    return { error: toAuthErrorMessage(error), success: null };
-  }
-
-  return {
-    error: null,
-    success:
-      "If an account exists for that email, a password reset link has been sent.",
-  };
+  redirect("/");
 }
 
 export async function updatePassword(

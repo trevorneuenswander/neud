@@ -1,4 +1,5 @@
 import {
+  CREATABLE_PROJECT_DATA_TYPES,
   DEFAULT_PROJECT_ICON,
   DEFAULT_PROJECT_THEME,
   MAX_LOGO_URL_LENGTH,
@@ -7,9 +8,8 @@ import {
   MAX_PROJECT_NAME_LENGTH,
   MAX_PROJECT_THEME_LENGTH,
   PROJECT_ACCESS_LEVELS,
-  PROJECT_TYPES,
+  type CreatableProjectDataType,
   type ProjectAccessLevel,
-  type ProjectType,
 } from "@/lib/projects/constants";
 import { isValidHexColor } from "@/lib/projects/format";
 
@@ -44,9 +44,17 @@ export function validateProjectDescription(description: string): string | null {
   return null;
 }
 
-export function validateProjectType(projectType: string): ProjectType | null {
-  if (PROJECT_TYPES.includes(projectType as ProjectType)) {
-    return projectType as ProjectType;
+export function validateCreatableProjectDataType(
+  dataType: string,
+): CreatableProjectDataType | null {
+  const trimmed = dataType.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (CREATABLE_PROJECT_DATA_TYPES.includes(trimmed as CreatableProjectDataType)) {
+    return trimmed as CreatableProjectDataType;
   }
 
   return null;

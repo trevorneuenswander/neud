@@ -1,8 +1,11 @@
+"use client";
+
 import Link from "next/link";
-import { ProjectAccessBadge } from "@/components/projects/ProjectAccessBadge";
-import { ProjectStatusBadge } from "@/components/projects/ProjectStatusBadge";
-import { ProjectTypeLabel } from "@/components/projects/ProjectTypeLabel";
-import { Button } from "@/components/ui/Button";
+import { useRouter } from "next/navigation";
+import {
+  ProjectVisibilityBadge,
+  projectListVisibility,
+} from "@/components/projects/ProjectVisibilityBadge";
 import {
   DataTable,
   DataTableBody,
@@ -11,58 +14,79 @@ import {
   DataTableHeaderCell,
   DataTableRow,
 } from "@/components/ui/DataTable";
-import {
-  formatProjectDate,
-  formatProjectNumber,
-} from "@/lib/projects/format";
+import { formatProjectDate, formatProjectDataType } from "@/lib/projects/format";
 import type { ProjectListItem } from "@/lib/projects/types";
+import type { ProjectDataType } from "@/lib/projects/constants";
 
 type ProjectListProps = {
   projects: ProjectListItem[];
+  viewerMode?: boolean;
 };
 
-export function ProjectList({ projects }: ProjectListProps) {
+function projectHref(slug: string, viewerMode: boolean) {
+  return viewerMode ? `/projects/${slug}/displays` : `/projects/${slug}`;
+}
+
+function formatListDataType(projectType: ProjectDataType): string {
+  if (projectType === "bag-graphics") {
+    return "Webpage Scraper";
+  }
+  return formatProjectDataType(projectType);
+}
+
+export function ProjectList({ projects, viewerMode = false }: ProjectListProps) {
+  const router = useRouter();
+
   return (
     <>
       <div className="hidden md:block">
         <DataTable>
           <DataTableHead>
             <DataTableHeaderCell>Project</DataTableHeaderCell>
-            <DataTableHeaderCell>Type</DataTableHeaderCell>
+            <DataTableHeaderCell>Data Type</DataTableHeaderCell>
             <DataTableHeaderCell>Status</DataTableHeaderCell>
-            <DataTableHeaderCell>Access</DataTableHeaderCell>
-            <DataTableHeaderCell>Updated</DataTableHeaderCell>
-            <DataTableHeaderCell>
-              <span className="sr-only">Actions</span>
-            </DataTableHeaderCell>
+            <DataTableHeaderCell>Last Updated</DataTableHeaderCell>
           </DataTableHead>
           <DataTableBody>
             {projects.map((project) => (
-              <DataTableRow key={project.id}>
+              <DataTableRow
+                key={project.id}
+                className="cursor-pointer transition-colors hover:bg-surface-raised"
+                onClick={() => router.push(projectHref(project.slug, viewerMode))}
+              >
                 <DataTableCell>
                   <div>
-                    <p className="font-medium text-foreground">{project.name}</p>
-                    <p className="text-xs text-muted">
-                      {formatProjectNumber(project.project_number)}
-                    </p>
+                    <Link
+                      href={projectHref(project.slug, viewerMode)}
+                      className="font-medium text-foreground hover:underline focus-visible:underline"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {project.name}
+                    </Link>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {project.teams && project.teams.length > 0 ? (
+                        project.teams.map((team) => (
+                          <span
+                            key={team.id}
+                            className="inline-flex items-center rounded-full border border-border bg-surface-raised px-2.5 py-0.5 text-xs font-medium text-muted"
+                          >
+                            {team.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted">Unassigned</span>
+                      )}
+                    </div>
                   </div>
                 </DataTableCell>
+                <DataTableCell>{formatListDataType(project.project_type)}</DataTableCell>
                 <DataTableCell>
-                  <ProjectTypeLabel projectType={project.project_type} />
-                </DataTableCell>
-                <DataTableCell>
-                  <ProjectStatusBadge status={project.status} />
-                </DataTableCell>
-                <DataTableCell>
-                  <ProjectAccessBadge accessLevel={project.accessLevel} />
+                  <ProjectVisibilityBadge
+                    isActive={projectListVisibility(project)}
+                  />
                 </DataTableCell>
                 <DataTableCell className="text-muted">
                   {formatProjectDate(project.updated_at)}
-                </DataTableCell>
-                <DataTableCell>
-                  <Button href={`/projects/${project.slug}`} variant="secondary" size="sm">
-                    Open Project
-                  </Button>
                 </DataTableCell>
               </DataTableRow>
             ))}
@@ -74,24 +98,34 @@ export function ProjectList({ projects }: ProjectListProps) {
         {projects.map((project) => (
           <Link
             key={project.id}
-            href={`/projects/${project.slug}`}
+            href={projectHref(project.slug, viewerMode)}
             className="rounded-lg border border-border bg-surface p-4 transition-colors hover:bg-surface-raised"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-medium text-foreground">{project.name}</p>
-                <p className="text-xs text-muted">
-                  {formatProjectNumber(project.project_number)}
-                </p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {project.teams && project.teams.length > 0 ? (
+                    project.teams.map((team) => (
+                      <span
+                        key={team.id}
+                        className="inline-flex items-center rounded-full border border-border bg-surface-raised px-2 py-0.5 text-xs font-medium text-muted"
+                      >
+                        {team.name}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted">Unassigned</span>
+                  )}
+                </div>
               </div>
-              <ProjectStatusBadge status={project.status} />
+              <ProjectVisibilityBadge isActive={projectListVisibility(project)} />
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-              <ProjectTypeLabel projectType={project.project_type} />
-              <ProjectAccessBadge accessLevel={project.accessLevel} />
+            <div className="mt-3 text-sm text-muted">
+              {formatListDataType(project.project_type)}
             </div>
             <p className="mt-3 text-xs text-muted">
-              Updated {formatProjectDate(project.updated_at)}
+              Last updated {formatProjectDate(project.updated_at)}
             </p>
           </Link>
         ))}

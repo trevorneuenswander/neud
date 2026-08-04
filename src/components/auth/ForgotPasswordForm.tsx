@@ -5,12 +5,12 @@ import Link from "next/link";
 import { AuthFormField } from "@/components/auth/AuthFormField";
 import { SubmitButton } from "@/components/auth/SubmitButton";
 import { Alert } from "@/components/ui/Alert";
-import { requestPasswordReset } from "@/lib/auth/actions";
+import { requestPasswordResetAction } from "@/lib/auth/password-reset-actions";
 import { initialAuthState } from "@/lib/auth/state";
 
 export function ForgotPasswordForm() {
   const [state, formAction] = useActionState(
-    requestPasswordReset,
+    requestPasswordResetAction,
     initialAuthState,
   );
   const [email, setEmail] = useState("");
@@ -31,15 +31,15 @@ export function ForgotPasswordForm() {
 
       {state.success ? <Alert variant="success">{state.success}</Alert> : null}
 
-      <SubmitButton>Send reset link</SubmitButton>
+      <SubmitButton>Send Reset Link</SubmitButton>
 
       <p className="text-sm text-muted">
         Remember your password?{" "}
         <Link
-          href="/login"
+          href="/"
           className="font-medium text-foreground underline-offset-4 hover:underline"
         >
-          Log in
+          Sign in
         </Link>
       </p>
     </form>

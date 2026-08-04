@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=3840, height=2160, initial-scale=1" />
+<title>Stream Ticker</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+  }
+
+  body {
+    font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 400;
+    color: #fff;
+    user-select: none;
+  }
+
+  :root {
+    --canvas-w: 3840px;
+    --canvas-h: 2160px;
+    --ticker-bar-height: 240px;
+    --ticker-logo-panel-width: 960px;
+    --ticker-logo-safe-inset: 35px;
+    --ticker-up-next-x: calc(var(--ticker-logo-panel-width) + var(--ticker-logo-safe-inset));
+    --ticker-lot-group-left-offset: 235px;
+    --ticker-lot-1-anchor-x: 1540px;
+    --ticker-lot-2-anchor-x: 2300px;
+    --ticker-lot-3-anchor-x: 3060px;
+    --ticker-lot-1-x: calc(var(--ticker-lot-1-anchor-x) - var(--ticker-lot-group-left-offset));
+    --ticker-lot-2-x: calc(var(--ticker-lot-2-anchor-x) - var(--ticker-lot-group-left-offset));
+    --ticker-lot-3-x: calc(var(--ticker-lot-3-anchor-x) - var(--ticker-lot-group-left-offset));
+    --ticker-right-safe-inset: 35px;
+    --ticker-up-next-width: calc(var(--ticker-lot-1-x) - var(--ticker-up-next-x));
+    --ticker-lot-region-width: 700px;
+    --ticker-lot-3-width: calc(var(--canvas-w) - var(--ticker-lot-3-x) - var(--ticker-right-safe-inset));
+  }
+
+  .viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+  }
+
+  .display-stage {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    top: auto;
+    width: var(--canvas-w);
+    height: var(--canvas-h);
+    transform-origin: left bottom;
+    background: transparent;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+  }
+
+  .stream-ticker-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--ticker-bar-height);
+    background: linear-gradient(
+      to right,
+      #000000 0,
+      #000000 var(--ticker-logo-panel-width),
+      #0f1316 var(--ticker-logo-panel-width),
+      #0f1316 100%
+    );
+    overflow: hidden;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+  }
+
+  .logo-panel {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--ticker-logo-panel-width);
+    background: #000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: var(--ticker-logo-safe-inset);
+    border: 0;
+    outline: none;
+    box-shadow: none;
+    z-index: 2;
+    margin: 0;
+  }
+
+  .logo-panel img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: calc(var(--ticker-logo-panel-width) - (2 * var(--ticker-logo-safe-inset)));
+    max-height: calc(var(--ticker-bar-height) - (2 * var(--ticker-logo-safe-inset)));
+    object-fit: contain;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+    vertical-align: top;
+  }
+
+  .up-next-label {
+    position: absolute;
+    left: var(--ticker-up-next-x);
+    top: 0;
+    bottom: 0;
+    width: var(--ticker-up-next-width);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #ebebeb;
+    font-size: 50px;
+    font-weight: 400;
+    line-height: 0.95;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background: transparent;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+    white-space: nowrap;
+    z-index: 1;
+  }
+
+  .lot-entry {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+  }
+
+  .lot-content {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  #slot1 {
+    left: var(--ticker-lot-1-x);
+    width: var(--ticker-lot-region-width);
+  }
+
+  #slot2 {
+    left: var(--ticker-lot-2-x);
+    width: var(--ticker-lot-region-width);
+  }
+
+  #slot3 {
+    left: var(--ticker-lot-3-x);
+    width: var(--ticker-lot-3-width);
+  }
+
+  .lot-number {
+    flex: 0 0 auto;
+    font-size: 45px;
+    font-weight: 400;
+    color: #0087db;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .title-scroll {
+    position: relative;
+    overflow: hidden;
+    height: 1.2em;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    font-size: 45px;
+    font-weight: 400;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+  .title-scroll .inner {
+    display: inline-block;
+    white-space: nowrap;
+    transform: translate3d(0, 0, 0);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+
+  .title-scroll .inner.is-frozen {
+    animation: none !important;
+  }
+
+  .hidden { display: none !important; }
+
+  .lot-content.fade-out {
+    animation: fadeOut 250ms ease-in-out both;
+    will-change: opacity;
+  }
+
+  .lot-content.slide-in-right {
+    animation: slideInRight 250ms ease-in-out both;
+    will-change: transform, opacity;
+  }
+
+  .lot-entry.pill-dissolve {
+    animation: fadeOut 250ms ease-in-out both;
+    will-change: opacity;
+  }
+
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(14px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+</style>
+</head>
+<body>
+  <div class="viewport">
+    <div id="stage" class="display-stage">
+      <div class="stream-ticker-bar">
+        <div class="logo-panel">
+          <img src="/displays/pylon/logo.png" alt="Broad Arrow Auctions" />
+        </div>
+        <div class="up-next-label"><span>UP</span><span>NEXT</span></div>
+        <div id="slot1" class="lot-entry hidden">
+          <div class="lot-content">
+            <span id="slot1Lot" class="lot-number"></span>
+            <span id="slot1Title" class="title-scroll" data-title=""><span class="inner"></span></span>
+          </div>
+        </div>
+        <div id="slot2" class="lot-entry hidden">
+          <div class="lot-content">
+            <span id="slot2Lot" class="lot-number"></span>
+            <span id="slot2Title" class="title-scroll" data-title=""><span class="inner"></span></span>
+          </div>
+        </div>
+        <div id="slot3" class="lot-entry hidden">
+          <div class="lot-content">
+            <span id="slot3Lot" class="lot-number"></span>
+            <span id="slot3Title" class="title-scroll" data-title=""><span class="inner"></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var CANVAS_W = 3840;
+  var CANVAS_H = 2160;
+  var FADE_MS = 250;
+  var V = 40;
+  var EASE_SEC = 1;
+  var PAUSE_MS = 4000;
+  var EPS = 0.5;
+  var MAX_UPCOMING_LOTS = 3;
+
+  var stage = document.getElementById("stage");
+  var slotStates = [
+    {
+      entry: document.getElementById("slot1"),
+      content: document.querySelector("#slot1 .lot-content"),
+      lot: document.getElementById("slot1Lot"),
+      title: document.getElementById("slot1Title"),
+      activeLotKey: null,
+      transitionGeneration: 0,
+    },
+    {
+      entry: document.getElementById("slot2"),
+      content: document.querySelector("#slot2 .lot-content"),
+      lot: document.getElementById("slot2Lot"),
+      title: document.getElementById("slot2Title"),
+      activeLotKey: null,
+      transitionGeneration: 0,
+    },
+    {
+      entry: document.getElementById("slot3"),
+      content: document.querySelector("#slot3 .lot-content"),
+      lot: document.getElementById("slot3Lot"),
+      title: document.getElementById("slot3Title"),
+      activeLotKey: null,
+      transitionGeneration: 0,
+    },
+  ];
+
+  var rafs = new WeakMap();
+
+  function textValue(value) {
+    if (value == null) return "";
+    return String(value).trim();
+  }
+
+  function formatLotLabel(raw) {
+    var trimmed = textValue(raw);
+    if (!trimmed || trimmed === "—") return "Lot —";
+    if (/^lot\s+/i.test(trimmed)) return trimmed;
+    return "Lot " + trimmed;
+  }
+
+  function buildLotKey(lot) {
+    if (!lot) return "";
+    return textValue(lot.lot) + "\u0000" + textValue(lot.title);
+  }
+
+  function scaleStage() {
+    var scale = Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H);
+    stage.style.transform = "scale(" + scale + ")";
+  }
+
+  function cancelLoop(container) {
+    if (rafs.has(container)) {
+      cancelAnimationFrame(rafs.get(container));
+      rafs.delete(container);
+    }
+  }
+
+  function getTitleInner(container) {
+    return container ? container.querySelector(".inner") : null;
+  }
+
+  function freezeMarqueePosition(container) {
+    var inner = getTitleInner(container);
+    if (!inner) return null;
+
+    var computed = window.getComputedStyle(inner).transform;
+    if (computed && computed !== "none") {
+      inner.style.transform = computed;
+    }
+    inner.classList.add("is-frozen");
+    cancelLoop(container);
+    return computed;
+  }
+
+  function unfreezeMarqueePosition(container) {
+    var inner = getTitleInner(container);
+    if (!inner) return;
+    inner.classList.remove("is-frozen");
+  }
+
+  function measureWidth(el) {
+    var rect = el.getBoundingClientRect();
+    return rect.width || el.scrollWidth || 1e-6;
+  }
+
+  function escapeHTML(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function ensureTrack(container) {
+    var inner = getTitleInner(container);
+    if (!inner) return { mode: "single", width: 0 };
+
+    var text = (container.getAttribute("data-title") || inner.textContent || "—").trim() || "—";
+
+    if (inner.classList.contains("is-frozen")) {
+      var frozenWidth = measureWidth(inner);
+      if (frozenWidth <= container.clientWidth + EPS) {
+        return { mode: "single", width: frozenWidth };
+      }
+      return { mode: "loop", width: Math.max(frozenWidth, 1e-6) };
+    }
+
+    inner.textContent = text;
+    var singleWidth = measureWidth(inner);
+
+    if (singleWidth <= container.clientWidth + EPS) {
+      inner.setAttribute("data-built", "single");
+      inner.style.transform = "translate3d(0,0,0)";
+      return { mode: "single", width: singleWidth };
+    }
+
+    var signature = "loop:" + text;
+    if (inner.getAttribute("data-built") !== signature) {
+      var gap = "\u00A0\u00A0\u00A0•\u00A0\u00A0\u00A0";
+      inner.innerHTML =
+        '<span class="copyA">' + escapeHTML(text) + "</span>" +
+        '<span class="gap">' + gap + "</span>" +
+        '<span class="copyB">' + escapeHTML(text) + "</span>";
+      inner.setAttribute("data-built", signature);
+    }
+
+    var copyA = inner.querySelector(".copyA");
+    var gapEl = inner.querySelector(".gap");
+    var loopWidth = (measureWidth(copyA) + measureWidth(gapEl)) || 1e-6;
+    return { mode: "loop", width: loopWidth };
+  }
+
+  function startMarquee(container) {
+    var inner = getTitleInner(container);
+    if (!inner || inner.classList.contains("is-frozen")) return;
+
+    cancelLoop(container);
+    if (!inner) return;
+
+    var track = ensureTrack(container);
+    if (track.mode === "single") {
+      inner.style.transform = "translate3d(0,0,0)";
+      return;
+    }
+
+    var acceleration = V / EASE_SEC;
+    var easeDistance = 0.5 * acceleration * EASE_SEC * EASE_SEC;
+    var cruiseDistance = Math.max(0, track.width - 2 * easeDistance);
+    var cruiseSec = cruiseDistance / V;
+    var totalSec = EASE_SEC + cruiseSec + EASE_SEC;
+    var totalMs = totalSec * 1000;
+
+    var phase = "prepause";
+    var startedAt = performance.now();
+    var loopGeneration = slotStates.find(function (slot) {
+      return slot.title === container;
+    });
+    loopGeneration = loopGeneration ? loopGeneration.transitionGeneration : 0;
+
+    function distanceAt(ms) {
+      var seconds = ms / 1000;
+      if (seconds <= 0) return 0;
+      if (seconds <= EASE_SEC) return 0.5 * acceleration * seconds * seconds;
+      if (seconds <= EASE_SEC + cruiseSec) {
+        return easeDistance + V * (seconds - EASE_SEC);
+      }
+      if (seconds <= totalSec) {
+        var tail = seconds - (EASE_SEC + cruiseSec);
+        return easeDistance + cruiseDistance + (V * tail - 0.5 * acceleration * tail * tail);
+      }
+      return track.width;
+    }
+
+    function tick(now) {
+      var frameId = requestAnimationFrame(tick);
+      rafs.set(container, frameId);
+
+      if (inner.classList.contains("is-frozen")) {
+        cancelLoop(container);
+        return;
+      }
+
+      if (phase === "prepause") {
+        inner.style.transform = "translate3d(0,0,0)";
+        if (now - startedAt >= PAUSE_MS) {
+          phase = "scroll";
+          startedAt = now;
+        }
+        return;
+      }
+
+      var elapsed = now - startedAt;
+      if (elapsed >= totalMs - 0.1) {
+        inner.style.transform = "translate3d(0,0,0)";
+        phase = "prepause";
+        startedAt = now;
+        return;
+      }
+
+      inner.style.transform = "translate3d(" + (-distanceAt(elapsed)) + "px,0,0)";
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  function writeSlotContent(slot, lotText, titleText) {
+    var inner = getTitleInner(slot.title);
+    slot.lot.textContent = lotText;
+    slot.lot.setAttribute("data-text", lotText);
+    slot.title.setAttribute("data-title", titleText);
+    if (inner) {
+      inner.textContent = titleText;
+      inner.setAttribute("data-built", "");
+      inner.style.transform = "translate3d(0,0,0)";
+      inner.classList.remove("is-frozen");
+    }
+  }
+
+  function beginContentExit(contentEl) {
+    contentEl.classList.remove("fade-out", "slide-in-right");
+    void contentEl.offsetWidth;
+    contentEl.classList.add("fade-out");
+  }
+
+  function beginContentEntrance(contentEl, onComplete) {
+    contentEl.classList.remove("fade-out", "slide-in-right");
+    void contentEl.offsetWidth;
+    contentEl.classList.add("slide-in-right");
+    window.setTimeout(function () {
+      contentEl.classList.remove("slide-in-right");
+      if (typeof onComplete === "function") {
+        onComplete();
+      }
+    }, FADE_MS);
+  }
+
+  function transitionSlot(slot, lotText, titleText) {
+    var generation = ++slot.transitionGeneration;
+    freezeMarqueePosition(slot.title);
+    beginContentExit(slot.content);
+
+    window.setTimeout(function () {
+      if (generation !== slot.transitionGeneration) {
+        return;
+      }
+
+      writeSlotContent(slot, lotText, titleText);
+      beginContentEntrance(slot.content, function () {
+        if (generation !== slot.transitionGeneration) {
+          return;
+        }
+        requestAnimationFrame(function () {
+          if (generation !== slot.transitionGeneration) {
+            return;
+          }
+          startMarquee(slot.title);
+        });
+      });
+    }, FADE_MS);
+  }
+
+  function revealSlotFresh(slot, lotText, titleText, lotKeyValue) {
+    var generation = ++slot.transitionGeneration;
+    cancelLoop(slot.title);
+    writeSlotContent(slot, lotText, titleText);
+    slot.activeLotKey = lotKeyValue;
+    slot.entry.classList.remove("hidden", "pill-dissolve");
+    slot.content.classList.remove("fade-out", "slide-in-right");
+    void slot.content.offsetWidth;
+    slot.content.classList.add("slide-in-right");
+
+    window.setTimeout(function () {
+      if (generation !== slot.transitionGeneration) {
+        return;
+      }
+      slot.content.classList.remove("slide-in-right");
+      requestAnimationFrame(function () {
+        if (generation !== slot.transitionGeneration) {
+          return;
+        }
+        startMarquee(slot.title);
+      });
+    }, FADE_MS);
+  }
+
+  function dissolveHideSlot(slot) {
+    if (slot.entry.classList.contains("hidden")) {
+      return;
+    }
+
+    ++slot.transitionGeneration;
+    freezeMarqueePosition(slot.title);
+    slot.entry.classList.remove("pill-dissolve");
+    void slot.entry.offsetWidth;
+    slot.entry.classList.add("pill-dissolve");
+
+    window.setTimeout(function () {
+      slot.entry.classList.add("hidden");
+      slot.entry.classList.remove("pill-dissolve");
+      slot.content.classList.remove("fade-out", "slide-in-right");
+      slot.activeLotKey = null;
+      cancelLoop(slot.title);
+      unfreezeMarqueePosition(slot.title);
+    }, FADE_MS);
+  }
+
+  function ensureSlotMarquee(slot) {
+    if (slot.entry.classList.contains("hidden")) {
+      return;
+    }
+    if (!rafs.has(slot.title)) {
+      requestAnimationFrame(function () {
+        startMarquee(slot.title);
+      });
+    }
+  }
+
+  function normalize(d) {
+    if (!d) return { next: [] };
+    var next = d.next || [];
+    if ((!next || !next.length) && Array.isArray(d.lots) && d.lots.length) {
+      var idx = d.lots.findIndex(function (x) {
+        return x.status && /active/i.test(x.status);
+      });
+      if (idx >= 0) next = d.lots.slice(idx + 1, idx + 1 + MAX_UPCOMING_LOTS);
+      else next = d.lots.slice(1, 1 + MAX_UPCOMING_LOTS);
+    }
+    return { next: (next || []).slice(0, MAX_UPCOMING_LOTS) };
+  }
+
+  window.placeNextLots = function placeNextLots(nextArr) {
+    var items = Array.isArray(nextArr)
+      ? nextArr.filter(function (entry) {
+          return entry && textValue(entry.lot) && textValue(entry.title);
+        })
+      : [];
+    var count = Math.min(items.length, MAX_UPCOMING_LOTS);
+    var incomingKeys = [];
+
+    for (var index = 0; index < MAX_UPCOMING_LOTS; index += 1) {
+      incomingKeys[index] = index < count ? buildLotKey(items[index]) : null;
+    }
+
+    for (var slotIndex = 0; slotIndex < MAX_UPCOMING_LOTS; slotIndex += 1) {
+      var slot = slotStates[slotIndex];
+      var incomingKey = incomingKeys[slotIndex];
+      var incoming = slotIndex < count ? items[slotIndex] : null;
+
+      if (!incomingKey) {
+        dissolveHideSlot(slot);
+        continue;
+      }
+
+      var lotText = formatLotLabel(incoming.lot);
+      var titleText = textValue(incoming.title) || "—";
+
+      if (incomingKey === slot.activeLotKey) {
+        if (slot.entry.classList.contains("hidden")) {
+          revealSlotFresh(slot, lotText, titleText, incomingKey);
+        } else {
+          ensureSlotMarquee(slot);
+        }
+        continue;
+      }
+
+      if (slot.entry.classList.contains("hidden")) {
+        revealSlotFresh(slot, lotText, titleText, incomingKey);
+        continue;
+      }
+
+      slot.activeLotKey = incomingKey;
+      transitionSlot(slot, lotText, titleText);
+    }
+  };
+
+  scaleStage();
+  window.addEventListener("resize", scaleStage);
+
+  /*__NEUD_STREAM_TICKER_BRIDGE__*/
+})();
+</script>
+</body>
+</html>

@@ -65,7 +65,7 @@ export function AddProjectMemberForm({
             </option>
             {assignableUsers.map((user) => (
               <option key={user.id} value={user.id}>
-                {(user.full_name ?? user.email) + (user.company ? ` — ${user.company}` : "")}
+                {(user.full_name ?? user.email) + (user.team ? ` — ${user.team}` : "")}
               </option>
             ))}
           </select>

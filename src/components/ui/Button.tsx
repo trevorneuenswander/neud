@@ -2,13 +2,18 @@ import Link from "next/link";
 
 type ButtonProps = {
   children: React.ReactNode;
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "danger" | "destructive";
   size?: "sm" | "md";
   href?: string;
+  target?: string;
+  rel?: string;
   type?: "button" | "submit";
   disabled?: boolean;
   className?: string;
-};
+  title?: string;
+  "aria-label"?: string;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+} & React.RefAttributes<HTMLButtonElement>;
 
 const variantClasses = {
   primary:
@@ -19,6 +24,8 @@ const variantClasses = {
     "text-muted hover:bg-surface-raised hover:text-foreground disabled:opacity-50",
   danger:
     "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 disabled:opacity-50",
+  destructive:
+    "bg-danger text-white hover:bg-danger/90 disabled:bg-danger/50",
 };
 
 const sizeClasses = {
@@ -31,22 +38,36 @@ export function Button({
   variant = "primary",
   size = "md",
   href,
+  target,
+  rel,
   type = "button",
   disabled = false,
   className = "",
+  title,
+  "aria-label": ariaLabel,
+  onClick,
+  ref,
 }: ButtonProps) {
   const classes = `inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none cursor-pointer disabled:cursor-not-allowed ${variantClasses[variant]} ${sizeClasses[size]} ${className}`;
 
   if (href && !disabled) {
     return (
-      <Link href={href} className={classes}>
+      <Link href={href} className={classes} target={target} rel={rel}>
         {children}
       </Link>
     );
   }
 
   return (
-    <button type={type} disabled={disabled} className={classes}>
+    <button
+      ref={ref}
+      type={type}
+      disabled={disabled}
+      className={classes}
+      title={title}
+      aria-label={ariaLabel}
+      onClick={onClick}
+    >
       {children}
     </button>
   );

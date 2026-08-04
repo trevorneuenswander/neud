@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>bagauction Auction</title>
+  </head>
+  <body>
+    <div class="container" id="main-container">
+      <form
+        novalidate="novalidate"
+        class="form-horizontal edit_vehicle"
+        id="edit_vehicle_6041"
+        action="/vehicles/6041"
+        accept-charset="UTF-8"
+        method="post"
+      >
+        <input name="utf8" type="hidden" value="✓" />
+        <input type="hidden" name="_method" value="patch" />
+        <input type="hidden" name="authenticity_token" value="REDACTED" />
+        <div class="control-group string required vehicle_lot">
+          <label class="string required control-label" for="vehicle_lot">Lot</label>
+          <div class="controls">
+            <input
+              class="string required"
+              type="text"
+              value="VE26Lot_101"
+              name="vehicle[lot]"
+              id="vehicle_lot"
+            />
+          </div>
+        </div>
+        <div class="control-group decimal optional vehicle_current_price">
+          <label class="decimal optional control-label" for="vehicle_current_price"
+            >Current price</label
+          >
+          <div class="controls">
+            <input
+              class="numeric decimal optional"
+              type="number"
+              step="any"
+              name="vehicle[current_price]"
+              id="vehicle_current_price"
+            />
+          </div>
+        </div>
+        <div class="control-group decimal optional vehicle_reserve_price">
+          <label class="decimal optional control-label" for="vehicle_reserve_price"
+            >Reserve price</label
+          >
+          <div class="controls">
+            <input
+              class="numeric decimal optional"
+              type="number"
+              step="any"
+              value="0.0"
+              name="vehicle[reserve_price]"
+              id="vehicle_reserve_price"
+            />
+          </div>
+        </div>
+        <div class="control-group boolean optional vehicle_sold">
+          <label class="boolean optional control-label" for="vehicle_sold">Sold</label>
+          <div class="controls">
+            <input value="0" type="hidden" name="vehicle[sold]" />
+            <label class="checkbox">
+              <input
+                class="boolean optional"
+                type="checkbox"
+                value="1"
+                name="vehicle[sold]"
+                id="vehicle_sold"
+              />
+            </label>
+          </div>
+        </div>
+        <div class="control-group boolean optional vehicle_reserves_off">
+          <label class="boolean optional control-label" for="vehicle_reserves_off"
+            >Reserves off</label
+          >
+          <div class="controls">
+            <input value="0" type="hidden" name="vehicle[reserves_off]" />
+            <label class="checkbox">
+              <input
+                class="boolean optional"
+                type="checkbox"
+                value="1"
+                name="vehicle[reserves_off]"
+                id="vehicle_reserves_off"
+              />
+            </label>
+          </div>
+        </div>
+        <div class="control-group boolean optional vehicle_no_reserve">
+          <label class="boolean optional control-label" for="vehicle_no_reserve">No reserve</label>
+          <div class="controls">
+            <input value="0" type="hidden" name="vehicle[no_reserve]" />
+            <label class="checkbox">
+              <input
+                class="boolean optional"
+                type="checkbox"
+                value="1"
+                checked="checked"
+                name="vehicle[no_reserve]"
+                id="vehicle_no_reserve"
+              />
+            </label>
+          </div>
+        </div>
+        <ul class="edit-photos well" id="photos-list">
+          <li>
+            <img
+              src="https://cdn.dealeraccelerate.com/bagauction/31/5296/254385/790x1024/original-michael-schumacher-oil-paintings"
+              alt="Original michael schumacher oil paintings"
+            />
+          </li>
+          <li>
+            <img
+              src="https://cdn.dealeraccelerate.com/bagauction/31/5296/254387/790x1024/original-michael-schumacher-oil-paintings"
+              alt="Original michael schumacher oil paintings"
+            />
+          </li>
+          <li>
+            <img
+              src="https://cdn.dealeraccelerate.com/bagauction/31/5296/254388/790x1024/original-michael-schumacher-oil-paintings"
+              alt="Original michael schumacher oil paintings"
+            />
+          </li>
+          <li>
+            <img
+              src="https://cdn.dealeraccelerate.com/bagauction/31/5296/254389/790x1024/original-michael-schumacher-oil-paintings"
+              alt="Original michael schumacher oil paintings"
+            />
+          </li>
+          <li>
+            <img
+              src="https://cdn.dealeraccelerate.com/bagauction/31/5296/254386/790x1024/original-michael-schumacher-oil-paintings"
+              alt="Original michael schumacher oil paintings"
+            />
+          </li>
+        </ul>
+      </form>
+    </div>
+  </body>
+</html>

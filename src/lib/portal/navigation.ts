@@ -1,15 +1,19 @@
+import { getAppName } from "@/lib/branding/app-name";
+
 export type NavItem = {
   href: string;
   label: string;
   adminOnly?: boolean;
+  viewerHidden?: boolean;
+  /** Dashboard-style items use exact path matching; section nav uses prefix matching. */
+  activeMatch?: "exact" | "prefix";
 };
 
 export const PORTAL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
   { href: "/users", label: "Users", adminOnly: true },
-  { href: "/admin/access-requests", label: "Access Requests", adminOnly: true },
-  { href: "/activity", label: "Activity", adminOnly: true },
+  { href: "/activity", label: "Activity", viewerHidden: true },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -17,7 +21,6 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/projects": "Projects",
   "/projects/new": "New Project",
-  "/admin/access-requests": "Access Requests",
   "/users": "Users",
   "/activity": "Activity",
   "/settings": "Settings",
@@ -28,24 +31,20 @@ export function getPageTitle(pathname: string): string {
     return PAGE_TITLES[pathname];
   }
 
-  if (pathname.endsWith("/members")) {
-    return "Members";
-  }
-
   if (pathname.endsWith("/displays")) {
     return "Displays";
   }
 
-  if (pathname.endsWith("/controllers")) {
-    return "Controllers";
+  if (pathname.endsWith("/controller")) {
+    return "Local Controller";
+  }
+
+  if (pathname.endsWith("/data-engines")) {
+    return "Data Engines";
   }
 
   if (pathname.endsWith("/workers")) {
     return "Workers";
-  }
-
-  if (pathname.endsWith("/activity")) {
-    return "Activity";
   }
 
   if (pathname.endsWith("/settings")) {
@@ -56,9 +55,20 @@ export function getPageTitle(pathname: string): string {
     return "Projects";
   }
 
-  return "HMG Graphics Server";
+  return getAppName();
 }
 
 export function formatPlatformRole(role: string): string {
-  return role.charAt(0).toUpperCase() + role.slice(1);
+  const normalized = role.trim().toLowerCase();
+  if (normalized === "user") {
+    return "Operator";
+  }
+  if (normalized.length === 0) {
+    return "Viewer";
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+export function isProjectWorkspacePath(pathname: string): boolean {
+  return /^\/projects\/(?!new$)[^/]+(?:\/.*)?$/.test(pathname);
 }

@@ -1,0 +1,32 @@
+appId: com.hildreths.neud
+productName: NEUD
+electronVersion: 33.4.11
+directories:
+  output: release
+  buildResources: assets
+files:
+  - dist/**/*
+  - package.json
+asarUnpack:
+  - "**/node_modules/sharp/**/*"
+  - "**/node_modules/@img/**/*"
+extraResources:
+  - from: dist/database/assets/sql-wasm.wasm
+    to: database/assets/sql-wasm.wasm
+  - from: ../desktop/staging
+    to: staging
+    filter:
+      - "**/*"
+win:
+  icon: assets/icon.ico
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NEUD

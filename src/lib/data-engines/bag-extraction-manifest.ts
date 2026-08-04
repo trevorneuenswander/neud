@@ -1,0 +1,299 @@
+export type BagExtractionManifestEntry = {
+  key: string;
+  label: string;
+  sourceKey: string;
+  selectorOrStrategy: string;
+  extractionType: string;
+  description: string;
+  editable: boolean;
+  enabled: boolean;
+};
+
+export type BagExtractionManifestGroup = {
+  id: string;
+  title: string;
+  sourceLabel: string;
+  description?: string;
+  entries: BagExtractionManifestEntry[];
+};
+
+export const BAG_LOGIN_SELECTOR_DEFINITIONS = [
+  {
+    label: "Username selectors",
+    value: 'input[type="email"], #user_email, [name="user[email]"]',
+  },
+  {
+    label: "Password selectors",
+    value: 'input[type="password"], #user_password, [name="user[password]"]',
+  },
+  {
+    label: "Submit selectors",
+    value: 'button[type="submit"], input[type="submit"]',
+  },
+  {
+    label: "Success selector",
+    value: "#main-container table tbody",
+  },
+  {
+    label: "Failure URL substring",
+    value: "/users/sign_in",
+  },
+] as const;
+
+export const BAG_EXTRACTION_MANIFEST_GROUPS: BagExtractionManifestGroup[] = [
+  {
+    id: "vehicles-listing",
+    title: "Vehicles Listing",
+    sourceLabel: "Auction Table URL",
+    entries: [
+      {
+        key: "lot",
+        label: "Lot Number",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "td[0] textContent.trim()",
+        extractionType: "text",
+        description: "Lot number from the first table cell.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "title",
+        label: "Vehicle Title",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "td[1] textContent.trim()",
+        extractionType: "text",
+        description: "Vehicle title from the second table cell.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "price",
+        label: "Current Price",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "td[2] textContent.trim()",
+        extractionType: "text",
+        description: "Current price from the third table cell.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "status",
+        label: "Lot Status",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "td[4] .label textContent",
+        extractionType: "text",
+        description: "Status label within the fifth table cell.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "editHref",
+        label: "Vehicle Edit Link",
+        sourceKey: "vehicles",
+        selectorOrStrategy: 'td a.btn[href^="/vehicles/"][href$="/edit"] href',
+        extractionType: "attribute href",
+        description: "Relative edit URL discovered from each listing row.",
+        editable: false,
+        enabled: true,
+      },
+    ],
+  },
+  {
+    id: "vehicle-detail",
+    title: "Vehicle Detail Pages",
+    sourceLabel: "Vehicle Detail URL Strategy",
+    description: "Edit URLs are resolved relative to the Auction Table URL.",
+    entries: [
+      {
+        key: "sold",
+        label: "Sold",
+        sourceKey: "detail-template",
+        selectorOrStrategy: "#vehicle_sold checked",
+        extractionType: "checkbox",
+        description: "Sold checkbox on the vehicle edit page.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "currentPrice",
+        label: "Detail Current Price",
+        sourceKey: "detail-template",
+        selectorOrStrategy: "#vehicle_current_price input value",
+        extractionType: "input value",
+        description: "Current price input on the vehicle edit page.",
+        editable: false,
+        enabled: true,
+      },
+    ],
+  },
+  {
+    id: "auction-display",
+    title: "Auction Display Page",
+    sourceLabel: "Auction Display URL",
+    entries: [
+      {
+        key: "auctionDisplay.lot",
+        label: "Display Lot Number",
+        sourceKey: "auction-display",
+        selectorOrStrategy: '.lot-number .value (prefixed with "Lot ")',
+        extractionType: "text",
+        description: "Lot number shown on the auction display page.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "auctionDisplay.year",
+        label: "Vehicle Year",
+        sourceKey: "auction-display",
+        selectorOrStrategy: '.vehicle-name [data-bind="year"], .vehicle-name .Year',
+        extractionType: "text",
+        description: "Vehicle year from the display page.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "auctionDisplay.title",
+        label: "Display Vehicle Title",
+        sourceKey: "auction-display",
+        selectorOrStrategy: '.vehicle-name [data-bind="title"]',
+        extractionType: "text",
+        description: "Vehicle title from the display page.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "auctionDisplay.biddingPrice",
+        label: "Current Bidding Price",
+        sourceKey: "auction-display",
+        selectorOrStrategy: ".current_price",
+        extractionType: "text",
+        description: "Current bidding price on the display page.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "auctionDisplay.reserveStatus",
+        label: "Reserve Status",
+        sourceKey: "auction-display",
+        selectorOrStrategy: "#js-no-reserve.visible, #js-reserved-sm.visible",
+        extractionType: "first visible text",
+        description: "First visible reserve label.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "auctionDisplay.currencies",
+        label: "Additional Currencies",
+        sourceKey: "auction-display",
+        selectorOrStrategy: ".other-currency .price",
+        extractionType: "text array",
+        description: "Additional currency prices from the display page.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "auctionDisplay.photos",
+        label: "Vehicle Photos",
+        sourceKey: "auction-display",
+        selectorOrStrategy: "#images img src",
+        extractionType: "attribute array",
+        description: "Image URLs from the display page gallery.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "auctionDisplay.scrapedAt",
+        label: "Display Scraped At",
+        sourceKey: "auction-display",
+        selectorOrStrategy: "new Date().toISOString()",
+        extractionType: "generated timestamp",
+        description: "Timestamp recorded when the display page is scraped.",
+        editable: false,
+        enabled: true,
+      },
+    ],
+  },
+  {
+    id: "derived-state",
+    title: "Derived Auction State",
+    sourceLabel: "Multiple sources",
+    description: "Computed by the BAG adapter from listing and detail data.",
+    entries: [
+      {
+        key: "activeIndex",
+        label: "Active Lot",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "First row whose status matches /active/i",
+        extractionType: "derived",
+        description: "Index of the active lot in the listing table.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "prev",
+        label: "Previous Lot",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "Row immediately before active lot",
+        extractionType: "derived",
+        description: "Lot immediately before the active row.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "current",
+        label: "Current Lot",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "Active lot row from listing table",
+        extractionType: "derived",
+        description: "Currently active lot.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "next",
+        label: "Next Three Lots",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "Three rows immediately following active lot",
+        extractionType: "derived",
+        description: "Upcoming lots after the active row.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "lots",
+        label: "Full Ordered Lot List",
+        sourceKey: "vehicles",
+        selectorOrStrategy: "All valid listing table rows in table order",
+        extractionType: "derived collection",
+        description: "Complete ordered lot list from the vehicles table.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "lastSold",
+        label: "Last Sold Vehicle",
+        sourceKey: "detail-template",
+        selectorOrStrategy:
+          "Scan lots before active in reverse; newest cached detail where sold is true",
+        extractionType: "derived",
+        description: "Most recently sold lot before the active lot.",
+        editable: false,
+        enabled: true,
+      },
+      {
+        key: "updatedAt",
+        label: "Snapshot Updated At",
+        sourceKey: "derived",
+        selectorOrStrategy: "Adapter snapshot timestamp",
+        extractionType: "generated timestamp",
+        description: "Timestamp for the combined BAG output snapshot.",
+        editable: false,
+        enabled: true,
+      },
+    ],
+  },
+];
+
+export const BAG_EXTRACTION_DEFINITIONS = BAG_EXTRACTION_MANIFEST_GROUPS.flatMap(
+  (group) => group.entries,
+);

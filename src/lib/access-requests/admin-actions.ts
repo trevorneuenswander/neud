@@ -79,7 +79,7 @@ export async function approveAccessRequest(
       redirectTo,
       data: {
         full_name: request.full_name,
-        company: request.company,
+        team: request.company,
       },
     });
 
@@ -103,8 +103,9 @@ export async function approveAccessRequest(
   const { error: profileError } = await admin.from("profiles").upsert({
     id: invitedUserId,
     full_name: request.full_name,
-    company: request.company,
-    role: "user",
+    email: request.email,
+    team: request.company,
+    role: "viewer",
   });
 
   if (profileError) {

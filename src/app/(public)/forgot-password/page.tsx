@@ -17,8 +17,8 @@ export default async function ForgotPasswordPage({
 
   return (
     <PublicPage
-      title="Forgot password"
-      description="Enter your email address and we will send you a link to reset your password."
+      title="Reset Password"
+      description="Enter the email address associated with your account. If an account exists, we'll send you instructions to reset your password."
     >
       {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
       <div className={errorMessage ? "mt-4" : ""}>

@@ -40,3 +40,30 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# desktop / electron
+desktop/dist/
+desktop/staging/
+desktop/release/
+*.exe
+*.blockmap
+*.msi
+
+.vercel
+.env*
+
+.tmp-*/
+desktop/validation-output/
+desktop/dist/
+desktop/staging/
+desktop/release/
+workers/data-engine/logs/
+
+docs/*-diagnostic.json
+docs/slice-*.json
+docs/access-photo-matrix-results.json
+docs/validation-project-cleanup-audit.json
+
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

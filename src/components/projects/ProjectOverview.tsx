@@ -1,25 +1,36 @@
-import { ProjectAccessBadge } from "@/components/projects/ProjectAccessBadge";
+import { OverviewEngineStatistics } from "@/components/projects/OverviewEngineStatistics";
+import { ProjectActivityPanel } from "@/components/projects/ProjectActivityPanel";
 import { ProjectStatusBadge } from "@/components/projects/ProjectStatusBadge";
-import { ProjectTypeLabel } from "@/components/projects/ProjectTypeLabel";
-import { Card } from "@/components/ui/Card";
-import { StatCard } from "@/components/ui/StatCard";
-import {
-  formatProjectDate,
-  formatProjectNumber,
-  isValidHexColor,
-} from "@/lib/projects/format";
+import { DisclosureSection } from "@/components/ui/DisclosureSection";
+import { UsersWithAccessSection } from "@/components/projects/UsersWithAccessSection";
+import { formatProjectDate } from "@/lib/projects/format";
+import type { ProjectCreator } from "@/lib/displays/creator";
 import type { ProjectAccessContext } from "@/lib/projects/types";
+import type {
+  DataEngineLog,
+  DataEngineSnapshot,
+  DataEngineStatus,
+  WebpageScraperSettings,
+} from "@/lib/data-engines/types";
+
+type OverviewScraperStats = {
+  engineId: string;
+  status: DataEngineStatus | null;
+  settings: WebpageScraperSettings | null;
+  recentSnapshots: DataEngineSnapshot[];
+  logs: DataEngineLog[];
+};
 
 type ProjectOverviewProps = {
   access: ProjectAccessContext;
-  ownerName: string | null;
-  memberCount: number | null;
+  creator: ProjectCreator;
+  scraperStats?: OverviewScraperStats | null;
 };
 
 export function ProjectOverview({
   access,
-  ownerName,
-  memberCount,
+  creator,
+  scraperStats = null,
 }: ProjectOverviewProps) {
   const { project } = access;
 
@@ -30,11 +41,6 @@ export function ProjectOverview({
           <h2 className="text-2xl font-semibold text-foreground">{project.name}</h2>
           <ProjectStatusBadge status={project.status} />
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
-          <span>{formatProjectNumber(project.project_number)}</span>
-          <ProjectTypeLabel projectType={project.project_type} />
-          <ProjectAccessBadge accessLevel={access.accessLevel} />
-        </div>
         {project.description ? (
           <p className="max-w-3xl text-sm leading-6 text-muted">
             {project.description}
@@ -42,108 +48,58 @@ export function ProjectOverview({
         ) : null}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Displays"
-          value="—"
-          detail="Not configured"
-          state="unavailable"
+      {scraperStats ? (
+        <OverviewEngineStatistics
+          engineId={scraperStats.engineId}
+          initialStatus={scraperStats.status}
+          initialSettings={scraperStats.settings}
+          initialRecentSnapshots={scraperStats.recentSnapshots}
+          initialLogs={scraperStats.logs}
         />
-        <StatCard
-          label="Controllers"
-          value="—"
-          detail="Not configured"
-          state="unavailable"
-        />
-        <StatCard
-          label="Workers"
-          value="—"
-          detail="Not configured"
-          state="unavailable"
-        />
-        <StatCard
-          label="Members"
-          value={memberCount !== null ? String(memberCount) : "—"}
-          detail={
-            access.canManageMembers ? "Managed in Members tab" : "Assigned members"
-          }
-          state={memberCount !== null ? "default" : "unavailable"}
-        />
-      </div>
+      ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <h3 className="text-sm font-semibold text-foreground">Project metadata</h3>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Owner</dt>
-              <dd className="text-foreground">{ownerName ?? "Unknown"}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Created</dt>
-              <dd className="text-foreground">{formatProjectDate(project.created_at)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Updated</dt>
-              <dd className="text-foreground">{formatProjectDate(project.updated_at)}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Theme</dt>
-              <dd className="text-foreground">{project.theme}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Icon</dt>
-              <dd className="text-foreground">{project.icon}</dd>
-            </div>
-          </dl>
-        </Card>
+      <ProjectActivityPanel
+        projectId={project.id}
+        projectName={project.name}
+        projectSlug={project.slug}
+        projectEngineIds={scraperStats ? [scraperStats.engineId] : []}
+      />
 
-        <Card>
-          <h3 className="text-sm font-semibold text-foreground">Branding</h3>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted">Primary color</dt>
-              <dd className="flex items-center gap-2 text-foreground">
-                {project.primary_color && isValidHexColor(project.primary_color) ? (
-                  <>
-                    <span
-                      className="inline-block h-4 w-4 rounded border border-border"
-                      style={{ backgroundColor: project.primary_color }}
-                      aria-hidden="true"
-                    />
-                    {project.primary_color}
-                  </>
-                ) : (
-                  "Not set"
-                )}
-              </dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted">Secondary color</dt>
-              <dd className="flex items-center gap-2 text-foreground">
-                {project.secondary_color && isValidHexColor(project.secondary_color) ? (
-                  <>
-                    <span
-                      className="inline-block h-4 w-4 rounded border border-border"
-                      style={{ backgroundColor: project.secondary_color }}
-                      aria-hidden="true"
-                    />
-                    {project.secondary_color}
-                  </>
-                ) : (
-                  "Not set"
-                )}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Logo URL</dt>
-              <dd className="break-all text-right text-foreground">
-                {project.logo_url ?? "Not set"}
-              </dd>
-            </div>
-          </dl>
-        </Card>
-      </div>
+      <UsersWithAccessSection
+        projectId={project.id}
+        projectSlug={project.slug}
+        projectName={project.name}
+        canManageMembers={access.canManageMembers}
+        canViewEmails={
+          access.projectRole === "owner" ||
+          access.canManageSettings ||
+          access.canManageMembers
+        }
+      />
+
+      <DisclosureSection title="Project metadata">
+        <dl className="space-y-3 text-sm">
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted">Project type</dt>
+            <dd className="text-foreground">Webpage Scraper</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted">Creator</dt>
+            <dd className="text-right">
+              <div className="text-foreground">{creator.name}</div>
+              <div className="text-xs text-muted">{creator.email}</div>
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted">Created</dt>
+            <dd className="text-foreground">{formatProjectDate(project.created_at)}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted">Updated</dt>
+            <dd className="text-foreground">{formatProjectDate(project.updated_at)}</dd>
+          </div>
+        </dl>
+      </DisclosureSection>
     </div>
   );
 }

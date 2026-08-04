@@ -1,12 +1,14 @@
-import type { ProjectType } from "@/lib/projects/constants";
-import { formatProjectType } from "@/lib/projects/format";
+import type { ProjectDataType } from "@/lib/projects/constants";
+import { formatProjectDataType } from "@/lib/projects/format";
 
 type ProjectTypeLabelProps = {
-  projectType: ProjectType;
+  projectType: ProjectDataType;
 };
 
 export function ProjectTypeLabel({ projectType }: ProjectTypeLabelProps) {
   return (
-    <span className="text-sm text-foreground">{formatProjectType(projectType)}</span>
+    <span className="text-sm text-foreground">
+      {formatProjectDataType(projectType)}
+    </span>
   );
 }

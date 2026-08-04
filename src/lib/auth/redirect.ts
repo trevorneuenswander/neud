@@ -1,23 +1,13 @@
-const DEFAULT_REDIRECT = "/dashboard";
+import {
+  DEFAULT_HOSTED_LANDING_PATH,
+  normalizeApplicationPath,
+} from "@/lib/routing/startup-paths";
+
+export const DEFAULT_REDIRECT = DEFAULT_HOSTED_LANDING_PATH;
 
 export function getSafeRedirectPath(
   path: string | null | undefined,
   fallback = DEFAULT_REDIRECT,
 ): string {
-  if (!path) {
-    return fallback;
-  }
-
-  const trimmed = path.trim();
-
-  if (
-    !trimmed.startsWith("/") ||
-    trimmed.startsWith("//") ||
-    trimmed.includes("://") ||
-    trimmed.includes("\\")
-  ) {
-    return fallback;
-  }
-
-  return trimmed;
+  return normalizeApplicationPath(path, fallback);
 }

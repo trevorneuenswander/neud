@@ -1,0 +1,12 @@
+{
+  "name": "@neud/data-engine-local-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "neudWorkerMode": "local",
+  "main": "index.js",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "puppeteer": "^24.23.0"
+  }
+}

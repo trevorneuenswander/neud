@@ -1,20 +1,17 @@
-import { EmptyState } from "@/components/ui/EmptyState";
+import { GlobalActivityFullView } from "@/components/activity/GlobalActivityFullView";
 import { PageHeader } from "@/components/portal/PageHeader";
-import { requireAdmin } from "@/lib/auth/authorization";
+import { requireUser } from "@/lib/auth/authorization";
 
 export default async function ActivityPage() {
-  await requireAdmin();
+  await requireUser();
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Activity"
-        description="Platform-wide operational events and audit log."
+        description="Operational events from all projects you can access."
       />
-      <EmptyState
-        title="Activity logging not yet implemented"
-        description="Operational events such as logins, access approvals, and Project changes will appear here once audit logging is added."
-      />
+      <GlobalActivityFullView />
     </div>
   );
 }

@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>New Bid Display v1</title>
+<style>
+  .display-stage {
+    --canvas-w: 3840px;
+    --canvas-h: 2160px;
+    --main-w: 2749.53px;
+    --main-h: 1543.9px;
+    --main-top: 188px;
+    --main-radius: 54px;
+    --pip-w: 882.77px;
+    --pip-h: 496.55px;
+    --pip-radius: 30px;
+    --column-gap: 88px;
+    --edge: calc((var(--canvas-w) - var(--main-w) - var(--pip-w) - var(--column-gap)) / 2);
+    --content-w: calc(var(--canvas-w) - (var(--edge) * 2));
+    --main-left: var(--edge);
+    --side-left: calc(var(--edge) + var(--main-w) + var(--column-gap));
+    --pip-to-info: 75px;
+    --main-to-title: 28px;
+    --lot-reserve-gap: 18px;
+    --reserve-bid-gap: 28px;
+    --bid-currency-gap: 24px;
+    --currency-row-gap: 10px;
+    --currency-label-w: 120px;
+    --color-lot: #4087db;
+    --color-muted: #808080;
+    --color-text: #000000;
+    --color-bg: #ffffff;
+  }
+
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 400;
+    color: var(--color-text);
+  }
+
+  .viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  .display-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--canvas-w);
+    height: var(--canvas-h);
+    transform-origin: top left;
+  }
+
+  .bid-panel {
+    position: absolute;
+    inset: 0;
+    width: var(--canvas-w);
+    height: var(--canvas-h);
+    background: var(--color-bg);
+    overflow: hidden;
+  }
+
+  .main-photo-wrap {
+    position: absolute;
+    left: var(--main-left);
+    top: var(--main-top);
+    width: var(--main-w);
+    height: var(--main-h);
+    border-radius: var(--main-radius);
+    overflow: hidden;
+    background: #ececec;
+  }
+
+  .main-photo-wrap img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .main-photo-next {
+    z-index: 2;
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  .main-photo-next.enter {
+    animation: photoEnter 650ms cubic-bezier(.16,.84,.24,1) both;
+  }
+
+  @keyframes photoEnter {
+    from { opacity: 0; transform: translateX(22px) scale(1.015); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
+
+  .photo-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    font-weight: 400;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .pip-wrap {
+    position: absolute;
+    left: var(--side-left);
+    top: var(--main-top);
+    width: var(--pip-w);
+    height: var(--pip-h);
+    border-radius: var(--pip-radius);
+    overflow: hidden;
+    background: #b7b7b7;
+  }
+
+  .pip-wrap img,
+  .pip-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .info-column {
+    position: absolute;
+    left: var(--side-left);
+    top: calc(var(--main-top) + var(--pip-h) + var(--pip-to-info));
+    width: var(--pip-w);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .info-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--lot-reserve-gap);
+  }
+
+  .lot-number {
+    font-size: 55px;
+    font-weight: 400;
+    color: var(--color-lot);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .reserve-status {
+    font-size: 55px;
+    font-weight: 400;
+    color: var(--color-muted);
+    line-height: 1.1;
+    min-height: 60px;
+  }
+
+  .reserve-status.hidden {
+    visibility: hidden;
+  }
+
+  .reserve-status:empty {
+    min-height: 60px;
+  }
+
+  .bid-block {
+    margin-top: var(--reserve-bid-gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--bid-currency-gap);
+  }
+
+  .bid-block.collapsed {
+    visibility: hidden;
+    height: 0;
+    margin-top: 0;
+    overflow: hidden;
+  }
+
+  .primary-bid {
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity 350ms ease-in-out,
+      transform 350ms cubic-bezier(.16,.84,.24,1);
+    will-change: opacity, transform;
+    font-size: 130px;
+    font-weight: 400;
+    line-height: 1;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .primary-bid.pill-hidden {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  .currency-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--currency-row-gap);
+  }
+
+  .currency-row {
+    display: grid;
+    grid-template-columns: var(--currency-label-w) minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: 18px;
+    font-size: 70px;
+    font-weight: 400;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .currency-label {
+    color: var(--color-muted);
+  }
+
+  .currency-value {
+    color: var(--color-text);
+    display: inline-block;
+  }
+
+  .vehicle-title {
+    position: absolute;
+    left: var(--main-left);
+    top: calc(var(--main-top) + var(--main-h) + var(--main-to-title));
+    width: var(--content-w);
+    font-size: 120px;
+    font-weight: 400;
+    line-height: 1.05;
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .vehicle-title .inner {
+    display: inline-block;
+    white-space: nowrap;
+    transform: translate3d(0,0,0);
+  }
+
+  .fade-out { animation: fadeOut 250ms ease-in-out both; }
+  .slide-in-right { animation: slideInRight 250ms ease-in-out both; }
+  .hidden { display: none !important; }
+
+  @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(14px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .layout-guide {
+    position: absolute;
+    pointer-events: none;
+    box-sizing: border-box;
+    border: 2px dashed rgba(255, 0, 128, 0.55);
+    display: none;
+  }
+
+  body.show-guides .layout-guide { display: block; }
+  .guide-stage { inset: 0; border-color: rgba(255,0,128,.8); }
+  .guide-panel { inset: 0; }
+  .guide-main-photo {
+    left: var(--edge);
+    top: var(--main-top);
+    width: var(--main-w);
+    height: var(--main-h);
+  }
+  .guide-pip {
+    left: var(--side-left);
+    top: var(--main-top);
+    width: var(--pip-w);
+    height: var(--pip-h);
+  }
+  .guide-gap {
+    left: calc(var(--edge) + var(--main-w));
+    top: var(--main-top);
+    width: var(--column-gap);
+    height: var(--main-h);
+    border-color: rgba(0,160,255,.7);
+  }
+  .guide-info {
+    left: var(--side-left);
+    top: calc(var(--main-top) + var(--pip-h) + var(--pip-to-info));
+    width: var(--pip-w);
+    height: 560px;
+  }
+  .guide-title {
+    left: var(--edge);
+    top: calc(var(--main-top) + var(--main-h) + var(--main-to-title));
+    width: var(--content-w);
+    height: 126px;
+  }
+</style>
+</head>
+<body>
+  <div class="viewport">
+    <div id="stage" class="display-stage">
+      <div class="layout-guide guide-stage"></div>
+      <div class="bid-panel">
+        <div class="layout-guide guide-panel"></div>
+        <div class="layout-guide guide-main-photo"></div>
+        <div class="layout-guide guide-gap"></div>
+        <div class="layout-guide guide-pip"></div>
+        <div class="layout-guide guide-info"></div>
+        <div class="layout-guide guide-title"></div>
+
+        <div class="main-photo-wrap">
+          <img id="mainPhoto" class="main-photo-current hidden" alt="" />
+          <img id="nextPhoto" class="main-photo-next hidden" alt="" />
+          <div id="photoPlaceholder" class="photo-placeholder">No Image</div>
+        </div>
+
+        <div id="pipWrap" class="pip-wrap" aria-hidden="true"></div>
+
+        <div class="info-column">
+          <div class="info-meta">
+            <div id="lotNumber" class="lot-number">Lot —</div>
+            <div id="reserveStatus" class="reserve-status hidden"></div>
+          </div>
+          <div id="bidBlock" class="bid-block collapsed">
+            <div id="primaryBid" class="primary-bid"></div>
+            <div id="currencyList" class="currency-list"></div>
+          </div>
+        </div>
+
+        <div id="vehicleTitle" class="vehicle-title" data-title="—"><span class="inner">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.__NEUD_DISPLAY_CONFIG__ = {
+      displayId: "new-bid-display-v1",
+      endpoint: "/api/displays/new-bid-display-v1/data",
+      pollMs: 1000,
+    };
+  </script>
+  <script src="/displays/shared/display-connection.js?v=20260721"></script>
+  <script src="/displays/shared/new-auction-display-core.js?v=20260721"></script>
+  <script>
+    const core = window.NEUDAuctionDisplayCore;
+    const stage = document.getElementById("stage");
+    const lotNumberEl = document.getElementById("lotNumber");
+    const reserveStatusEl = document.getElementById("reserveStatus");
+    const bidBlockEl = document.getElementById("bidBlock");
+    const primaryBidEl = document.getElementById("primaryBid");
+    const currencyListEl = document.getElementById("currencyList");
+    const vehicleTitleEl = document.getElementById("vehicleTitle");
+    const mainPhotoEl = document.getElementById("mainPhoto");
+    const nextPhotoEl = document.getElementById("nextPhoto");
+    const photoPlaceholderEl = document.getElementById("photoPlaceholder");
+    const pipWrapEl = document.getElementById("pipWrap");
+
+    const PHOTO_CYCLE_ENABLED = true;
+    const CURRENCY_CODES = ["EUR", "GBP", "CHF", "JPY"];
+    let renderGeneration = 0;
+    let photoList = [];
+    let photoIndex = 0;
+    let photoCycleTimer = null;
+    let bidVisible = false;
+    let pendingBidHideTimer = null;
+    let lastCurrencySig = "";
+
+    function isPresentText(value) {
+      const trimmed = String(value ?? "").trim();
+      return Boolean(trimmed && trimmed !== "—" && trimmed !== "-");
+    }
+
+    function resolveReserveStatus(payload, current) {
+      const candidates = [current?.reserveStatus, payload?.auctionDisplay?.reserveStatus];
+      for (const candidate of candidates) {
+        if (isPresentText(candidate)) {
+          return String(candidate).trim();
+        }
+      }
+      return "";
+    }
+
+    function updateDisplayText(el, newText, animateChanges) {
+      if (!el) return;
+      const next = String(newText ?? "").trim() || "—";
+      const cur = el.getAttribute("data-text") ?? "";
+      if (cur === next) {
+        el.classList.remove("fade-out", "slide-in-right");
+        if (!el.textContent) {
+          el.textContent = next;
+        }
+        return;
+      }
+      if (!animateChanges || !cur) {
+        el.setAttribute("data-text", next);
+        el.textContent = next;
+        el.classList.remove("fade-out", "slide-in-right");
+        return;
+      }
+      core.transitionText(el, next);
+    }
+
+    function resizeStage() {
+      core.scaleStage(stage);
+    }
+
+    window.addEventListener("resize", resizeStage);
+    resizeStage();
+
+    if (core.LAYOUT_GUIDES) {
+      document.body.classList.add("show-guides");
+    }
+
+    function clearPhotoCycle() {
+      if (photoCycleTimer) {
+        clearInterval(photoCycleTimer);
+        photoCycleTimer = null;
+      }
+    }
+
+    function showPhoto(src) {
+      const next = String(src || "").trim();
+      const cur = mainPhotoEl.getAttribute("data-src") || "";
+      if (cur === next) return;
+
+      if (!next) {
+        mainPhotoEl.classList.add("hidden");
+        mainPhotoEl.removeAttribute("src");
+        nextPhotoEl.classList.add("hidden");
+        photoPlaceholderEl.classList.remove("hidden");
+        mainPhotoEl.setAttribute("data-src", "");
+        return;
+      }
+
+      const preloaded = new Image();
+      preloaded.onload = () => {
+        photoPlaceholderEl.classList.add("hidden");
+        if (mainPhotoEl.classList.contains("hidden")) {
+          mainPhotoEl.src = next;
+          mainPhotoEl.setAttribute("data-src", next);
+          mainPhotoEl.classList.remove("hidden");
+          return;
+        }
+
+        nextPhotoEl.src = next;
+        nextPhotoEl.setAttribute("data-src", next);
+        nextPhotoEl.classList.remove("hidden");
+        if (!core.reducedMotion) nextPhotoEl.classList.add("enter");
+
+        setTimeout(() => {
+          mainPhotoEl.src = next;
+          mainPhotoEl.setAttribute("data-src", next);
+          mainPhotoEl.classList.remove("hidden");
+          nextPhotoEl.classList.add("hidden");
+          nextPhotoEl.classList.remove("enter");
+          nextPhotoEl.removeAttribute("src");
+        }, core.PHOTO_TRANSITION_MS);
+      };
+      preloaded.onerror = () => {
+        console.warn("[new-bid-display] image failed:", next);
+      };
+      preloaded.src = next;
+    }
+
+    function setPhotos(photos) {
+      const nextList = Array.isArray(photos) ? photos.filter(Boolean) : [];
+      const sig = nextList.join("|");
+      if ((mainPhotoEl.getAttribute("data-photo-list") || "") === sig) return;
+      mainPhotoEl.setAttribute("data-photo-list", sig);
+      photoList = nextList;
+      photoIndex = 0;
+      clearPhotoCycle();
+      showPhoto(photoList[0] || "");
+      if (PHOTO_CYCLE_ENABLED && !core.reducedMotion && photoList.length > 1) {
+        photoCycleTimer = setInterval(() => {
+          photoIndex = (photoIndex + 1) % photoList.length;
+          showPhoto(photoList[photoIndex]);
+        }, core.PHOTO_CYCLE_MS);
+      }
+    }
+
+    function renderPip(pipSource) {
+      pipWrapEl.innerHTML = "";
+      if (!pipSource || !pipSource.url) return;
+      if (pipSource.type === "video") {
+        const video = document.createElement("video");
+        video.src = pipSource.url;
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+        pipWrapEl.appendChild(video);
+        return;
+      }
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = pipSource.url;
+      pipWrapEl.appendChild(img);
+    }
+
+    function normalizeCurrencies(input) {
+      const result = {};
+      if (!input) return result;
+
+      if (Array.isArray(input)) {
+        const rows = input
+          .map((entry) => String(entry ?? "").trim())
+          .filter(Boolean);
+
+        for (const row of rows) {
+          for (const code of CURRENCY_CODES) {
+            const match = row.match(new RegExp(`^${code}\\b[:\\s-]*(.+)$`, "i"));
+            if (match) {
+              result[code] = match[1].trim();
+            }
+          }
+        }
+
+        if (Object.keys(result).length === 0) {
+          CURRENCY_CODES.forEach((code, index) => {
+            if (rows[index]) {
+              result[code] = rows[index];
+            }
+          });
+        }
+        return result;
+      }
+
+      if (typeof input === "object") {
+        for (const code of CURRENCY_CODES) {
+          const value = input[code] ?? input[code.toLowerCase()];
+          if (value != null && String(value).trim() !== "") {
+            result[code] = String(value).trim();
+          }
+        }
+      }
+
+      return result;
+    }
+
+    function resolveCurrencyInput(payload, current) {
+      const auctionDisplay = payload?.auctionDisplay;
+      if (Array.isArray(auctionDisplay?.currencies) && auctionDisplay.currencies.length > 0) {
+        return auctionDisplay.currencies;
+      }
+      if (Array.isArray(payload?.currencies) && payload.currencies.length > 0) {
+        return payload.currencies;
+      }
+      if (Array.isArray(current?.currencies) && current.currencies.length > 0) {
+        return current.currencies;
+      }
+      if (current?.currencies && typeof current.currencies === "object") {
+        return current.currencies;
+      }
+      return null;
+    }
+
+    function formatCurrencyDisplayValue(code, rawValue) {
+      const trimmed = String(rawValue ?? "").trim();
+      if (!trimmed || trimmed === "—") return "—";
+      const coded = trimmed.match(new RegExp(`^${code}\\b[:\\s-]*(.+)$`, "i"));
+      if (coded) return coded[1].trim();
+      return trimmed;
+    }
+
+    function buildCurrencyRows(currencies, showAllRows) {
+      const normalized = normalizeCurrencies(currencies);
+      return CURRENCY_CODES.map((code) => {
+        const raw = normalized[code];
+        const hasValue = raw != null && String(raw).trim() !== "" && String(raw).trim() !== "—";
+        if (!showAllRows && !hasValue) return null;
+        return {
+          code,
+          value: hasValue ? formatCurrencyDisplayValue(code, raw) : "—",
+        };
+      }).filter(Boolean);
+    }
+
+    function renderCurrencyBlock(currencies, showAllRows) {
+      const rows = buildCurrencyRows(currencies, showAllRows);
+      const sig = `${showAllRows ? "all" : "partial"}|${rows
+        .map((row) => `${row.code}:${row.value}`)
+        .join("|")}`;
+      if (sig === lastCurrencySig) {
+        currencyListEl.querySelectorAll(".currency-value").forEach((el) => {
+          if (el.getAttribute("data-text") && !el.textContent) {
+            el.textContent = el.getAttribute("data-text");
+          }
+          el.classList.remove("fade-out", "slide-in-right");
+        });
+        return;
+      }
+      lastCurrencySig = sig;
+
+      currencyListEl.style.display = rows.length > 0 ? "" : "none";
+
+      rows.forEach((row) => {
+        let rowEl = currencyListEl.querySelector(`.currency-row[data-code="${row.code}"]`);
+        const isNew = !rowEl;
+        if (isNew) {
+          rowEl = document.createElement("div");
+          rowEl.className = "currency-row";
+          rowEl.setAttribute("data-code", row.code);
+          rowEl.innerHTML =
+            `<span class="currency-label">${row.code}</span>` +
+            `<span class="currency-value"></span>`;
+          currencyListEl.appendChild(rowEl);
+        }
+
+        rowEl.querySelector(".currency-label").textContent = row.code;
+        const valueEl = rowEl.querySelector(".currency-value");
+        updateDisplayText(valueEl, row.value, !isNew && isPresentText(valueEl.getAttribute("data-text")));
+      });
+
+      rows.forEach((row) => {
+        const rowEl = currencyListEl.querySelector(`.currency-row[data-code="${row.code}"]`);
+        if (rowEl) {
+          currencyListEl.appendChild(rowEl);
+        }
+      });
+
+      const activeCodes = new Set(rows.map((row) => row.code));
+      Array.from(currencyListEl.querySelectorAll(".currency-row")).forEach((rowEl) => {
+        if (!activeCodes.has(rowEl.getAttribute("data-code"))) {
+          rowEl.remove();
+        }
+      });
+    }
+
+    function hasAnyCurrency(currencies) {
+      return CURRENCY_CODES.some((code) => {
+        const value = currencies?.[code];
+        return value != null && String(value).trim() !== "";
+      });
+    }
+
+    function revealPrimaryBid() {
+      requestAnimationFrame(() => {
+        primaryBidEl.classList.add("pill-hidden");
+        setTimeout(() => {
+          primaryBidEl.classList.remove("pill-hidden");
+        }, 380);
+      });
+    }
+
+    function setBidVisibility(show) {
+      if (pendingBidHideTimer) {
+        clearTimeout(pendingBidHideTimer);
+        pendingBidHideTimer = null;
+      }
+
+      if (show) {
+        if (bidVisible) return;
+        bidVisible = true;
+        bidBlockEl.classList.remove("collapsed");
+        revealPrimaryBid();
+        return;
+      }
+
+      if (!bidVisible) return;
+      bidVisible = false;
+      primaryBidEl.classList.add("pill-hidden");
+      pendingBidHideTimer = setTimeout(() => {
+        pendingBidHideTimer = null;
+        bidBlockEl.classList.add("collapsed");
+        currencyListEl.innerHTML = "";
+        lastCurrencySig = "";
+        primaryBidEl.textContent = "";
+        primaryBidEl.removeAttribute("data-text");
+      }, 350);
+    }
+
+    function render(payload) {
+      renderGeneration += 1;
+      const current = payload?.current || {};
+
+      core.transitionText(lotNumberEl, current.lot || "Lot —");
+      core.transitionTitle(vehicleTitleEl, current.title || "—");
+
+      const photoSig = (current.photos || []).join("|");
+      if ((mainPhotoEl.getAttribute("data-photo-list") || "") !== photoSig) {
+        setPhotos(current.photos || []);
+      }
+
+      const pipSig = JSON.stringify(current.pipSource || null);
+      if (pipWrapEl.getAttribute("data-pip-sig") !== pipSig) {
+        pipWrapEl.setAttribute("data-pip-sig", pipSig);
+        renderPip(current.pipSource || null);
+      }
+
+      const reserve = resolveReserveStatus(payload, current);
+      const hasLotContext = isPresentText(current?.lot) || isPresentText(current?.title);
+      if (reserve || hasLotContext) {
+        reserveStatusEl.classList.remove("hidden");
+        updateDisplayText(reserveStatusEl, reserve || "Unknown", true);
+      } else {
+        reserveStatusEl.removeAttribute("data-text");
+        reserveStatusEl.textContent = "";
+        reserveStatusEl.classList.add("hidden");
+      }
+
+      const currencyInput = resolveCurrencyInput(payload, current);
+      const normalizedCurrencies = normalizeCurrencies(currencyInput);
+      const showBid = core.hasBidValue(current.biddingPrice);
+      const showCurrencies = hasAnyCurrency(normalizedCurrencies);
+      if (showBid || showCurrencies) {
+        if (pendingBidHideTimer) {
+          clearTimeout(pendingBidHideTimer);
+          pendingBidHideTimer = null;
+        }
+        const wasHidden = !bidVisible;
+        bidVisible = true;
+        bidBlockEl.classList.remove("collapsed");
+        if (showBid) {
+          updateDisplayText(primaryBidEl, current.biddingPrice, true);
+        } else {
+          primaryBidEl.textContent = "";
+          primaryBidEl.removeAttribute("data-text");
+        }
+        renderCurrencyBlock(currencyInput, showBid);
+        if (wasHidden && showBid) {
+          revealPrimaryBid();
+        } else {
+          primaryBidEl.classList.remove("pill-hidden");
+        }
+      } else {
+        setBidVisibility(false);
+      }
+
+      core.fitTitleFont(vehicleTitleEl, 72, 120);
+    }
+
+    const poller = core.createPoller((payload) => render(payload), {
+      onDisabled: () => core.showDisplayOffPage(),
+    });
+
+    async function bootstrapDisplayConnection() {
+      const endpoint =
+        window.__NEUD_DISPLAY_CONFIG__?.endpoint ||
+        new URLSearchParams(window.location.search).get("src");
+
+      if (window.NEUDDisplayConnection && endpoint) {
+        const connected = await window.NEUDDisplayConnection.fetchInitialConnectionState(endpoint);
+        if (!connected) {
+          core.showDisplayOffPage();
+          return;
+        }
+      }
+
+      poller.start();
+    }
+
+    void bootstrapDisplayConnection();
+  </script>
+</body>
+</html>

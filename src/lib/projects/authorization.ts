@@ -1,5 +1,14 @@
 import { notFound, redirect } from "next/navigation";
-import { isAdmin, requireUser } from "@/lib/auth/authorization";
+import {
+  canCreateProject,
+  isPlatformAdministrator,
+  requireUser,
+} from "@/lib/auth/authorization";
+import { shouldUseLocalData } from "@/lib/local/mode";
+import { resolveLocalAuthenticatedPrincipal } from "@/lib/local/auth.server";
+import { localGetProjectsMeta } from "@/lib/local/displays-api";
+import type { LocalProjectsListMeta } from "@/lib/displays/types";
+import { localGetProjectAccessContext } from "@/lib/local/access-api";
 import type { ProjectAccessContext } from "@/lib/projects/types";
 import {
   PROJECT_ACCESS_LEVELS,
@@ -7,6 +16,13 @@ import {
   type ProjectAccessLevelWithAdmin,
 } from "@/lib/projects/constants";
 import { getProjectBySlug } from "@/lib/projects/queries";
+import {
+  canAccessProject,
+  canManageProjectSettings,
+  canOperateProjectDisplays,
+  resolveSupabaseProjectRole,
+  type ProjectRole,
+} from "@/lib/projects/project-permissions";
 import { createClient } from "@/lib/supabase/server";
 
 async function resolveProjectMembership(
@@ -29,25 +45,132 @@ async function resolveProjectMembership(
   return data.access_level as ProjectAccessLevel;
 }
 
-export async function getProjectAccess(
+function toAccessLevel(projectRole: ProjectRole): ProjectAccessLevelWithAdmin {
+  if (projectRole === "owner" || projectRole === "admin") {
+    return "admin";
+  }
+  if (projectRole === "operator") {
+    return "operator";
+  }
+  return "viewer";
+}
+
+function buildProjectAccessContext(input: {
+  project: NonNullable<Awaited<ReturnType<typeof getProjectBySlug>>>;
+  projectRole: ProjectRole;
+  isPlatformAdmin: boolean;
+  canOperateDisplays?: boolean;
+}): ProjectAccessContext {
+  const canManageSettings = canManageProjectSettings(input.projectRole);
+
+  return {
+    project: input.project,
+    accessLevel: toAccessLevel(input.projectRole),
+    isPlatformAdmin: input.isPlatformAdmin,
+    canManageMembers: input.isPlatformAdmin,
+    canManageSettings,
+    canOperateDisplays:
+      input.canOperateDisplays ?? canOperateProjectDisplays(input.projectRole),
+    projectRole: input.projectRole,
+  };
+}
+
+export type ProjectAccessResolution =
+  | { state: "ready"; access: ProjectAccessContext }
+  | { state: "loading" }
+  | { state: "identity-error"; message: string }
+  | { state: "denied" };
+
+export async function resolveProjectAccess(
   projectIdentifier: string,
-): Promise<ProjectAccessContext | null> {
-  const { profile } = await requireUser();
+): Promise<ProjectAccessResolution> {
   const project = await getProjectBySlug(projectIdentifier);
 
   if (!project) {
-    return null;
+    return { state: "denied" };
   }
 
-  const platformAdmin = await isAdmin();
+  if (shouldUseLocalData()) {
+    const localPrincipal = await resolveLocalAuthenticatedPrincipal();
+    if (!localPrincipal) {
+      await requireUser();
+    }
+
+    let meta: LocalProjectsListMeta | null = null;
+    try {
+      meta = await localGetProjectsMeta({ wait: false });
+    } catch {
+      meta = null;
+    }
+
+    if (
+      meta?.identityStatus === "loading-session" ||
+      meta?.identityStatus === "loading-profile"
+    ) {
+      return { state: "loading" };
+    }
+
+    if (
+      meta?.identityStatus === "error" ||
+      meta?.identityStatus === "missing-profile" ||
+      meta?.identityStatus === "stale-session" ||
+      meta?.identityStatus === "identity-conflict"
+    ) {
+      return {
+        state: "identity-error",
+        message:
+          meta.identityMessage ??
+          "NEUD could not load your account from Supabase.",
+      };
+    }
+
+    try {
+      const access = await localGetProjectAccessContext(projectIdentifier);
+      const projectRecord = access.project as ProjectAccessContext["project"];
+      return {
+        state: "ready",
+        access: buildProjectAccessContext({
+          project: projectRecord,
+          projectRole: access.projectRole as ProjectRole,
+          isPlatformAdmin: access.isPlatformAdmin,
+          canOperateDisplays: access.capabilities.canOperateDisplays,
+        }),
+      };
+    } catch {
+      return { state: "denied" };
+    }
+  }
+
+  const hostedAccess = await getHostedProjectAccess(project);
+  if (!hostedAccess) {
+    return { state: "denied" };
+  }
+
+  return { state: "ready", access: hostedAccess };
+}
+
+async function getHostedProjectAccess(
+  project: NonNullable<Awaited<ReturnType<typeof getProjectBySlug>>>,
+): Promise<ProjectAccessContext | null> {
+  const { profile } = await requireUser();
+  const platformAdmin = isPlatformAdministrator(profile);
 
   if (platformAdmin) {
-    return {
+    const projectRole = resolveSupabaseProjectRole({
+      platformAdmin: true,
+      profileRole: profile.role,
+      membershipAccessLevel: null,
+    });
+
+    if (!canAccessProject(projectRole, project)) {
+      return null;
+    }
+
+    return buildProjectAccessContext({
       project,
-      accessLevel: "admin",
+      projectRole,
       isPlatformAdmin: true,
-      canManageMembers: true,
-    };
+    });
   }
 
   const membership = await resolveProjectMembership(project.id, profile.id);
@@ -56,20 +179,52 @@ export async function getProjectAccess(
     return null;
   }
 
-  return {
+  const projectRole = resolveSupabaseProjectRole({
+    platformAdmin: false,
+    profileRole: profile.role,
+    membershipAccessLevel: membership,
+  });
+
+  if (!canAccessProject(projectRole, project)) {
+    return null;
+  }
+
+  return buildProjectAccessContext({
     project,
-    accessLevel: membership,
+    projectRole,
     isPlatformAdmin: false,
-    canManageMembers: membership === "manager",
-  };
+  });
+}
+
+export async function getProjectAccess(
+  projectIdentifier: string,
+): Promise<ProjectAccessContext | null> {
+  const resolution = await resolveProjectAccess(projectIdentifier);
+  return resolution.state === "ready" ? resolution.access : null;
 }
 
 export async function requireProjectAccess(
   projectIdentifier: string,
 ): Promise<ProjectAccessContext> {
-  const access = await getProjectAccess(projectIdentifier);
+  const resolution = await resolveProjectAccess(projectIdentifier);
 
-  if (!access) {
+  if (resolution.state === "ready") {
+    return resolution.access;
+  }
+
+  if (shouldUseLocalData()) {
+    notFound();
+  }
+
+  notFound();
+}
+
+export async function requireProjectSettingsAccess(
+  projectIdentifier: string,
+): Promise<ProjectAccessContext> {
+  const access = await requireProjectAccess(projectIdentifier);
+
+  if (!access.canManageSettings) {
     notFound();
   }
 
@@ -110,9 +265,8 @@ export async function requireProjectMemberManagement(
 
 export async function requireProjectCreationAccess() {
   const { profile } = await requireUser();
-  const platformAdmin = await isAdmin();
 
-  if (!platformAdmin) {
+  if (!canCreateProject(profile)) {
     redirect("/projects");
   }
 

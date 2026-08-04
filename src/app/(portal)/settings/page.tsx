@@ -1,4 +1,4 @@
-import { EmptyState } from "@/components/ui/EmptyState";
+import { DataBackupsSection } from "@/components/settings/DataBackupsSection";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { requireUser } from "@/lib/auth/authorization";
 
@@ -11,10 +11,7 @@ export default async function SettingsPage() {
         title="Settings"
         description="Account and platform preferences."
       />
-      <EmptyState
-        title="Settings not yet available"
-        description="Account settings and preferences will be configurable here in a future phase."
-      />
+      <DataBackupsSection />
     </div>
   );
 }

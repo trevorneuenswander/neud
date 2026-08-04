@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getSafeRedirectPath } from "@/lib/auth/redirect";
+import { DEFAULT_REDIRECT, getSafeRedirectPath } from "@/lib/auth/redirect";
+import { resolveAuthenticatedLandingPath } from "@/lib/routing/startup-paths";
+import { resolveLocalAuthenticatedPrincipal } from "@/lib/local/auth.server";
+import { shouldUseLocalData } from "@/lib/local/mode";
 
 export async function getAuthClaims() {
   const supabase = await createClient();
@@ -14,11 +17,16 @@ export async function getAuthClaims() {
 }
 
 export async function isAuthenticated(): Promise<boolean> {
+  if (shouldUseLocalData()) {
+    const principal = await resolveLocalAuthenticatedPrincipal();
+    return principal !== null;
+  }
+
   const claims = await getAuthClaims();
   return claims !== null;
 }
 
-export async function requireAuth(redirectTo = "/login") {
+export async function requireAuth(redirectTo = "/") {
   const claims = await getAuthClaims();
 
   if (!claims) {
@@ -28,10 +36,23 @@ export async function requireAuth(redirectTo = "/login") {
   return claims;
 }
 
-export async function redirectIfAuthenticated(redirectTo = "/dashboard") {
+export async function redirectIfAuthenticated(
+  redirectTo?: string,
+) {
+  if (shouldUseLocalData()) {
+    const principal = await resolveLocalAuthenticatedPrincipal();
+    if (principal) {
+      const destination =
+        redirectTo ?? resolveAuthenticatedLandingPath(true);
+      redirect(getSafeRedirectPath(destination));
+    }
+    return;
+  }
+
   const claims = await getAuthClaims();
 
   if (claims) {
-    redirect(getSafeRedirectPath(redirectTo));
+    const destination = redirectTo ?? DEFAULT_REDIRECT;
+    redirect(getSafeRedirectPath(destination));
   }
 }

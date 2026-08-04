@@ -16,28 +16,23 @@ import { getProjectBySlug, resolveUniqueSlug } from "@/lib/projects/queries";
 import { type ProjectActionState } from "@/lib/projects/state";
 import {
   generateSlugFromName,
-  validateOptionalHexColor,
-  validateOptionalUrl,
+  validateCreatableProjectDataType,
   validateProjectAccessLevel,
   validateProjectDescription,
   validateProjectIcon,
   validateProjectName,
   validateProjectTheme,
-  validateProjectType,
   isValidUuid,
 } from "@/lib/projects/validation";
 import { createClient } from "@/lib/supabase/server";
+import { shouldUseLocalData } from "@/lib/local/mode";
+import { localCreateProject } from "@/lib/local/api";
 
 function collectCreateProjectFieldValues(formData: FormData) {
   return {
     name: String(formData.get("name") ?? ""),
     description: String(formData.get("description") ?? ""),
-    projectType: String(formData.get("projectType") ?? "bag-graphics"),
-    theme: String(formData.get("theme") ?? DEFAULT_PROJECT_THEME),
-    logoUrl: String(formData.get("logoUrl") ?? ""),
-    primaryColor: String(formData.get("primaryColor") ?? ""),
-    secondaryColor: String(formData.get("secondaryColor") ?? ""),
-    icon: String(formData.get("icon") ?? DEFAULT_PROJECT_ICON),
+    dataType: String(formData.get("dataType") ?? ""),
   };
 }
 
@@ -60,6 +55,10 @@ function toProjectErrorMessage(error: { message?: string } | null): string {
     return "Only platform owners and admins may create Projects.";
   }
 
+  if (message.includes("forbidden")) {
+    return "You do not have permission to create Projects.";
+  }
+
   return "Unable to complete this Project action. Please try again.";
 }
 
@@ -72,28 +71,16 @@ export async function createProject(
   const fieldValues = collectCreateProjectFieldValues(formData);
   const nameError = validateProjectName(fieldValues.name);
   const descriptionError = validateProjectDescription(fieldValues.description);
-  const projectType = validateProjectType(fieldValues.projectType);
-  const themeError = validateProjectTheme(fieldValues.theme);
-  const iconError = validateProjectIcon(fieldValues.icon);
-  const primaryColorError = validateOptionalHexColor(
-    fieldValues.primaryColor,
-    "Primary color",
-  );
-  const secondaryColorError = validateOptionalHexColor(
-    fieldValues.secondaryColor,
-    "Secondary color",
-  );
-  const logoUrlError = validateOptionalUrl(fieldValues.logoUrl, "Logo URL");
+  const dataType = validateCreatableProjectDataType(fieldValues.dataType);
+  const themeError = validateProjectTheme(DEFAULT_PROJECT_THEME);
+  const iconError = validateProjectIcon(DEFAULT_PROJECT_ICON);
 
   const validationError =
     nameError ??
     descriptionError ??
-    (!projectType ? "Select a valid Project type." : null) ??
+    (!dataType ? "Select a valid data type." : null) ??
     themeError ??
-    iconError ??
-    primaryColorError ??
-    secondaryColorError ??
-    logoUrlError;
+    iconError;
 
   if (validationError) {
     return {
@@ -123,18 +110,44 @@ export async function createProject(
     };
   }
 
+  if (shouldUseLocalData()) {
+    try {
+      await localCreateProject({
+        name: fieldValues.name.trim(),
+        slug: uniqueSlug,
+        projectType: dataType as string,
+        description: fieldValues.description.trim() || null,
+        theme: DEFAULT_PROJECT_THEME,
+        icon: DEFAULT_PROJECT_ICON,
+      });
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to create Project locally.",
+        success: null,
+        fieldValues,
+      };
+    }
+
+    revalidatePath("/projects");
+    revalidatePath("/dashboard");
+    redirect(`/projects/${uniqueSlug}`);
+  }
+
   const supabase = await createClient();
 
   const { data: projectId, error } = await supabase.rpc("create_project_with_manager", {
     p_name: fieldValues.name.trim(),
     p_slug: uniqueSlug,
     p_description: fieldValues.description.trim() || null,
-    p_project_type: projectType,
-    p_theme: fieldValues.theme.trim() || DEFAULT_PROJECT_THEME,
-    p_logo_url: fieldValues.logoUrl.trim() || null,
-    p_primary_color: fieldValues.primaryColor.trim() || null,
-    p_secondary_color: fieldValues.secondaryColor.trim() || null,
-    p_icon: fieldValues.icon.trim() || DEFAULT_PROJECT_ICON,
+    p_project_type: dataType,
+    p_theme: DEFAULT_PROJECT_THEME,
+    p_logo_url: null,
+    p_primary_color: null,
+    p_secondary_color: null,
+    p_icon: DEFAULT_PROJECT_ICON,
   });
 
   if (error || !projectId) {
@@ -166,6 +179,13 @@ export async function addProjectMember(
   _prevState: ProjectActionState,
   formData: FormData,
 ): Promise<ProjectActionState> {
+  if (shouldUseLocalData()) {
+    return {
+      error: "Project members are not available in desktop mode.",
+      success: null,
+    };
+  }
+
   const slug = String(formData.get("slug") ?? "").trim();
   const userId = String(formData.get("userId") ?? "").trim();
   const accessLevelInput = String(formData.get("accessLevel") ?? "").trim();
@@ -223,6 +243,13 @@ export async function updateProjectMember(
   _prevState: ProjectActionState,
   formData: FormData,
 ): Promise<ProjectActionState> {
+  if (shouldUseLocalData()) {
+    return {
+      error: "Project members are not available in desktop mode.",
+      success: null,
+    };
+  }
+
   const slug = String(formData.get("slug") ?? "").trim();
   const userId = String(formData.get("userId") ?? "").trim();
   const accessLevelInput = String(formData.get("accessLevel") ?? "").trim();
@@ -292,6 +319,13 @@ export async function removeProjectMember(
   _prevState: ProjectActionState,
   formData: FormData,
 ): Promise<ProjectActionState> {
+  if (shouldUseLocalData()) {
+    return {
+      error: "Project members are not available in desktop mode.",
+      success: null,
+    };
+  }
+
   const slug = String(formData.get("slug") ?? "").trim();
   const userId = String(formData.get("userId") ?? "").trim();
 

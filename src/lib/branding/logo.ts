@@ -1,1 +1,1 @@
-export const HMG_LOGO_PATH = "/branding/hmg-logo.png";
+export const NEUD_LOGO_PATH = "/branding/neud-logo.png";
