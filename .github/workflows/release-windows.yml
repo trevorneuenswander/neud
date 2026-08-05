@@ -27,15 +27,41 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
+
+      - name: Validate public Supabase configuration
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NEXT_PUBLIC_SUPABASE_URL)) {
+            Write-Error "Missing required GitHub Actions secret: NEXT_PUBLIC_SUPABASE_URL"
+            exit 1
+          }
+          if ([string]::IsNullOrWhiteSpace($env:NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)) {
+            Write-Error "Missing required GitHub Actions secret: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+            exit 1
+          }
+          try {
+            $uri = [Uri]$env:NEXT_PUBLIC_SUPABASE_URL
+            if ([string]::IsNullOrWhiteSpace($uri.Host)) {
+              throw "URL has no host"
+            }
+            Write-Host "Supabase URL host: $($uri.Host)"
+          } catch {
+            Write-Error "NEXT_PUBLIC_SUPABASE_URL is not a valid URL."
+            exit 1
+          }
+          Write-Host "Public Supabase publishable key is configured (value not logged)."
 
       - name: Verify requested version matches package.json
         shell: bash

@@ -85,6 +85,34 @@ test("release workflow uses GITHUB_TOKEN from Actions", () => {
   assert.doesNotMatch(workflow, /ghp_[A-Za-z0-9]+/);
 });
 
+test("release workflow references public Supabase secrets only", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
+  assert.match(workflow, /secrets\.NEXT_PUBLIC_SUPABASE_URL/);
+  assert.match(workflow, /secrets\.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/);
+  assert.doesNotMatch(workflow, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(workflow, /secrets\.SUPABASE_SERVICE_ROLE/);
+});
+
+test("release workflow validates public Supabase config before release build", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
+  const validateIndex = workflow.indexOf("Validate public Supabase configuration");
+  const npmCiIndex = workflow.indexOf("Install dependencies");
+  const releaseBuildIndex = workflow.indexOf("Build desktop release");
+  assert.ok(validateIndex >= 0, "Missing Supabase validation step");
+  assert.ok(validateIndex < npmCiIndex, "Validation must run before npm ci");
+  assert.ok(validateIndex < releaseBuildIndex, "Validation must run before release build");
+  assert.match(workflow, /NEXT_PUBLIC_SUPABASE_URL/);
+  assert.match(workflow, /NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/);
+  assert.match(workflow, /value not logged/i);
+});
+
+test("release workflow uses Node 22 and current action versions", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
+  assert.match(workflow, /actions\/checkout@v6/);
+  assert.match(workflow, /actions\/setup-node@v5/);
+  assert.match(workflow, /node-version: "22"/);
+});
+
 test("latest.yml matches package version when release output exists", () => {
   const rootPkg = readJson("package.json");
   const latestYmlPath = path.join(repoRoot, "desktop", "release", "latest.yml");
