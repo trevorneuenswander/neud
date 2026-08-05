@@ -1,0 +1,122 @@
+{
+  "generatedAt": "2026-08-03T04:32:34.456Z",
+  "broadArrowProject": {
+    "id": "8526be86-4f8a-4522-8506-efa8a25fe903",
+    "slug": "broad-arrow-auctions",
+    "name": "Broad Arrow Auctions"
+  },
+  "localDatabaseAvailable": true,
+  "intendedActiveSlugs": [
+    "stream-bid-display",
+    "stream-ticker",
+    "legacy-pylon",
+    "legacy-ticker"
+  ],
+  "legacyObsoleteSlugs": [
+    "auction-pylon-display",
+    "auction-ticker-overlay"
+  ],
+  "totalRows": 6,
+  "intendedActiveCount": 4,
+  "legacyActiveCount": 2,
+  "cloudOnlyStaleCount": 0,
+  "hostedActiveEligibleCount": 6,
+  "rows": [
+    {
+      "id": "3b4b6790-05e8-4f8b-970e-63f8faaefb5d",
+      "slug": "auction-pylon-display",
+      "name": "Auction Pylon Display",
+      "localPresent": false,
+      "cloudPresent": true,
+      "matchedBy": "cloud-only",
+      "enabled": false,
+      "archived": false,
+      "deleted": false,
+      "onlineViewerEnabled": false,
+      "published": false,
+      "sortOrder": null,
+      "selectedRevisionPresent": false,
+      "classification": "legacy active"
+    },
+    {
+      "id": "217270dd-fce6-4fd2-a712-3f937157e095",
+      "slug": "auction-ticker-overlay",
+      "name": "Auction Ticker",
+      "localPresent": false,
+      "cloudPresent": true,
+      "matchedBy": "cloud-only",
+      "enabled": false,
+      "archived": false,
+      "deleted": false,
+      "onlineViewerEnabled": false,
+      "published": false,
+      "sortOrder": null,
+      "selectedRevisionPresent": false,
+      "classification": "legacy active"
+    },
+    {
+      "id": "4c826dde-2ed7-4c04-a6da-a1585fb7fcc0",
+      "slug": "legacy-pylon",
+      "name": "Legacy Pylon",
+      "localPresent": true,
+      "cloudPresent": true,
+      "matchedBy": "id",
+      "enabled": false,
+      "archived": false,
+      "deleted": false,
+      "onlineViewerEnabled": false,
+      "published": true,
+      "sortOrder": 2,
+      "selectedRevisionPresent": true,
+      "classification": "intended active"
+    },
+    {
+      "id": "713b82dc-38fd-4ecb-a659-718620343c62",
+      "slug": "legacy-ticker",
+      "name": "Legacy Ticker",
+      "localPresent": true,
+      "cloudPresent": true,
+      "matchedBy": "id",
+      "enabled": false,
+      "archived": false,
+      "deleted": false,
+      "onlineViewerEnabled": false,
+      "published": true,
+      "sortOrder": 1,
+      "selectedRevisionPresent": true,
+      "classification": "intended active"
+    },
+    {
+      "id": "3f650406-12c0-4ce8-a6bb-050f26b5d187",
+      "slug": "stream-bid-display",
+      "name": "Stream Bid Display",
+      "localPresent": true,
+      "cloudPresent": true,
+      "matchedBy": "id",
+      "enabled": true,
+      "archived": false,
+      "deleted": false,
+      "onlineViewerEnabled": true,
+      "published": true,
+      "sortOrder": 3,
+      "selectedRevisionPresent": true,
+      "classification": "intended active"
+    },
+    {
+      "id": "ab04306e-d9fd-4bcb-8991-78aab81f564d",
+      "slug": "stream-ticker",
+      "name": "Stream Ticker",
+      "localPresent": true,
+      "cloudPresent": true,
+      "matchedBy": "id",
+      "enabled": false,
+      "archived": false,
+      "deleted": false,
+      "onlineViewerEnabled": false,
+      "published": true,
+      "sortOrder": 4,
+      "selectedRevisionPresent": true,
+      "classification": "intended active"
+    }
+  ]
+}

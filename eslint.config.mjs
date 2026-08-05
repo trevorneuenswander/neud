@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Electron desktop package (separate TypeScript build):
+    "desktop/dist/**",
+    "desktop/release/**",
+    "desktop/staging/**",
   ]),
 ]);
 

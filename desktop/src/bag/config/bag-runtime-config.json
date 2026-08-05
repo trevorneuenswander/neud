@@ -1,0 +1,44 @@
+{
+  "listing": {
+    "tableWaitSelector": "#main-container table",
+    "rowSelector": "tbody tr",
+    "lotCellIndex": 0,
+    "titleCellIndex": 1,
+    "priceCellIndex": 2,
+    "statusSelector": "td[4] .label",
+    "editLinkSelector": "td a.btn[href^=\"/vehicles/\"][href$=\"/edit\"]"
+  },
+  "detail": {
+    "soldSelector": "#vehicle_sold",
+    "currentPriceSelector": "#vehicle_current_price"
+  },
+  "auctionDisplay": {
+    "rootWaitSelector": "#vehicle-content",
+    "lotSelector": ".lot-number .value",
+    "lotPrefix": "Lot ",
+    "yearSelectors": [
+      ".vehicle-name [data-bind=\"year\"]",
+      ".vehicle-name .Year"
+    ],
+    "titleSelector": ".vehicle-name [data-bind=\"title\"]",
+    "biddingPriceSelector": ".current_price",
+    "reserveSelectors": ["#js-no-reserve.visible", "#js-reserved-sm.visible"],
+    "currencySelector": ".other-currency .price",
+    "photoSelector": "#images img"
+  },
+  "login": {
+    "usernameSelectors": [
+      "input[type=\"email\"]",
+      "#user_email",
+      "[name=\"user[email]\"]"
+    ],
+    "passwordSelectors": [
+      "input[type=\"password\"]",
+      "#user_password",
+      "[name=\"user[password]\"]"
+    ],
+    "submitSelectors": ["button[type=\"submit\"]", "input[type=\"submit\"]"],
+    "successSelector": "#main-container table tbody",
+    "failureUrlSubstring": "/users/sign_in"
+  }
+}

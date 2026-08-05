@@ -173,7 +173,7 @@ test("packaged release output passes release security scan when present", async 
 
 test("packaged worker entry resolves to local dist path", () => {
   const appPaths = read("desktop/src/services/app-paths.ts");
-  assert.match(appPaths, /staging", "worker", "dist", "index\.js"/);
+  assert.match(appPaths, /staging", "worker", "dist", "boot\.js"/);
   assert.doesNotMatch(appPaths, /staging", "worker", "src", "index\.js"/);
 });
 

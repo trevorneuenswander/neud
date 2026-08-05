@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "crypto";
 import type { BrowserWindow } from "electron";
-import { BrowserWindow as BrowserWindowRuntime } from "electron";
+import { app, BrowserWindow as BrowserWindowRuntime } from "electron";
 import { getWorkerCwd, getWorkerEntryPath } from "./app-paths";
 import { CredentialStore } from "./credential-store";
 import type { MachineRegistration } from "./machine-registration";
@@ -15,6 +16,7 @@ import type {
   EngineLogEntry,
   LocalEngineStatus,
   ManagedEngineProcess,
+  WorkerTerminationReason,
 } from "../types/desktop-api";
 import type { SessionExecutionLogEntry } from "./execution-log-session-store";
 import type { EngineStatusSnapshot } from "./engine-status-session-store";
@@ -28,6 +30,22 @@ import {
 } from "./bag-detail-adapter-path";
 import { nativeImport } from "./import-esm-module";
 import { resolvePuppeteerModule } from "./resolve-puppeteer-module";
+import {
+  appendEngineControlLog,
+  appendWorkerRuntimeLog,
+  appendWorkerSpawnLog,
+} from "./runtime-diagnostics-log";
+import {
+  appendWorkerCrashLog,
+  appendWorkerCrashStream,
+  ensureWorkerCrashLogDir,
+  flushWorkerCrashExitReport,
+  sanitizeWorkerEnvForLog,
+} from "./worker-crash-log";
+import {
+  logEngineManagerStopRequested,
+  logWorkerLifecycleTimeline,
+} from "./worker-lifecycle-diagnostics";
 
 const EXPORT_BROWSER_UNAVAILABLE =
   "The auction browser session is unavailable. Start the Webpage Scraper and try again.";
@@ -51,6 +69,41 @@ type ExportPuppeteerBrowser = {
 const LOG_BUFFER_LIMIT = 500;
 const STOP_GRACEFUL_MS = 10000;
 const STOP_FORCE_MS = 5000;
+
+const EXPECTED_TERMINATION_REASONS = new Set<WorkerTerminationReason>([
+  "user-stop",
+  "restart",
+  "application-exit",
+  "replacement",
+]);
+
+function resolveTerminationReason(
+  options: EngineStopOptions,
+  forced: boolean,
+): WorkerTerminationReason {
+  if (forced) {
+    return "force-kill-after-timeout";
+  }
+  const reason = options.reason;
+  if (reason === "application-exit") return "application-exit";
+  if (reason === "restart") return "restart";
+  if (reason === "replacement") return "replacement";
+  return "user-stop";
+}
+
+function isExpectedWorkerTermination(
+  reason: WorkerTerminationReason | null,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): boolean {
+  if (reason && EXPECTED_TERMINATION_REASONS.has(reason)) {
+    return signal === "SIGTERM" || code === 0;
+  }
+  if (code === 0 && !signal) {
+    return true;
+  }
+  return false;
+}
 
 export type EngineStopOptions = {
   reason?: string;
@@ -98,6 +151,9 @@ export class EngineManager {
     const snapshot = this.data.getEngineStatusSnapshot(id);
     if (snapshot.actualState === "starting") {
       return "starting";
+    }
+    if (snapshot.actualState === "authenticating") {
+      return "authenticating";
     }
     if (snapshot.actualState === "error" || snapshot.healthState === "error") {
       return "error";
@@ -311,6 +367,18 @@ export class EngineManager {
     _requestedBy?: string | null,
   ): Promise<EngineControlResult> {
     const id = assertEngineId(engineId);
+    const correlationId = randomUUID();
+    logWorkerLifecycleTimeline("start-button-pressed", {
+      engineId: id,
+      correlationId,
+      details: { requestedBy: _requestedBy ?? null },
+      includeStack: true,
+    });
+    appendEngineControlLog(
+      this.paths,
+      `Start requested correlationId=${correlationId} engineId=${id} packaged=${app.isPackaged}`,
+    );
+    console.info(`[engine] Start requested correlationId=${correlationId} engineId=${id}`);
 
     if (this.isLive(id)) {
       return {
@@ -322,6 +390,7 @@ export class EngineManager {
     }
 
     if (this.genericScraper.requiresCredentials(id) && !this.credentials.hasRunnableAuth(id)) {
+      appendEngineControlLog(this.paths, `Start blocked missing-credentials engineId=${id}`);
       return {
         ok: false,
         code: "missing-credentials",
@@ -331,6 +400,10 @@ export class EngineManager {
 
     const validationError = this.validateEngineBeforeRun(id);
     if (validationError) {
+      appendEngineControlLog(
+        this.paths,
+        `Start blocked code=${validationError.code} correlationId=${correlationId} engineId=${id} message=${validationError.message}`,
+      );
       this.data.recordStatus(id, {
         actualState: "stopped",
         healthState: "error",
@@ -353,7 +426,12 @@ export class EngineManager {
       this.data.setExecutionMode(id, "local-desktop");
       this.data.updateDesiredState(id, "running");
 
-      const managed = await this.spawnWorker(id);
+      const managed = await this.spawnWorker(id, correlationId);
+      logWorkerLifecycleTimeline("worker-spawned", {
+        engineId: id,
+        correlationId,
+        details: { pid: managed.pid },
+      });
       this.data.recordStatus(id, {
         workerId: `${this.host.getHostId()}-local`,
         actualState: "starting",
@@ -364,15 +442,25 @@ export class EngineManager {
       return {
         ok: true,
         code: "started",
-        message: "Local Data Engine started.",
+        message: "",
         status: this.toStatus(managed),
       };
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to start engine.";
+      appendEngineControlLog(
+        this.paths,
+        `Start failed correlationId=${correlationId} engineId=${id} message=${message}`,
+      );
+      this.data.recordStatus(id, {
+        actualState: "stopped",
+        healthState: "error",
+        lastError: message,
+      });
       return {
         ok: false,
         code: "error",
-        message:
-          error instanceof Error ? error.message : "Unable to start engine.",
+        message,
       };
     }
   }
@@ -383,6 +471,16 @@ export class EngineManager {
     options: EngineStopOptions = {},
   ): Promise<EngineControlResult> {
     const id = assertEngineId(engineId);
+    logEngineManagerStopRequested({
+      engineId: id,
+      reason: options.reason ?? null,
+      requestedBy: requestedBy ?? null,
+      source: "EngineManager.stop",
+      details: {
+        gracefulMs: options.gracefulMs ?? STOP_GRACEFUL_MS,
+        forceMs: options.forceMs ?? STOP_FORCE_MS,
+      },
+    });
     const managed = this.engines.get(id);
     const wasLive = managed ? this.isLive(id) : false;
     const stopReason = options.reason ?? requestedBy ?? null;
@@ -435,6 +533,7 @@ export class EngineManager {
     }
 
     managed.state = "stopping";
+    managed.pendingTerminationReason = resolveTerminationReason(options, false);
     this.data.recordStatus(id, {
       actualState: "stopping",
       workerId: `${this.host.getHostId()}-local`,
@@ -450,6 +549,10 @@ export class EngineManager {
       const processName = this.processName(id);
       const gracefulMs = options.gracefulMs ?? STOP_GRACEFUL_MS;
       let stopResult = await this.processManager.stop(processName, gracefulMs);
+
+      if (stopResult.forced) {
+        managed.pendingTerminationReason = "force-kill-after-timeout";
+      }
 
       if (stopResult.forced || stopResult.exitCode === null) {
         this.recordExecutionLog(id, "Graceful stop timed out");
@@ -509,7 +612,7 @@ export class EngineManager {
   ): Promise<EngineControlResult> {
     const id = assertEngineId(engineId);
     this.recordExecutionLog(id, "Scraper Engine restarted");
-    const stopResult = await this.stop(engineId, requestedBy);
+    const stopResult = await this.stop(engineId, requestedBy, { reason: "restart" });
     if (!stopResult.ok) {
       return stopResult;
     }
@@ -654,6 +757,15 @@ export class EngineManager {
   }
 
   async stopAll(options: EngineStopOptions = {}) {
+    logEngineManagerStopRequested({
+      engineId: null,
+      reason: options.reason ?? "stop-all",
+      requestedBy: null,
+      source: "EngineManager.stopAll",
+      details: {
+        engineCount: this.engines.size,
+      },
+    });
     const ids = [...this.engines.keys()];
     for (const engineId of ids) {
       await this.stop(engineId, null, options);
@@ -809,7 +921,10 @@ export class EngineManager {
     return null;
   }
 
-  private async spawnWorker(engineId: string): Promise<ManagedEngineProcess> {
+  private async spawnWorker(
+    engineId: string,
+    correlationId?: string,
+  ): Promise<ManagedEngineProcess> {
     const existing = this.engines.get(engineId);
     if (existing && this.isLive(engineId)) {
       return existing;
@@ -833,22 +948,126 @@ export class EngineManager {
     const hostId = this.host.getHostId();
     const logFile = path.join(this.paths.engineLogs, `${engineId}.log`);
     const browserUserDataDir = path.join(this.paths.browserData, engineId);
+    const cwdExists = fs.existsSync(cwd);
+
+    ensureWorkerCrashLogDir();
+
+    let entryExists = false;
+    let entrySizeBytes: number | null = null;
+    let entryReadable = false;
+    let entryVerifyError: string | null = null;
+
+    try {
+      if (!fs.existsSync(entryPath)) {
+        entryVerifyError = "Worker entry file does not exist.";
+      } else {
+        const stats = fs.statSync(entryPath);
+        entryExists = stats.isFile();
+        entrySizeBytes = stats.size;
+        if (!entryExists || stats.size <= 0) {
+          entryVerifyError = "Worker entry file is missing, not a file, or empty.";
+        } else {
+          fs.accessSync(entryPath, fs.constants.R_OK);
+          entryReadable = true;
+        }
+      }
+    } catch (error) {
+      entryVerifyError =
+        error instanceof Error ? error.message : "Worker entry file could not be read.";
+    }
+
+    appendWorkerSpawnLog(this.paths, {
+      action: "spawn",
+      correlationId: correlationId ?? null,
+      engineId,
+      appIsPackaged: app.isPackaged,
+      execPath: process.execPath,
+      entryPath,
+      entryExists,
+      entrySizeBytes,
+      entryReadable,
+      entryVerifyError,
+      cwd,
+      cwdExists,
+      adapter,
+      localApiUrl: this.localApiUrl,
+    });
+
+    appendWorkerCrashLog({
+      event: "spawn-requested",
+      correlationId: correlationId ?? null,
+      engineId,
+      timestamp: new Date().toISOString(),
+      workerEntryPath: entryPath,
+      entryExists,
+      entrySizeBytes,
+      entryReadable,
+      entryVerifyError,
+      processExecPath: process.execPath,
+      processResourcesPath: process.resourcesPath,
+      cwd,
+      cwdExists,
+    });
+
+    if (entryVerifyError) {
+      appendWorkerCrashLog({
+        event: "spawn-blocked",
+        correlationId: correlationId ?? null,
+        engineId,
+        reason: entryVerifyError,
+        workerEntryPath: entryPath,
+      });
+      throw new Error(entryVerifyError);
+    }
+
+    if (!cwdExists) {
+      const message = `Worker working directory not found at ${cwd}`;
+      appendWorkerCrashLog({
+        event: "spawn-blocked",
+        correlationId: correlationId ?? null,
+        engineId,
+        reason: message,
+        cwd,
+      });
+      throw new Error(message);
+    }
+
     fs.mkdirSync(browserUserDataDir, { recursive: true });
     fs.mkdirSync(this.paths.cookies, { recursive: true });
+
+    const workerEnv = this.buildWorkerEnvironment({
+      engineId,
+      adapter,
+      creds,
+      hostId,
+      browserUserDataDir,
+      correlationId,
+    });
+
+    appendWorkerCrashLog({
+      event: "spawn-env",
+      correlationId: correlationId ?? null,
+      engineId,
+      childEnvironment: sanitizeWorkerEnvForLog(workerEnv),
+    });
+
+    const stdoutBuffer: string[] = [];
+    const stderrBuffer: string[] = [];
+    let spawnErrorMessage: string | null = null;
 
     const child = spawnNodeProcess({
       name: this.processName(engineId),
       entryPath,
       cwd,
       logFile,
-      env: this.buildWorkerEnvironment({
-        engineId,
-        adapter,
-        creds,
-        hostId,
-        browserUserDataDir,
-      }),
+      env: workerEnv,
       onStdout: (chunk) => {
+        stdoutBuffer.push(chunk);
+        appendWorkerCrashStream("stdout", chunk, {
+          correlationId: correlationId ?? null,
+          engineId,
+        });
+        appendWorkerRuntimeLog(this.paths, "stdout", chunk);
         const secrets = this.credentials.getRedactionValues(engineId);
         const message = redactLogLine(chunk, secrets);
         this.pushLog(engineId, {
@@ -859,6 +1078,12 @@ export class EngineManager {
         });
       },
       onStderr: (chunk) => {
+        stderrBuffer.push(chunk);
+        appendWorkerCrashStream("stderr", chunk, {
+          correlationId: correlationId ?? null,
+          engineId,
+        });
+        appendWorkerRuntimeLog(this.paths, "stderr", chunk);
         const secrets = this.credentials.getRedactionValues(engineId);
         const message = redactLogLine(chunk, secrets);
         this.pushLog(engineId, {
@@ -870,7 +1095,34 @@ export class EngineManager {
       },
     });
 
+    child.on("error", (error) => {
+      spawnErrorMessage = error instanceof Error ? error.message : String(error);
+      appendWorkerCrashLog({
+        event: "spawn-error",
+        correlationId: correlationId ?? null,
+        engineId,
+        message: spawnErrorMessage,
+        stack: error instanceof Error ? error.stack ?? null : null,
+      });
+      appendWorkerSpawnLog(this.paths, {
+        action: "spawn-error",
+        engineId,
+        message: spawnErrorMessage,
+      });
+      this.data.recordStatus(engineId, {
+        workerId: null,
+        actualState: "error",
+        healthState: "error",
+        lastError: spawnErrorMessage,
+      });
+    });
+
     const pid = child.pid ?? 0;
+    appendWorkerSpawnLog(this.paths, {
+      action: "spawned",
+      engineId,
+      pid,
+    });
 
     const managed: ManagedEngineProcess = {
       engineId,
@@ -878,23 +1130,100 @@ export class EngineManager {
       state: "starting",
       startedAt: new Date().toISOString(),
       lastExitCode: null,
+      pendingTerminationReason: null,
       logBuffer: [],
       child,
     };
 
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
+      const terminationReason =
+        managed.pendingTerminationReason ??
+        (signal === "SIGTERM" ? "unexpected" : code === 0 && !signal ? "user-stop" : "unexpected");
+      const expectedExit = isExpectedWorkerTermination(terminationReason, code, signal);
+      logWorkerLifecycleTimeline(
+        expectedExit
+          ? "worker-exited-expected"
+          : signal === "SIGTERM"
+            ? "worker-exited-after-sigterm"
+            : "worker-exited",
+        {
+          engineId,
+          correlationId: correlationId ?? null,
+          details: {
+            exitCode: code,
+            exitSignal: signal,
+            terminationReason,
+            expectedExit,
+          },
+          includeStack: Boolean(signal) && !expectedExit,
+        },
+      );
+      const stdout = stdoutBuffer.join("");
+      const stderr = stderrBuffer.join("");
+      flushWorkerCrashExitReport({
+        correlationId: correlationId ?? null,
+        engineId,
+        entryPath,
+        cwd,
+        execPath: process.execPath,
+        resourcesPath: process.resourcesPath,
+        env: workerEnv,
+        stdout,
+        stderr,
+        exitCode: code,
+        exitSignal: signal,
+        spawnError: spawnErrorMessage,
+      });
+
+      const exitMessage =
+        expectedExit
+          ? null
+          : signal
+            ? `Worker exited with signal ${signal}. See worker-crash.log for details.`
+            : code === 0 && !signal
+              ? null
+              : `Worker exited unexpectedly with code ${code ?? "unknown"}. See worker-crash.log for details.`;
+      appendWorkerSpawnLog(this.paths, {
+        action: "exit",
+        correlationId: correlationId ?? null,
+        engineId,
+        exitCode: code,
+        exitSignal: signal,
+        terminationReason,
+        expectedExit,
+        lastError: exitMessage,
+        stderrTail: stderr.slice(-2000) || null,
+      });
       managed.lastExitCode = code;
-      managed.state = code === 0 ? "stopped" : "error";
+      managed.state = expectedExit ? "stopped" : "error";
       this.processManager.remove(this.processName(engineId));
       this.engines.delete(engineId);
       this.data.recordStatus(engineId, {
         workerId: null,
-        actualState: code === 0 ? "stopped" : "error",
+        actualState: expectedExit ? "stopped" : "error",
+        healthState: expectedExit ? "warning" : "error",
+        lastError: exitMessage,
       });
+      if (expectedExit) {
+        appendEngineControlLog(
+          this.paths,
+          `Worker shutdown correlationId=${correlationId ?? "none"} engineId=${engineId} reason=${terminationReason} code=${code ?? "null"} signal=${signal ?? "null"}`,
+        );
+      } else if (exitMessage) {
+        appendEngineControlLog(
+          this.paths,
+          `Worker exit correlationId=${correlationId ?? "none"} engineId=${engineId} code=${code ?? "null"} signal=${signal ?? "null"}`,
+        );
+      }
     });
 
     child.on("spawn", () => {
-      managed.state = "running";
+      logWorkerLifecycleTimeline("worker-process-spawn-event", {
+        engineId,
+        correlationId: correlationId ?? null,
+        details: { pid: child.pid ?? null },
+      });
+      managed.state = "starting";
       managed.pid = child.pid ?? managed.pid;
     });
 
@@ -909,23 +1238,37 @@ export class EngineManager {
     creds: { email: string; password: string } | null;
     hostId: string;
     browserUserDataDir: string;
+    correlationId?: string;
   }): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env };
     delete env.BAG_AUCTION_EMAIL;
     delete env.BAG_AUCTION_PASSWORD;
     delete env.SCRAPER_EMAIL;
     delete env.SCRAPER_PASSWORD;
+    delete env.ELECTRON_NO_ATTACH_CONSOLE;
+    delete env.ELECTRON_ENABLE_LOGGING;
+    delete env.ELECTRON_ENABLE_STACK_DUMPING;
 
     env.ENGINE_ID = input.engineId;
     env.WORKER_ID = `${input.hostId}-local`;
     env.NEUD_APP_DATA_DIR = this.paths.root;
+    env.NEUD_USER_DATA_PATH = this.paths.root;
     env.NEUD_LOCAL_API_URL = this.localApiUrl;
     env.NEUD_BROWSER_USER_DATA_DIR = input.browserUserDataDir;
     env.NEUD_COOKIES_DIR = this.paths.cookies;
-    env.NEUD_APP_DATA_DIR = this.paths.root;
-    env.NEUD_LOCAL_API_URL = this.localApiUrl;
-    env.NEUD_BROWSER_USER_DATA_DIR = input.browserUserDataDir;
-    env.NEUD_COOKIES_DIR = this.paths.cookies;
+    if (input.correlationId) {
+      env.NEUD_ENGINE_START_CORRELATION_ID = input.correlationId;
+    }
+
+    if (app.isPackaged) {
+      env.NEUD_PACKAGED = "1";
+      env.NEUD_RESOURCES_PATH = process.resourcesPath;
+      env.NODE_ENV = "production";
+      delete env.PUPPETEER_CACHE_DIR;
+      delete env.PUPPETEER_EXECUTABLE_PATH;
+      delete env.CHROME_EXECUTABLE_PATH;
+      delete env.ELECTRON_IS_DEV;
+    }
 
     if (input.adapter === "bag-auction" && input.creds) {
       env.BAG_AUCTION_EMAIL = input.creds.email;

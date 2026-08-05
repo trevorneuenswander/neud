@@ -1,0 +1,145 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (must match package.json, e.g. 0.1.1)"
+        required: true
+        type: string
+      release_visibility:
+        description: "Create GitHub Release as draft or publish immediately"
+        required: true
+        default: draft
+        type: choice
+        options:
+          - draft
+          - published
+      prerelease:
+        description: "Mark GitHub Release as prerelease"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Verify requested version matches package.json
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$PKG_VERSION" != "${{ inputs.version }}" ]; then
+            echo "Requested version ${{ inputs.version }} does not match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Release version confirmed: $PKG_VERSION"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run version consistency tests
+        run: npm run test:neud-release-version
+
+      - name: Run GitHub release configuration tests
+        run: node --test desktop/scripts/test-neud-github-release.mjs
+
+      - name: Run updater configuration tests
+        run: npm run test:neud-auto-update
+
+      - name: Run README branding tests
+        run: npm run test:neud-readme-branding
+
+      - name: Run packaged browser resolver tests
+        run: npm run test:neud-packaged-browser
+
+      - name: Build desktop release
+        run: npm run release:win
+
+      - name: Prepare stable download alias and verify artifacts
+        run: node desktop/scripts/prepare-release-artifacts.mjs
+
+      - name: Confirm required release artifacts exist
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          INSTALLER="desktop/release/NEUD-Setup-${VERSION}-x64.exe"
+          BLOCKMAP="${INSTALLER}.blockmap"
+          STABLE="desktop/release/NEUD-Setup-latest-x64.exe"
+          LATEST="desktop/release/latest.yml"
+          for file in "$INSTALLER" "$BLOCKMAP" "$STABLE" "$LATEST"; do
+            if [ ! -f "$file" ]; then
+              echo "Missing required artifact: $file"
+              exit 1
+            fi
+          done
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: neud-windows-release-${{ inputs.version }}
+          path: |
+            desktop/release/NEUD-Setup-*-x64.exe
+            desktop/release/*.blockmap
+            desktop/release/latest.yml
+
+      - name: Guard against overwriting an existing published release
+        if: inputs.release_visibility == 'published'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ inputs.version }}"
+          if gh release view "$TAG" --json isDraft 2>/dev/null | grep -q '"isDraft": false'; then
+            echo "Published release $TAG already exists. Bump the version instead of overwriting."
+            exit 1
+          fi
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          TAG="v${VERSION}"
+          INSTALLER="desktop/release/NEUD-Setup-${VERSION}-x64.exe"
+          BLOCKMAP="${INSTALLER}.blockmap"
+          STABLE="desktop/release/NEUD-Setup-latest-x64.exe"
+          LATEST="desktop/release/latest.yml"
+          TITLE="NEUD Alpha ${VERSION}"
+          NOTES="Windows Alpha release ${VERSION}. Upload includes versioned installer, stable download alias, blockmap, and latest.yml for auto-update."
+
+          ARGS=(--title "$TITLE" --notes "$NOTES")
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          if [ "${{ inputs.release_visibility }}" = "draft" ]; then
+            ARGS+=(--draft)
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$INSTALLER" "$BLOCKMAP" "$STABLE" "$LATEST" --clobber
+            echo "Updated existing release $TAG assets."
+          else
+            gh release create "$TAG" "${ARGS[@]}" "$INSTALLER" "$BLOCKMAP" "$STABLE" "$LATEST"
+            echo "Created release $TAG."
+          fi
+
+          if [ "${{ inputs.release_visibility }}" = "published" ]; then
+            gh release edit "$TAG" --draft=false
+            echo "Published release $TAG."
+          fi

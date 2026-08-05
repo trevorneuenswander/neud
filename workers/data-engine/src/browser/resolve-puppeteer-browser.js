@@ -4,6 +4,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { Browser, getInstalledBrowsers } from "@puppeteer/browsers";
+import { NEUD_PACKAGED, NEUD_RESOURCES_PATH } from "../neud-env.js";
 
 const require = createRequire(import.meta.url);
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +69,125 @@ function resolvePuppeteerPackagePath(fromDir) {
 function readPackageVersion(packageJsonPath) {
   const parsed = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
   return parsed.version ?? "unknown";
+}
+
+function readExpectedChromeBuildId(puppeteerPackagePath) {
+  try {
+    const revisionsPath = puppeteerPackagePath
+      ? require.resolve("puppeteer-core/lib/cjs/puppeteer/revisions.js", {
+          paths: [path.dirname(puppeteerPackagePath)],
+        })
+      : require.resolve("puppeteer-core/lib/cjs/puppeteer/revisions.js");
+    const revisionsSource = fs.readFileSync(revisionsPath, "utf8");
+    const match = revisionsSource.match(/chrome:\s*'([^']+)'/);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function isPackagedNeudRuntime() {
+  return NEUD_PACKAGED();
+}
+
+export function resolvePackagedBrowserExecutable(resourcesPath = NEUD_RESOURCES_PATH()) {
+  if (!resourcesPath) {
+    return null;
+  }
+
+  const candidates = [
+    path.join(resourcesPath, "puppeteer", "chrome", "chrome-win64", "chrome.exe"),
+    path.join(resourcesPath, "browser", "chrome-win64", "chrome.exe"),
+    path.join(resourcesPath, "staging", "puppeteer", "chrome", "chrome-win64", "chrome.exe"),
+    path.join(resourcesPath, "staging", "browser", "chrome-win64", "chrome.exe"),
+  ];
+
+  for (const candidate of candidates) {
+    if (isUsableExecutable(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+export function categorizeExecutablePath(executablePath, source) {
+  if (!executablePath) {
+    return "missing";
+  }
+
+  if (source === "packaged-bundled") {
+    return "packaged-resources";
+  }
+
+  if (source === "explicit-override") {
+    return "explicit-override";
+  }
+
+  if (source === "puppeteer-managed" || source === "puppeteer-browsers-cache") {
+    return "puppeteer-cache";
+  }
+
+  if (source === "system-chrome" || source === "system-edge") {
+    return "system-browser";
+  }
+
+  if (/[\\/]browser[\\/]chrome-win64[\\/]/i.test(executablePath)) {
+    return "packaged-resources";
+  }
+
+  if (/[\\/]\.cache[\\/]puppeteer/i.test(executablePath)) {
+    return "puppeteer-cache";
+  }
+
+  if (/[\\/]Google[\\/]Chrome[\\/]/i.test(executablePath)) {
+    return "system-browser";
+  }
+
+  return "other";
+}
+
+export function sanitizeDiagnosticPath(executablePath) {
+  if (!executablePath || typeof executablePath !== "string") {
+    return null;
+  }
+
+  const normalized = executablePath.replace(/\\/g, "/");
+  const category = categorizeExecutablePath(executablePath, null);
+
+  if (category === "packaged-resources") {
+    const markers = [
+      "/puppeteer/chrome/chrome-win64/chrome.exe",
+      "/browser/chrome-win64/chrome.exe",
+    ];
+    for (const marker of markers) {
+      const index = normalized.toLowerCase().indexOf(marker);
+      if (index >= 0) {
+        return normalized.slice(index + 1);
+      }
+    }
+    return "puppeteer/chrome/chrome-win64/chrome.exe";
+  }
+
+  if (category === "puppeteer-cache") {
+    return "puppeteer-cache/chrome.exe";
+  }
+
+  if (category === "system-browser") {
+    if (/chrome\.exe$/i.test(normalized)) {
+      return "system/Google/Chrome/Application/chrome.exe";
+    }
+    if (/msedge\.exe$/i.test(normalized)) {
+      return "system/Microsoft/Edge/Application/msedge.exe";
+    }
+    return "system-browser";
+  }
+
+  if (category === "explicit-override") {
+    return "explicit-override";
+  }
+
+  return path.basename(executablePath);
 }
 
 function resolveDefaultCacheDir() {
@@ -215,21 +335,32 @@ function findSystemBrowser(candidates, source) {
 }
 
 function buildResolutionFailure(diagnostics) {
-  const message = [
-    "Unable to resolve a usable Chrome executable for Puppeteer.",
-    "Run `npm run browser:install` from workers/data-engine, or install Google Chrome.",
-    diagnostics.rejectedMissingConfiguredExecutable
-      ? `Rejected missing configured executable: ${diagnostics.rejectedMissingConfiguredExecutable}`
-      : null,
-    diagnostics.puppeteerExecutablePathResult
-      ? `Puppeteer executablePath returned: ${diagnostics.puppeteerExecutablePathResult}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const packagedMode = diagnostics.packagedMode === true;
+  const message = packagedMode
+    ? [
+        "Unable to resolve the bundled Chrome executable for the packaged NEUD application.",
+        "Reinstall NEUD or rebuild the desktop installer with Chrome for Testing included.",
+        diagnostics.packagedBrowserPathChecked
+          ? `Expected packaged browser at: ${diagnostics.packagedBrowserPathChecked}`
+          : null,
+        diagnostics.firstBrowserFailureStage
+          ? `Failure stage: ${diagnostics.firstBrowserFailureStage}`
+          : null,
+      ]
+    : [
+        "Unable to resolve a usable Chrome executable for Puppeteer.",
+        "Run `npm run browser:install` from workers/data-engine, or install Google Chrome.",
+        diagnostics.rejectedMissingConfiguredExecutable
+          ? `Rejected missing configured executable: ${diagnostics.rejectedMissingConfiguredExecutable}`
+          : null,
+        diagnostics.puppeteerExecutablePathResult
+          ? `Puppeteer executablePath returned: ${diagnostics.puppeteerExecutablePathResult}`
+          : null,
+      ];
 
-  const error = new Error(message);
+  const error = new Error(message.filter(Boolean).join(" "));
   error.diagnostics = diagnostics;
+  error.code = "NEUD_BROWSER_EXECUTABLE_MISSING";
   return error;
 }
 
@@ -243,6 +374,12 @@ export async function resolvePuppeteerBrowser(options = {}) {
   const puppeteerPackageVersion =
     options.puppeteerPackageVersion ??
     (puppeteerPackagePath ? readPackageVersion(puppeteerPackagePath) : null);
+  const expectedBrowserVersion = readExpectedChromeBuildId(puppeteerPackagePath);
+  const packagedMode = isPackagedNeudRuntime();
+  const resourcesPath = NEUD_RESOURCES_PATH() ?? null;
+  const packagedBrowserPathChecked = resourcesPath
+    ? path.join(resourcesPath, "puppeteer", "chrome", "chrome-win64", "chrome.exe")
+    : null;
 
   const explicitCandidates = collectExplicitCandidates(options);
   const configuredExecutablePath = explicitCandidates[0] ?? null;
@@ -253,6 +390,14 @@ export async function resolvePuppeteerBrowser(options = {}) {
   const diagnostics = {
     puppeteerVersion: puppeteerPackageVersion,
     puppeteerPackagePath,
+    expectedBrowserVersion,
+    detectedBrowserVersion: null,
+    packagedMode,
+    browserExecutablePresent: false,
+    browserExecutablePathCategory: "missing",
+    browserSource: null,
+    firstBrowserFailureStage: null,
+    packagedBrowserPathChecked,
     puppeteerCacheDirSet: Boolean(process.env.PUPPETEER_CACHE_DIR),
     puppeteerCacheDir: process.env.PUPPETEER_CACHE_DIR ?? null,
     configuredExecutableSupplied: explicitCandidates.length > 0,
@@ -270,11 +415,37 @@ export async function resolvePuppeteerBrowser(options = {}) {
     browserLaunchSucceeded: false,
   };
 
+  const packagedExecutable = resolvePackagedBrowserExecutable(resourcesPath);
+  if (packagedExecutable) {
+    diagnostics.resolvedBrowserSource = "packaged-bundled";
+    diagnostics.browserSource = "packaged-bundled";
+    diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(packagedExecutable);
+    diagnostics.resolvedExecutableExists = true;
+    diagnostics.browserExecutablePresent = true;
+    diagnostics.browserExecutablePathCategory = "packaged-resources";
+    return {
+      executablePath: packagedExecutable,
+      source: "packaged-bundled",
+      puppeteerVersion: puppeteerPackageVersion,
+      browserVersion: expectedBrowserVersion,
+      cacheDir: null,
+      diagnostics,
+    };
+  }
+
+  if (packagedMode) {
+    diagnostics.firstBrowserFailureStage = "packaged_browser_missing";
+    throw buildResolutionFailure(diagnostics);
+  }
+
   for (const candidate of explicitCandidates) {
     if (isUsableExecutable(candidate)) {
       diagnostics.resolvedBrowserSource = "explicit-override";
-      diagnostics.resolvedExecutablePath = candidate;
+      diagnostics.browserSource = "explicit-override";
+      diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(candidate);
       diagnostics.resolvedExecutableExists = true;
+      diagnostics.browserExecutablePresent = true;
+      diagnostics.browserExecutablePathCategory = "explicit-override";
       return {
         executablePath: candidate,
         source: "explicit-override",
@@ -305,8 +476,11 @@ export async function resolvePuppeteerBrowser(options = {}) {
 
     if (isUsableExecutable(cleanResolution)) {
       diagnostics.resolvedBrowserSource = "puppeteer-managed";
-      diagnostics.resolvedExecutablePath = cleanResolution;
+      diagnostics.browserSource = "puppeteer-managed";
+      diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(cleanResolution);
       diagnostics.resolvedExecutableExists = true;
+      diagnostics.browserExecutablePresent = true;
+      diagnostics.browserExecutablePathCategory = "puppeteer-cache";
       diagnostics.cacheDir = resolveDefaultCacheDir();
       return {
         executablePath: cleanResolution,
@@ -324,8 +498,11 @@ export async function resolvePuppeteerBrowser(options = {}) {
 
     if (isUsableExecutable(envResolution)) {
       diagnostics.resolvedBrowserSource = "puppeteer-managed";
-      diagnostics.resolvedExecutablePath = envResolution;
+      diagnostics.browserSource = "puppeteer-managed";
+      diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(envResolution);
       diagnostics.resolvedExecutableExists = true;
+      diagnostics.browserExecutablePresent = true;
+      diagnostics.browserExecutablePathCategory = "puppeteer-cache";
       diagnostics.cacheDir = process.env.PUPPETEER_CACHE_DIR ?? resolveDefaultCacheDir();
       return {
         executablePath: envResolution,
@@ -338,6 +515,8 @@ export async function resolvePuppeteerBrowser(options = {}) {
     }
   }
 
+  diagnostics.firstBrowserFailureStage = diagnostics.firstBrowserFailureStage ?? "puppeteer_cache_missing";
+
   const cacheDirs = [
     process.env.PUPPETEER_CACHE_DIR,
     resolveDefaultCacheDir(),
@@ -347,8 +526,11 @@ export async function resolvePuppeteerBrowser(options = {}) {
   const installedBrowser = await findInstalledPuppeteerBrowser(cacheDirs);
   if (installedBrowser) {
     diagnostics.resolvedBrowserSource = "puppeteer-browsers-cache";
-    diagnostics.resolvedExecutablePath = installedBrowser.executablePath;
+    diagnostics.browserSource = "puppeteer-browsers-cache";
+    diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(installedBrowser.executablePath);
     diagnostics.resolvedExecutableExists = true;
+    diagnostics.browserExecutablePresent = true;
+    diagnostics.browserExecutablePathCategory = "puppeteer-cache";
     diagnostics.cacheDir = installedBrowser.cacheDir;
     return {
       executablePath: installedBrowser.executablePath,
@@ -360,11 +542,16 @@ export async function resolvePuppeteerBrowser(options = {}) {
     };
   }
 
+  diagnostics.firstBrowserFailureStage = diagnostics.firstBrowserFailureStage ?? "system_browser_fallback";
+
   const systemChrome = findSystemBrowser(WINDOWS_CHROME_CANDIDATES, "system-chrome");
   if (systemChrome) {
     diagnostics.resolvedBrowserSource = systemChrome.source;
-    diagnostics.resolvedExecutablePath = systemChrome.executablePath;
+    diagnostics.browserSource = systemChrome.source;
+    diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(systemChrome.executablePath);
     diagnostics.resolvedExecutableExists = true;
+    diagnostics.browserExecutablePresent = true;
+    diagnostics.browserExecutablePathCategory = "system-browser";
     return {
       executablePath: systemChrome.executablePath,
       source: systemChrome.source,
@@ -378,8 +565,11 @@ export async function resolvePuppeteerBrowser(options = {}) {
   const systemEdge = findSystemBrowser(WINDOWS_EDGE_CANDIDATES, "system-edge");
   if (systemEdge) {
     diagnostics.resolvedBrowserSource = systemEdge.source;
-    diagnostics.resolvedExecutablePath = systemEdge.executablePath;
+    diagnostics.browserSource = systemEdge.source;
+    diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(systemEdge.executablePath);
     diagnostics.resolvedExecutableExists = true;
+    diagnostics.browserExecutablePresent = true;
+    diagnostics.browserExecutablePathCategory = "system-browser";
     return {
       executablePath: systemEdge.executablePath,
       source: systemEdge.source,
@@ -390,6 +580,7 @@ export async function resolvePuppeteerBrowser(options = {}) {
     };
   }
 
+  diagnostics.firstBrowserFailureStage = "browser_resolution_failed";
   throw buildResolutionFailure(diagnostics);
 }
 
@@ -432,6 +623,7 @@ export async function resolveAndLaunchPuppeteerBrowser(options = {}) {
 
   resolved.diagnostics.browserLaunchSucceeded = probe.browserLaunchSucceeded;
   resolved.diagnostics.browserVersion = probe.browserVersion;
+  resolved.diagnostics.detectedBrowserVersion = probe.browserVersion;
   resolved.browserVersion = probe.browserVersion;
 
   return {
@@ -445,8 +637,18 @@ export function formatBrowserDiagnostics(diagnostics) {
   return {
     puppeteerVersion: diagnostics.puppeteerVersion ?? null,
     puppeteerPackagePath: diagnostics.puppeteerPackagePath ?? null,
+    expectedBrowserVersion: diagnostics.expectedBrowserVersion ?? null,
+    detectedBrowserVersion: diagnostics.detectedBrowserVersion ?? diagnostics.browserVersion ?? null,
+    packagedMode: diagnostics.packagedMode ? "yes" : "no",
+    browserSource: diagnostics.browserSource ?? diagnostics.resolvedBrowserSource ?? null,
+    browserExecutablePresent: diagnostics.browserExecutablePresent ? "yes" : "no",
+    browserExecutablePathCategory: diagnostics.browserExecutablePathCategory ?? "missing",
+    firstBrowserFailureStage: diagnostics.firstBrowserFailureStage ?? null,
+    packagedBrowserPathChecked: diagnostics.packagedBrowserPathChecked
+      ? sanitizeDiagnosticPath(diagnostics.packagedBrowserPathChecked)
+      : null,
     puppeteerCacheDirSet: diagnostics.puppeteerCacheDirSet ? "yes" : "no",
-    puppeteerCacheDir: diagnostics.puppeteerCacheDir ?? null,
+    puppeteerCacheDir: diagnostics.puppeteerCacheDir ? "puppeteer-cache" : null,
     configuredExecutableSupplied: diagnostics.configuredExecutableSupplied ? "yes" : "no",
     configuredExecutableExists: diagnostics.configuredExecutableExists ? "yes" : "no",
     rejectedMissingConfiguredExecutable:
@@ -454,13 +656,15 @@ export function formatBrowserDiagnostics(diagnostics) {
     attemptingPuppeteerBrowserResolution: diagnostics.attemptingPuppeteerBrowserResolution
       ? "yes"
       : "no",
-    puppeteerExecutablePathResult: diagnostics.puppeteerExecutablePathResult ?? null,
+    puppeteerExecutablePathResult: diagnostics.puppeteerExecutablePathResult
+      ? sanitizeDiagnosticPath(diagnostics.puppeteerExecutablePathResult)
+      : null,
     puppeteerExecutableExists: diagnostics.puppeteerExecutableExists ? "yes" : "no",
     resolvedBrowserSource: diagnostics.resolvedBrowserSource ?? null,
     resolvedExecutablePath: diagnostics.resolvedExecutablePath ?? null,
     resolvedExecutableExists: diagnostics.resolvedExecutableExists ? "yes" : "no",
     browserLaunchSucceeded: diagnostics.browserLaunchSucceeded ? "yes" : "no",
     browserVersion: diagnostics.browserVersion ?? null,
-    cacheDir: diagnostics.cacheDir ?? null,
+    cacheDir: diagnostics.cacheDir ? "puppeteer-cache" : null,
   };
 }

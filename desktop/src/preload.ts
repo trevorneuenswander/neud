@@ -454,6 +454,25 @@ const neudDesktop = {
         databasePath?: string;
       }>,
   },
+  updates: {
+    getStatus: () => ipcRenderer.invoke("neud:updates:getStatus"),
+    check: (reason?: "manual" | "menu" | "startup") =>
+      ipcRenderer.invoke("neud:updates:check", reason ?? "manual"),
+    install: () => ipcRenderer.invoke("neud:updates:install") as Promise<
+      { ok: true } | { ok: false; error: string }
+    >,
+    onStatus: (
+      callback: (status: Record<string, unknown>) => void,
+    ) => {
+      const listener = (_event: unknown, status: Record<string, unknown>) => {
+        callback(status);
+      };
+      ipcRenderer.on("neud:updates:status", listener);
+      return () => {
+        ipcRenderer.removeListener("neud:updates:status", listener);
+      };
+    },
+  },
 };
 
 const DISPLAY_CONNECTION_EVENT = "neud-display-connection-changed";

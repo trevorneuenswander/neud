@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WindowsDownloadLink } from "@/components/downloads/WindowsDownloadLink";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { requireUser } from "@/lib/auth/authorization";
@@ -47,12 +48,9 @@ export default async function HostedSettingsPage() {
           Install the NEUD desktop app to publish displays, run data engines, and manage projects
           locally.
         </p>
-        <Link
-          href={HOSTED_PORTAL_PATHS.download}
-          className="inline-flex text-sm font-medium text-primary hover:underline"
-        >
+        <WindowsDownloadLink className="inline-flex text-sm font-medium text-primary hover:underline">
           Download Desktop
-        </Link>
+        </WindowsDownloadLink>
       </Card>
     </div>
   );

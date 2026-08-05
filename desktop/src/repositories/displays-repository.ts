@@ -244,6 +244,80 @@ export class DisplaysRepository {
     return next;
   }
 
+  insertFromCloud(input: {
+    id: string;
+    projectId: string;
+    name: string;
+    displayKey: string;
+    enabled?: boolean;
+    refreshRateMs?: number;
+    displayWidth?: number;
+    displayHeight?: number;
+    sortOrder?: number | null;
+    createdAt?: string;
+    updatedAt?: string;
+  }): LocalDisplay {
+    const existing = this.getById(input.id);
+    if (existing) {
+      return existing;
+    }
+
+    const now = input.updatedAt ?? new Date().toISOString();
+    const size = normalizeDisplaySize(input.displayWidth, input.displayHeight);
+    const display: LocalDisplay = {
+      id: input.id,
+      projectId: input.projectId,
+      name: input.name,
+      displayKey: input.displayKey,
+      htmlPath: null,
+      settings: {},
+      enabled: input.enabled ?? true,
+      refreshRateMs: input.refreshRateMs ?? 5000,
+      displayWidth: size.displayWidth,
+      displayHeight: size.displayHeight,
+      sortOrder: input.sortOrder ?? this.getNextSortOrder(input.projectId),
+      syncStatus: "synced",
+      syncAttemptCount: 0,
+      lastSyncAttemptAt: null,
+      syncedAt: now,
+      syncError: null,
+      syncVersion: 1,
+      deletedAt: null,
+      createdAt: input.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO displays (
+          id, project_id, name, display_key, html_path, settings_json,
+          enabled, refresh_rate_ms, display_width, display_height, sort_order,
+          sync_status, sync_attempt_count, sync_version, synced_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        display.id,
+        display.projectId,
+        display.name,
+        display.displayKey,
+        display.htmlPath,
+        JSON.stringify(display.settings),
+        display.enabled ? 1 : 0,
+        display.refreshRateMs,
+        display.displayWidth,
+        display.displayHeight,
+        display.sortOrder,
+        display.syncStatus,
+        display.syncAttemptCount,
+        display.syncVersion,
+        display.syncedAt,
+        display.createdAt,
+        display.updatedAt,
+      );
+
+    return display;
+  }
+
   updateName(displayId: string, name: string): LocalDisplay | null {
     const existing = this.getById(displayId);
     if (!existing) {

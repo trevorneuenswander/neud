@@ -1,0 +1,299 @@
+{
+  "completedAt": "2026-08-03T21:32:12.139Z",
+  "mode": "confirm",
+  "diagnosticScriptError": null,
+  "blockedByUnknown": false,
+  "targets": {
+    "teamTargets": [],
+    "userTargets": [],
+    "projectTargets": [
+      {
+        "id": "a1ecf205-e438-4be7-9166-4a8cc591b953",
+        "slug": "neud-validation-live-a-mscsit34",
+        "name": "[NEUD Validation] Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "ea8e1a36-dafd-4646-afc5-1662ab816ad1",
+        "slug": "neud-validation-live-a-ms9aix8r",
+        "name": "[NEUD Validation] Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "64c85903-871f-47e7-a5eb-df54860aff92",
+        "slug": "neud-validation-live-b-mscsit34",
+        "name": "[NEUD Validation] Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "aed41b35-09e0-4fa2-8a2d-e59ff7e210b3",
+        "slug": "neud-validation-live-b-ms9aix8r",
+        "name": "[NEUD Validation] Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "cf6edfe9-a68f-4d64-89aa-fdc25dc77871",
+        "slug": "neud-validation-rate-ms9aix8r-0",
+        "name": "[NEUD Validation] Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "6ecf5b3d-ef04-45ce-b57a-33db081992c4",
+        "slug": "neud-validation-rate-mscsit34-0",
+        "name": "[NEUD Validation] Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "e3d7f2fa-e0b6-4686-a646-390d7ff6621d",
+        "slug": "neud-validation-rate-ms9aix8r-1",
+        "name": "[NEUD Validation] Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "b00b8d30-7949-488e-9f42-745d229d9342",
+        "slug": "neud-validation-rate-mscsit34-1",
+        "name": "[NEUD Validation] Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "40dec715-22de-4c1a-bc0a-408343aa66fc",
+        "slug": "live-a-ms5l02t1",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "3ce0b185-9e93-4a3e-97d4-7efa5498514f",
+        "slug": "live-a-ms5ldkpd",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "54127514-fe35-4cc7-8b9e-b1de56b74d80",
+        "slug": "live-a-ms5lkmeq",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "35569b30-0a96-4b4a-952f-d55a737c543a",
+        "slug": "live-a-ms5l19a0",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "481fbacc-0b67-4a3e-898a-aced82e6c2e9",
+        "slug": "live-a-ms5jslmf",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "b5c35e8d-b1fe-4b71-9fd2-c06daacaf8ad",
+        "slug": "live-a-ms5lc3e5",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "e3db733a-38dd-4607-8c1f-b8df56ba0c1c",
+        "slug": "live-a-ms832dj8",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "c20c5c4b-b1f5-4db3-99f8-31be2ccc0772",
+        "slug": "live-a-ms5l4l0g",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "7701396b-4889-4a7d-8bdb-efe2e240c603",
+        "slug": "live-a-ms5knvt7",
+        "name": "Live Project A",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "3d9c0d13-834e-4d27-9565-aee0f234ffd0",
+        "slug": "live-b-ms5knvt7",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "18d5d6af-62f0-482e-80a1-53e2a5840b88",
+        "slug": "live-b-ms5jslmf",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "c5a6c59e-e5d2-4e0c-9d5b-c80ead8b64c3",
+        "slug": "live-b-ms5l02t1",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "df60b1c8-dfdb-4e53-ae74-5fc2d0dc2155",
+        "slug": "live-b-ms5l19a0",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "8f8e73eb-ef49-4071-bf50-4a7095f0df72",
+        "slug": "live-b-ms5l4l0g",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "66bdc2b8-2d1b-481d-b5ea-ccf4dd3a52a3",
+        "slug": "live-b-ms5lc3e5",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "8d2dc8c0-6e52-4331-b2d8-4c9becc2deb1",
+        "slug": "live-b-ms5ldkpd",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "447806c0-7b06-45d6-b109-ff06a525a0a6",
+        "slug": "live-b-ms5lkmeq",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "09009318-d2ea-4bb2-9b1b-9b4e33440d66",
+        "slug": "live-b-ms832dj8",
+        "name": "Live Project B",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "f4c9ec2f-5738-4b28-8543-40d85c28ca8a",
+        "slug": "rate-ms5ldkpd-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "5d9b5bf0-ffe5-4673-bcbe-0ba8e2268e7d",
+        "slug": "rate-ms5lc3e5-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "35c3c46d-117e-4297-a39b-c211e8ff927e",
+        "slug": "rate-ms5lkmeq-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "043f9b2e-80a3-425f-a130-2d55d9a4eea6",
+        "slug": "rate-ms5jslmf-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "6976ef40-f781-43d9-bbe1-247ae3a9e00b",
+        "slug": "rate-ms832dj8-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "88f6efe8-3125-48de-8316-0b5aef9ae9c1",
+        "slug": "rate-ms5l4l0g-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "387b658c-bbd8-4174-84f6-a56d0e02a80c",
+        "slug": "rate-ms5l19a0-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "48fbcbe5-9f6d-4e87-b9f2-f975cd5fa191",
+        "slug": "rate-ms5l02t1-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "a0d66c78-689e-4142-936a-4cf559b0e01d",
+        "slug": "rate-ms5knvt7-0",
+        "name": "Rate 0",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "bf3ce6ce-217f-4f70-8f95-1ceefbc98bbd",
+        "slug": "rate-ms5knvt7-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "f4d1054c-4ded-4825-b4e5-4225e483acc8",
+        "slug": "rate-ms5l19a0-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "a07acb45-cd1b-4868-81a6-68a965a1e8b2",
+        "slug": "rate-ms5jslmf-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "08c52fda-572b-4bb7-9f33-037ff0b6ab8b",
+        "slug": "rate-ms5lc3e5-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "efd34240-8110-445f-9585-d2a55c5696ff",
+        "slug": "rate-ms5lkmeq-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "b21c5b2f-51d4-4d4e-812c-71bd7ab98954",
+        "slug": "rate-ms5l4l0g-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "22b1d4b4-907d-4684-898f-0e5705a56a98",
+        "slug": "rate-ms5l02t1-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "43614e2f-e789-444d-8869-43864a58a503",
+        "slug": "rate-ms5ldkpd-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      },
+      {
+        "id": "e7342509-bd21-47e6-b0ce-c19734ccafb6",
+        "slug": "rate-ms832dj8-1",
+        "name": "Rate 1",
+        "classification": "automated_test_fixture"
+      }
+    ],
+    "invitationTargets": [],
+    "unknownCount": 0
+  },
+  "dependencyCounts": {
+    "invitations": 0,
+    "projects": 44,
+    "teams": 0,
+    "users": 0,
+    "unknownRecordsBlockingCleanup": 0
+  },
+  "execution": {
+    "counts": {
+      "invitations": 0,
+      "projects": 44,
+      "teams": 0,
+      "users": 0
+    },
+    "errors": [],
+    "ok": true
+  },
+  "notes": [
+    "Dry run by default. Re-run with --confirm to delete classified automated test fixtures only.",
+    "Protected records: NEUD, Hildreth Media Group, Broad Arrow Auctions, Trevor Neuenswander."
+  ]
+}

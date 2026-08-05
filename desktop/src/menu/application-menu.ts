@@ -1,4 +1,5 @@
 import { app, Menu, shell, type BrowserWindow } from "electron";
+import { triggerHelpMenuCheckForUpdates } from "../services/auto-update-service";
 
 export const APPLICATION_MENU_LABELS = ["File", "Edit", "View", "Window", "Help"] as const;
 
@@ -89,11 +90,17 @@ export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null):
             clearLocalSessionHandler?.();
           },
         },
+        {
+          label: "Check for Updates…",
+          click: () => {
+            triggerHelpMenuCheckForUpdates();
+          },
+        },
         { type: "separator" },
         {
           label: "NEUD Documentation",
           click: () => {
-            void shell.openExternal("https://github.com/");
+            void shell.openExternal("https://github.com/trevorneuenswander/neud");
           },
         },
       ],

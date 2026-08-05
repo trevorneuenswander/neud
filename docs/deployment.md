@@ -1,95 +1,83 @@
 # Deployment
 
-HMG Graphics Server uses a split deployment model: the web portal on Vercel and background workers on separate hosts.
+NEUD is transitioning from a hosted Vercel portal to a **desktop-first Windows application**.
 
-## Web application (Vercel)
+## Primary product (target)
 
-The Next.js App Router application deploys to Vercel.
+The installable Electron application includes:
 
-Responsibilities:
+- Embedded Next.js UI (same visual design)
+- Local SQLite database (`%APPDATA%\NEUD\data\neud.sqlite`)
+- Local HTTP server on `127.0.0.1:8070` for graphics, controllers, and API
+- Local Data Engine workers with bundled Puppeteer/Chromium (Phase G)
+- Minimal Supabase account service for online login and entitlement only
 
-- Portal pages (login, dashboard, projects, access requests)
-- Web controllers
-- Graphic display URLs for OBS
-- API routes for project and worker coordination (future)
+See [desktop-overhaul-audit.md](./desktop-overhaul-audit.md) and [architecture.md](./architecture.md).
 
-Vercel Functions are suitable for request/response work only. They must not run continuous Puppeteer or long-polling scrapers.
+## Transitional hosted deployment
 
-## Workers (separate Node.js hosts)
+During migration Phases A–F, the existing Vercel + Supabase portal may still run for comparison and data export. Do **not** run destructive Supabase cleanup until local migration is verified.
 
-Graphics workers run outside Vercel as long-lived Node.js processes.
+| Service | Current role | Target role |
+|---------|--------------|-------------|
+| Vercel | Hosted Next.js portal | Deprecated after Phase F |
+| Supabase Auth | Login, invites, recovery | **Keep** (minimal account service) |
+| Supabase Postgres | All project/runtime data | **Migrate locally**, then remove runtime tables manually |
+| External worker VPS | Remote command queue worker | **Remove** (local-only engines) |
 
-Responsibilities:
+## Desktop packaging
 
-- Continuous data collection (e.g. Puppeteer scraping for BAG-Graphics)
-- Writing state updates to the database
-- Reporting health and status to the portal
+```bash
+npm run build:desktop
+npm run package:win
+```
 
-Worker location in this repository: `workers/[project-type]/`
+Requires approved install scripts for `electron` and `app-builder-bin` when npm prompts.
 
-## Services
+Packaged resources include:
 
-| Service | Role |
-|---------|------|
-| Vercel | Hosts the Next.js web application |
-| Supabase Auth | User authentication and invitations |
-| Supabase Postgres | Profiles, access requests, and future project data |
-| Supabase Realtime | Live state updates to controllers and displays (planned) |
+- Next.js standalone server
+- Data Engine worker runtime
+- SQL.js WASM (`sql-wasm.wasm` — bundle in Phase G)
+- Puppeteer Chromium (Phase G production blocker)
 
 ## Environment variables
 
-Set these in Vercel project settings and in local `.env.local`:
+| Variable | Scope |
+|----------|-------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Auth (embedded in desktop during transition) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Auth and desktop authenticated cloud sync |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Vercel/server only** — identity admin, access requests, trusted scripts. **Not packaged in Electron.** |
+| `NEUD_TRUSTED_PORTAL_ORIGIN` | Trusted HTTPS origin for desktop privileged admin API calls (Vercel / NEUD.io) |
+| `NEUD_SUPABASE_DB_URL` | Non-production Postgres URI for live migration apply scripts only (never package) |
+| `NEUD_ALLOW_PLAINTEXT_CREDENTIALS` | Dev-only scraper credential fallback |
 
-```bash
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-```
+Do not package `.env.local`, `server.env`, or any file containing `SUPABASE_SERVICE_ROLE_KEY` in installers.
 
-- Public keys are used by the browser and server session client.
-- The service-role key is used only in server-only modules.
-- Never expose the service-role key to the browser or client bundles.
+The desktop main process loads public Supabase config only (`loadSupabasePublicConfig`). Missing cloud config does not block startup.
 
-## Database migration
+## Packaging security (Slice 2.2)
 
-Before deploying, apply `supabase/migrations/001_access_requests_and_profiles.sql` in the Supabase SQL editor.
+Production desktop packages must exclude:
 
-Then create the first owner profile using the SQL in [authentication.md](./authentication.md).
+- Service-role environment files (`.env.local`, `server.env`)
+- Trusted admin scripts and migration credentials
+- Stale privileged modules (`supabase-main.js` removed at build via `copy-runtime-assets.mjs`)
 
-## Supabase configuration
+Automated scan: `desktop/scripts/test-neud-desktop-no-service-role.mjs` and `desktop/scripts/test-neud-release-security.mjs`.
 
-### Disable public signup
+Local packaged worker: see [data-engine-worker-deployment.md](./data-engine-worker-deployment.md).
 
-In **Authentication → Providers → Email**, disable public signups.
+## Supabase cleanup (manual only)
 
-### Redirect URLs
+1. `supabase/cleanup/desktop_only_preflight.sql`
+2. `supabase/cleanup/desktop_only_export.sql`
+3. Import via `scripts/migrate-from-supabase.mjs` (Phase B wizard)
+4. `supabase/cleanup/desktop_only_destructive_cleanup.sql` — **manual, destructive**
+5. `supabase/cleanup/desktop_only_verify.sql`
 
-Configure under **Authentication → URL Configuration**:
+Apply additive auth migration `007_auth_entitlements.sql` before removing runtime tables.
 
-```
-http://localhost:3000/auth/confirm
-http://localhost:3000/**
-https://your-production-domain.com/auth/confirm
-https://your-production-domain.com/**
-```
+## Rollback
 
-### Invite email template
-
-```html
-<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/accept-invitation">
-  Accept the invite
-</a>
-```
-
-See [authentication.md](./authentication.md) for full setup and testing steps.
-
-## Local development
-
-```bash
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to view the portal.
-
-Worker development will use separate commands once the BAG worker is added.
+Restore `%APPDATA%\NEUD\data\backups\*.sqlite` and revert to a previous application version. Supabase data remains until destructive cleanup is executed manually.

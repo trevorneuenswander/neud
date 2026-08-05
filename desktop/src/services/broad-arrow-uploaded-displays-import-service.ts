@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import {
   BROAD_ARROW_CANONICAL_PROJECT,
   isBroadArrowCanonicalProject,
@@ -21,6 +19,7 @@ import {
   transformLegacyTickerToLiveBridge,
   transformUploadedDisplayV1ToV2,
 } from "../displays/legacy-display-v2-transform";
+import { readBundledDisplaySourceFromReference } from "../lib/bundled-display-sources";
 import {
   LEGACY_TICKER_LIVE_CHANGE_NOTE,
   LEGACY_TICKER_LIVE_REVISION_NAME,
@@ -125,7 +124,7 @@ export class BroadArrowUploadedDisplaysImportService {
       };
     }
 
-    const v1Html = this.readBundledV1Html(spec);
+    const v1Html = readBundledDisplaySourceFromReference(spec.bundledV1RelativePath);
     const display = this.displays.upsert({
       projectId,
       name: spec.name,
@@ -505,25 +504,5 @@ export class BroadArrowUploadedDisplaysImportService {
     this.storage.deleteDisplayTree(projectId, code.displayId);
     this.displayCode.deleteByDisplayId(code.displayId);
     this.displays.deleteById(code.displayId);
-  }
-
-  private readBundledV1Html(spec: BroadArrowUploadedDisplaySpec): string {
-    const filename = path.basename(spec.bundledV1RelativePath);
-    const candidates = [
-      path.join(this.repoRoot, spec.bundledV1RelativePath),
-      path.join(this.repoRoot, "displays", "bundled", filename),
-      path.join(this.repoRoot, "desktop", "dist", "displays", "bundled", filename),
-      path.join(__dirname, "bundled", filename),
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, "utf8");
-      }
-    }
-
-    throw new Error(
-      `Bundled display source not found for ${spec.slug} (${spec.bundledV1RelativePath})`,
-    );
   }
 }

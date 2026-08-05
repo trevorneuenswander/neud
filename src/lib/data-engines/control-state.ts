@@ -136,16 +136,19 @@ export function getEngineControlState(input: {
   const startReason =
     actualState === "starting"
       ? "Worker is starting."
-      : actualState === "running"
-        ? "Engine is already running."
-        : actualState === "stopping"
-          ? "Engine is stopping."
-          : "Start is unavailable in the current state.";
+      : actualState === "authenticating"
+        ? "Worker is authenticating."
+        : actualState === "running"
+          ? "Engine is already running."
+          : actualState === "stopping"
+            ? "Engine is stopping."
+            : "Start is unavailable in the current state.";
 
   const canStop =
     actualState !== "stopping" &&
     (desiredState === "running" ||
       actualState === "starting" ||
+      actualState === "authenticating" ||
       actualState === "running");
 
   const stopReason =
@@ -163,9 +166,11 @@ export function getEngineControlState(input: {
       ? "Worker is not connected."
       : actualState === "starting"
         ? "Worker is starting."
-        : actualState === "stopping"
-          ? "Engine is stopping."
-          : "Restart is unavailable in the current state.";
+        : actualState === "authenticating"
+          ? "Worker is authenticating."
+          : actualState === "stopping"
+            ? "Engine is stopping."
+            : "Restart is unavailable in the current state.";
 
   const canRunOnce =
     actualState === "offline" ||
@@ -176,9 +181,11 @@ export function getEngineControlState(input: {
   const runOnceReason =
     actualState === "starting"
       ? "Worker is starting."
-      : actualState === "stopping"
-        ? "Engine is stopping."
-        : "Run Once is unavailable in the current state.";
+      : actualState === "authenticating"
+        ? "Worker is authenticating."
+        : actualState === "stopping"
+          ? "Engine is stopping."
+          : "Run Once is unavailable in the current state.";
 
   return {
     activeCommand,

@@ -11,6 +11,7 @@ import {
   type DisplayListItem,
 } from "@/lib/displays/displays-list-types";
 import type { CreatedDisplayPayload } from "@/lib/local/displays-api";
+import { localFetch } from "@/lib/local/api";
 
 type DisplaysPageClientProps = {
   projectSlug: string;
@@ -40,6 +41,12 @@ export function DisplaysPageClient({
     }
     setItems(initialItems);
   }, [initialItems]);
+
+  useEffect(() => {
+    void localFetch("/api/display-sync/sync-now", { method: "POST" }).catch(() => {
+      // sync is best-effort when opening Displays
+    });
+  }, [projectSlug]);
 
   function handleDragActiveChange(active: boolean) {
     dragActiveRef.current = active;

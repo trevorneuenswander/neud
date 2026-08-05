@@ -1,32 +1,63 @@
 appId: com.hildreths.neud
 productName: NEUD
+copyright: © 2026 NEUD
 electronVersion: 33.4.11
 directories:
   output: release
-  buildResources: assets
+  buildResources: build
 files:
   - dist/**/*
   - package.json
+  - "!**/*.map"
+asar: true
 asarUnpack:
   - "**/node_modules/sharp/**/*"
   - "**/node_modules/@img/**/*"
 extraResources:
+  - from: build/icon.ico
+    to: assets/icon.ico
+  - from: staging/runtime-assets
+    to: runtime-assets
+    filter:
+      - "**/*"
+  - from: staging/runtime-config
+    to: runtime-config
+    filter:
+      - "**/*"
   - from: dist/database/assets/sql-wasm.wasm
     to: database/assets/sql-wasm.wasm
+  - from: staging/puppeteer/chrome
+    to: puppeteer/chrome
+    filter:
+      - "**/*"
   - from: ../desktop/staging
     to: staging
     filter:
       - "**/*"
 win:
-  icon: assets/icon.ico
-  signAndEditExecutable: false
+  executableName: NEUD
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
         - x64
+  artifactName: NEUD-Setup-${version}-x64.${ext}
+  signAndEditExecutable: false
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
+  allowElevation: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: NEUD
+  deleteAppDataOnUninstall: false
+  uninstallDisplayName: NEUD
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+publish:
+  provider: github
+  owner: trevorneuenswander
+  repo: neud
+  releaseType: draft

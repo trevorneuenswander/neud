@@ -17,3 +17,7 @@ export const NEUD_COOKIES_DIR = () => readNeudEnv("NEUD_COOKIES_DIR");
 export const NEUD_LEGACY_SERVER_ROOT = () => readNeudEnv("NEUD_LEGACY_SERVER_ROOT");
 
 export const NEUD_LEGACY_DIAG_FILE = () => readNeudEnv("NEUD_LEGACY_DIAG_FILE");
+
+export const NEUD_RESOURCES_PATH = () => readNeudEnv("NEUD_RESOURCES_PATH");
+
+export const NEUD_PACKAGED = () => readNeudEnvFlag("NEUD_PACKAGED");

@@ -128,7 +128,6 @@ export class AccessAuthorizationService {
     if (
       !authUser ||
       authUser.userId !== resolvedAuthUserId ||
-      !authUser.profileSyncedAt ||
       mapSupabaseProfileRoleToPlatformRole(authUser.role) !== "owner"
     ) {
       return null;

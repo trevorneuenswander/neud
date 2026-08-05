@@ -216,6 +216,15 @@ export class ProjectsRepository {
       this.db
         .prepare("UPDATE projects SET id = ? WHERE id = ?")
         .run(hostedProjectId, localProjectId);
+
+      this.db
+        .prepare(
+          `UPDATE activity_events
+           SET metadata_json = json_set(metadata_json, '$.projectId', ?)
+           WHERE json_extract(metadata_json, '$.projectId') = ?`,
+        )
+        .run(hostedProjectId, localProjectId);
+
       this.db.exec("PRAGMA foreign_keys = ON");
     });
   }

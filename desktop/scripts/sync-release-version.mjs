@@ -36,13 +36,19 @@ export function syncReleaseVersion() {
     );
   }
 
+  if (!desktopPkg.scripts?.build || !desktopPkg.devDependencies?.electron) {
+    throw new Error(
+      "desktop/package.json is missing required scripts or devDependencies. Restore the workspace package.json before syncing release version.",
+    );
+  }
+
   const distDir = path.join(desktopRoot, "dist");
   fs.mkdirSync(distDir, { recursive: true });
 
   const distPackage = {
     name: desktopPkg.name,
     version: releaseVersion,
-    main: "main.js",
+    main: "bootstrap.js",
     private: true,
   };
 

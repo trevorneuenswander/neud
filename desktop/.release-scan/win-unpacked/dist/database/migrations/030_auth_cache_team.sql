@@ -1,1 +1,0 @@
-ALTER TABLE auth_cache ADD COLUMN team TEXT;

@@ -28,12 +28,21 @@ export type EngineLogEntry = {
   timestamp: string;
 };
 
+export type WorkerTerminationReason =
+  | "user-stop"
+  | "restart"
+  | "application-exit"
+  | "replacement"
+  | "unexpected"
+  | "force-kill-after-timeout";
+
 export type ManagedEngineProcess = {
   engineId: string;
   pid: number;
   state: EngineProcessState;
   startedAt: string;
   lastExitCode: number | null;
+  pendingTerminationReason: WorkerTerminationReason | null;
   logBuffer: EngineLogEntry[];
   child: import("child_process").ChildProcess;
 };

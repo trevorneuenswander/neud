@@ -30,8 +30,17 @@ import {
   isActivitySyncAllowedEventType,
   isRecoverableAllowlistSyncError,
 } from "../../lib/activity/sync-allowlist";
+import type { AppPaths } from "../app-paths";
+import { appendActivitySyncLog } from "../runtime-diagnostics-log";
 
 type ActivitySyncListener = (state: ActivitySyncState) => void;
+
+type EnsureHostedProjectForSyncResult = {
+  ok: boolean;
+  projectId: string;
+  realigned?: boolean;
+  error?: string;
+};
 
 export class ActivitySyncService {
   private online = false;
@@ -48,6 +57,9 @@ export class ActivitySyncService {
   private readonly listeners = new Set<ActivitySyncListener>();
   private readonly instanceId: string;
   private readonly cloudClient: CloudActivityClient;
+  private ensureHostedProjectForSync:
+    | ((projectId: string) => Promise<EnsureHostedProjectForSyncResult>)
+    | null = null;
 
   constructor(
     private readonly cloud: AuthenticatedCloudCoordinator,
@@ -58,6 +70,7 @@ export class ActivitySyncService {
     private readonly access: AccessAuthorizationService,
     private readonly projects: ProjectsRepository,
     private readonly onEntriesChanged: () => void,
+    private readonly paths?: AppPaths,
   ) {
     this.instanceId = getOrCreateNeudInstanceId(settings);
     this.cloudClient = new CloudActivityClient(cloud);
@@ -68,7 +81,14 @@ export class ActivitySyncService {
     });
   }
 
+  setEnsureHostedProjectForSync(
+    handler: (projectId: string) => Promise<EnsureHostedProjectForSyncResult>,
+  ): void {
+    this.ensureHostedProjectForSync = handler;
+  }
+
   start(): void {
+    this.logActivitySync("service.start");
     void this.refreshOnlineState();
     this.periodicTimer = setInterval(() => {
       void this.syncNow("periodic");
@@ -95,6 +115,7 @@ export class ActivitySyncService {
   }
 
   stop(): void {
+    this.logActivitySync("service.stop");
     const channel = this.realtimeChannel;
     this.realtimeChannel = null;
 
@@ -206,6 +227,16 @@ export class ActivitySyncService {
 
   getState(): ActivitySyncState {
     const diagnostics = this.getDiagnostics();
+
+    if (!this.cloud.isCloudConfigured()) {
+      return {
+        status: "error",
+        message:
+          "Cloud configuration is missing. Activity sync requires packaged Supabase settings.",
+        diagnostics,
+      };
+    }
+
     if (!this.auth.getAuthenticatedUser()) {
       return {
         status: "offline",
@@ -213,6 +244,35 @@ export class ActivitySyncService {
         diagnostics,
       };
     }
+
+    if (!this.cloud.isAuthenticatedCloudSessionAvailable()) {
+      const authSnapshot = this.cloud.getAuthSnapshot();
+      if (authSnapshot.reauthenticationRequired) {
+        return {
+          status: "error",
+          message: "Your cloud session has expired. Sign in again to synchronize activity.",
+          diagnostics,
+        };
+      }
+      if (
+        this.cloud.isSessionRestorePending() ||
+        authSnapshot.hasRestorableCloudSession
+      ) {
+        return {
+          status: "syncing",
+          message: "Restoring cloud session…",
+          diagnostics,
+        };
+      }
+      return {
+        status: "error",
+        message:
+          this.lastSyncError ??
+          "Cloud session is not available for activity sync.",
+        diagnostics,
+      };
+    }
+
     if (this.syncInProgress) {
       return { status: "syncing", message: "Syncing activity…", diagnostics };
     }
@@ -254,15 +314,33 @@ export class ActivitySyncService {
 
   async syncNow(reason = "manual"): Promise<void> {
     if (this.syncInProgress) return;
-    if (!this.auth.getAuthenticatedUser()) return;
-    if (!this.cloud.isAuthenticatedCloudSessionAvailable()) return;
+
+    if (!this.cloud.isCloudConfigured()) {
+      this.logActivitySync(`sync.skip reason=${reason} stage=cloud_config_missing`);
+      return;
+    }
+
+    if (!this.auth.getAuthenticatedUser()) {
+      this.logActivitySync(`sync.skip reason=${reason} stage=no-auth-user`);
+      return;
+    }
+
+    const clientResult = await this.cloud.ensureAuthenticatedClient(`activity-sync:${reason}`);
+    if (!clientResult.client) {
+      this.logActivitySync(
+        `sync.skip reason=${reason} stage=no-cloud-session sessionState=${clientResult.sessionState}`,
+      );
+      return;
+    }
 
     this.syncInProgress = true;
     this.emitState();
+    this.logActivitySync(`sync.begin reason=${reason}`);
 
     try {
       await this.refreshOnlineState();
       if (!this.online) {
+        this.logActivitySync(`sync.skip reason=${reason} stage=offline`);
         return;
       }
 
@@ -288,9 +366,13 @@ export class ActivitySyncService {
         this.lastSyncError = null;
       }
       console.debug(`[ActivitySync] completed reason=${reason}`);
+      this.logActivitySync(
+        `sync.complete reason=${reason} push=${uploadedTotal} pull=${this.lastPullDownloaded} pending=${this.repository.countBySyncStatus("pending")} failed=${this.repository.countBySyncStatus("failed")}`,
+      );
     } catch (error) {
       this.lastSyncError = error instanceof Error ? error.message : String(error);
       console.warn("[ActivitySync] failed:", this.lastSyncError);
+      this.logActivitySync(`sync.error reason=${reason} message=${this.lastSyncError}`);
     } finally {
       this.syncInProgress = false;
       this.emitState();
@@ -325,35 +407,78 @@ export class ActivitySyncService {
     let uploaded = 0;
 
     for (const record of pending) {
-      if (!this.canUploadRecord(record)) {
-        this.repository.markFailed(record.cloudId, "Project access denied for Activity upload.");
-        continue;
+      let activeRecord = record;
+      const metadataProjectId =
+        typeof activeRecord.metadata?.projectId === "string"
+          ? activeRecord.metadata.projectId
+          : null;
+
+      if (metadataProjectId && this.ensureHostedProjectForSync) {
+        const ensured = await this.ensureHostedProjectForSync(metadataProjectId);
+        if (!ensured.ok) {
+          this.repository.markFailed(
+            activeRecord.cloudId,
+            ensured.error ?? "Hosted project registration failed for Activity upload.",
+          );
+          this.logActivitySync(
+            `push.registration_failed cloudId=${activeRecord.cloudId.slice(0, 8)} localProjectId=${metadataProjectId} error=${ensured.error ?? "unknown"}`,
+          );
+          continue;
+        }
+        if (ensured.projectId !== metadataProjectId) {
+          this.repository.updateMetadataProjectId(activeRecord.cloudId, ensured.projectId);
+          activeRecord = {
+            ...activeRecord,
+            metadata: {
+              ...(activeRecord.metadata ?? {}),
+              projectId: ensured.projectId,
+            },
+          };
+          this.logActivitySync(
+            `push.project_realigned cloudId=${activeRecord.cloudId.slice(0, 8)} from=${metadataProjectId.slice(0, 8)} to=${ensured.projectId.slice(0, 8)}`,
+          );
+        }
       }
 
-      if (!isActivitySyncAllowedEventType(record.type)) {
-        this.repository.markFailed(
-          record.cloudId,
-          `Activity event type is not allowed. (event_type=${record.type})`,
+      if (!this.canUploadRecord(activeRecord)) {
+        const deniedProjectId =
+          typeof activeRecord.metadata?.projectId === "string"
+            ? activeRecord.metadata.projectId
+            : "none";
+        this.repository.markFailed(activeRecord.cloudId, "Project access denied for Activity upload.");
+        this.logActivitySync(
+          `push.denied cloudId=${activeRecord.cloudId.slice(0, 8)} projectId=${deniedProjectId}`,
         );
         continue;
       }
 
-      this.repository.markSyncAttempt(record.cloudId);
-      const teamId = this.resolveTeamId(record);
+      if (!isActivitySyncAllowedEventType(activeRecord.type)) {
+        this.repository.markFailed(
+          activeRecord.cloudId,
+          `Activity event type is not allowed. (event_type=${activeRecord.type})`,
+        );
+        continue;
+      }
+
+      this.repository.markSyncAttempt(activeRecord.cloudId);
+      const teamId = this.resolveTeamId(activeRecord);
       const row = toCloudActivityRow({
-        event: record,
-        cloudId: record.cloudId,
+        event: activeRecord,
+        cloudId: activeRecord.cloudId,
         instanceId: this.instanceId,
         teamId,
       });
 
       const result = await this.cloudClient.upsertEvents([row]);
       if (result.errors.length > 0) {
-        this.repository.markFailed(record.cloudId, result.errors[0] ?? "Upload failed.");
+        this.repository.markFailed(activeRecord.cloudId, result.errors[0] ?? "Upload failed.");
+        this.logActivitySync(
+          `push.rpc_failed cloudId=${activeRecord.cloudId.slice(0, 8)} projectId=${String(row.project_id ?? "none")} error=${result.errors[0] ?? "unknown"}`,
+        );
         continue;
       }
 
-      this.repository.markSynced(record.cloudId, now);
+      this.repository.markSynced(activeRecord.cloudId, now);
       uploaded += 1;
     }
 
@@ -365,8 +490,8 @@ export class ActivitySyncService {
   }
 
   private async pullRemote(): Promise<void> {
+    const context = this.access.getAuthorizationContext();
     const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
-    const context = userId ? this.access.getAuthorizationContext(userId) : null;
     const accessibleProjectIds = context?.accessibleProjectIds ?? [];
     let cursor = this.getCursor();
     let downloaded = 0;
@@ -411,10 +536,19 @@ export class ActivitySyncService {
       typeof record.metadata?.projectId === "string"
         ? record.metadata.projectId
         : null;
-    const userId = this.auth.getAuthenticatedUser()?.userId;
-    if (!userId) return false;
+    const context = this.access.getAuthorizationContext();
+    if (!context) return false;
     if (!projectId) return true;
-    return this.access.getAuthorizationContext(userId)?.accessibleProjectIds.includes(projectId) ?? false;
+    return context.accessibleProjectIds.includes(projectId);
+  }
+
+  private logActivitySync(message: string): void {
+    if (!this.paths) {
+      return;
+    }
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    const suffix = userId ? ` user=${userId.slice(0, 8)}` : "";
+    appendActivitySyncLog(this.paths, `${message}${suffix}`);
   }
 
   private resolveTeamId(record: ActivityEventRecord): string | null {

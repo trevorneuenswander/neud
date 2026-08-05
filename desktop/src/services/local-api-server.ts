@@ -28,6 +28,7 @@ import {
   type ProjectRole,
 } from "../projects/project-permissions";
 import { TimeoutError, withTimeout } from "../utils/with-timeout";
+import { logWorkerLocalApiEvent } from "./worker-lifecycle-diagnostics";
 import {
   IDENTITY_TOTAL_TIMEOUT_MS,
 } from "./supabase-identity-service";
@@ -134,6 +135,15 @@ export class LocalApiServer {
     try {
       const url = new URL(request.url ?? "/", this.baseUrl ?? "http://127.0.0.1");
       setCors(response);
+
+      if (isWorkerClientRequest(request)) {
+        logWorkerLocalApiEvent({
+          engineId: extractEngineIdFromWorkerApiPath(url.pathname),
+          method: request.method ?? "GET",
+          path: url.pathname,
+          outcome: "request",
+        });
+      }
 
       if (request.method === "OPTIONS") {
         response.writeHead(204);
@@ -1512,7 +1522,7 @@ export class LocalApiServer {
           body.desiredState === "running" || body.desired_state === "running"
             ? "running"
             : "stopped";
-        this.data.updateDesiredState(desiredStateMatch[1], desiredState);
+        await this.data.applyDesiredState(desiredStateMatch[1], desiredState);
         return sendJson(response, 200, { ok: true });
       }
 
@@ -2201,6 +2211,16 @@ export class LocalApiServer {
 
       return sendJson(response, 404, { error: "Not found." });
     } catch (error) {
+      if (isWorkerClientRequest(request)) {
+        const url = new URL(request.url ?? "/", this.baseUrl ?? "http://127.0.0.1");
+        logWorkerLocalApiEvent({
+          engineId: extractEngineIdFromWorkerApiPath(url.pathname),
+          method: request.method ?? "GET",
+          path: url.pathname,
+          outcome: "failure",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       const failure = resolveLocalApiFailure(error);
       return sendJson(response, failure.status, failure.body);
     }
@@ -2596,6 +2616,11 @@ function readOptionalNumber(
 
 function isWorkerClientRequest(request: IncomingMessage): boolean {
   return request.headers["x-neud-worker-client"] === "data-engine";
+}
+
+function extractEngineIdFromWorkerApiPath(pathname: string): string | null {
+  const match = pathname.match(/^\/api\/data-sources\/([^/]+)/);
+  return match?.[1] ?? null;
 }
 
 function findAvailablePort(preferred: number): Promise<number> {

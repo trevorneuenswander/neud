@@ -16,6 +16,7 @@ import {
   resolvePuppeteerBrowser,
 } from "../browser/resolve-puppeteer-browser.js";
 import { fetchLotDetailData } from "./bag-lot-detail-page.js";
+import { setLifecycleActualState } from "../lifecycle-state.js";
 
 export const LEGACY_RUNTIME_VERSION = "legacy-v5.1-direct-port";
 
@@ -263,7 +264,13 @@ export function createBagAuctionLegacyRuntime(options) {
     referenceRuntimeInfo = null,
     logStage = async () => {},
     logStageError = async () => {},
+    onLifecycleState = async () => {},
   } = options;
+
+  async function reportLifecycleState(state) {
+    setLifecycleActualState(state);
+    await onLifecycleState(state);
+  }
 
   if (!puppeteerModule) {
     throw new Error("Broad Arrow legacy runtime requires an injected Puppeteer module.");
@@ -371,6 +378,7 @@ export function createBagAuctionLegacyRuntime(options) {
   }
 
   async function login() {
+    await reportLifecycleState("authenticating");
     await logStage("legacy.login.cookies", "Loading cookies");
     const hadCookies = await loadCookies(page);
 
@@ -389,6 +397,7 @@ export function createBagAuctionLegacyRuntime(options) {
       };
       await logStage("legacy.login.authentication_complete", "Authentication complete");
       await shareCookiesToOtherPages();
+      await reportLifecycleState("starting");
       return;
     }
 
@@ -577,6 +586,7 @@ export function createBagAuctionLegacyRuntime(options) {
       currentSession: "Authenticated via login form",
     };
     await logStage("legacy.login.authentication_complete", "Authentication complete");
+    await reportLifecycleState("starting");
   }
 
   async function fetchVehicleDetails(editUrl) {
@@ -869,6 +879,7 @@ export function createBagAuctionLegacyRuntime(options) {
   }
 
   async function boot() {
+    await reportLifecycleState("starting");
     await logStage("legacy.boot.start", "Starting legacy Broad Arrow runtime", {
       broadArrowRuntimeVersion: LEGACY_RUNTIME_VERSION,
     });

@@ -10,6 +10,7 @@ import {
   nativeImage,
 } from "electron";
 import { registerAppIpc, type CloseRequestResponse } from "./ipc/app";
+import { registerUpdateIpc } from "./ipc/updates";
 import { sendToRenderer } from "./ipc/channels";
 import { registerAuthIpc } from "./ipc/auth";
 import { AUTH_EXPLICITLY_SIGNED_OUT_KEY } from "./auth/session-recovery-keys";
@@ -23,6 +24,12 @@ import {
   createDefaultCloudSessionDiagnostics,
 } from "./services/cloud-session-diagnostics";
 import { setClearLocalSessionHandler } from "./menu/application-menu";
+import {
+  checkForUpdates,
+  initializeAutoUpdateService,
+  scheduleStartupUpdateCheck,
+  setHelpMenuCheckForUpdatesHandler,
+} from "./services/auto-update-service";
 import { registerCredentialsIpc } from "./ipc/credentials";
 import { registerEnginesIpc } from "./ipc/engines";
 import { registerLocalDataIpc } from "./ipc/local-data";
@@ -45,7 +52,8 @@ import { getAppPaths } from "./services/app-paths";
 import { AuctionDatasetService } from "./services/auction-dataset-service";
 import { AuthLicenseManager } from "./services/auth-license-manager";
 import { CredentialStore } from "./services/credential-store";
-import { loadSupabasePublicConfig } from "./services/supabase-public-config";
+import { loadSupabasePublicConfigWithSource } from "./services/supabase-public-config";
+import { writeCloudRuntimeConfigDiagnostic } from "./services/cloud-runtime-config";
 import { SupabaseUserSessionService } from "./services/supabase-user-session";
 import { AuthenticatedCloudCoordinator } from "./services/authenticated-cloud-coordinator";
 import { SHARED_CLOUD_AUTH_DIAGNOSTICS_KEY } from "./services/shared-cloud-auth-diagnostics";
@@ -66,6 +74,7 @@ import { BagManualEventsRepository } from "./bag/live-state/bag-manual-events-re
 import { GenericScraperService } from "./services/generic-scraper-service";
 import { ProjectDeletionService } from "./services/project-deletion-service";
 import { EngineManager } from "./services/engine-manager";
+import { logWorkerLifecycleTimeline } from "./services/worker-lifecycle-diagnostics";
 import { ImportService } from "./import/import-service";
 import { LocalApiServer } from "./services/local-api-server";
 import { LocalAuthBootstrapService } from "./services/local-auth-bootstrap-service";
@@ -138,13 +147,83 @@ import { BroadArrowUploadedDisplaysImportService } from "./services/broad-arrow-
 import { BroadArrowLegacyDisplaysImportService } from "./services/broad-arrow-legacy-displays-import-service";
 import { BroadArrowStreamDisplaysImportService } from "./services/broad-arrow-stream-displays-import-service";
 import { configureUserDataPath } from "./services/user-data-migration";
+import { writeStartupBootstrapLog } from "./services/startup-bootstrap-log";
 import { migrateLegacyAppSettings } from "./services/legacy-settings-migration";
 import { syncElectronReleaseVersion } from "./app/release-version";
+import {
+  logStartupCheckpoint,
+  logStartupEnvironment,
+  logStartupFailure,
+  logStartupReady,
+} from "./services/startup-diagnostics";
+import { isPackagedDesktopRuntime } from "./lib/packaged-runtime";
+import { validateDesktopRuntimeAssets } from "./lib/runtime-assets";
+import { validateBundledDisplaySources } from "./lib/bundled-display-sources";
+import { runAndWriteInstalledBrowserDiagnostic } from "./services/installed-browser-diagnostic-service";
+import { runAndWriteCloudIdentityDiagnostic } from "./services/cloud-identity-diagnostic-service";
+import { isAllowedExternalUrl } from "./services/external-url";
+
+function writePackagedBootstrapLog(
+  message: string,
+  metadata: Record<string, unknown> = {},
+) {
+  if (!isPackagedDesktopRuntime()) {
+    return;
+  }
+
+  try {
+    const logPath = path.join(
+      process.env.APPDATA ?? "",
+      "NEUD",
+      "logs",
+      "bootstrap.log",
+    );
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(
+      logPath,
+      `${JSON.stringify({
+        at: new Date().toISOString(),
+        message,
+        packaged: isPackagedDesktopRuntime(),
+        electronPackagedFlag: app.isPackaged,
+        execPath: process.execPath,
+        ...metadata,
+      })}\n`,
+      "utf8",
+    );
+  } catch {
+    // ignore bootstrap logging failures
+  }
+}
+
+function serializeStartupError(error: unknown) {
+  return error instanceof Error
+    ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      }
+    : String(error);
+}
+
+process.on("uncaughtException", (error) => {
+  writePackagedBootstrapLog("process.uncaughtException", {
+    error: serializeStartupError(error),
+  });
+  logStartupFailure(error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  writePackagedBootstrapLog("process.unhandledRejection", {
+    error: serializeStartupError(reason),
+  });
+  logStartupFailure(reason);
+});
 
 dotenv.config({ path: path.resolve(__dirname, "..", "..", ".env.local") });
 configureUserDataPath();
-
-import { isAllowedExternalUrl } from "./services/external-url";
+writeStartupBootstrapLog();
+writePackagedBootstrapLog("main.module_loaded");
 
 let mainWindow: BrowserWindow | null = null;
 let localDataService: LocalDataService | null = null;
@@ -189,6 +268,7 @@ if (!gotLock) {
   });
 
   void app.whenReady().then(startApplication).catch(handleStartupFailure);
+  writePackagedBootstrapLog("main.when_ready_registered");
 }
 
 app.on("before-quit", async (event) => {
@@ -223,14 +303,26 @@ app.on("window-all-closed", () => {
 });
 
 async function startApplication() {
+  writePackagedBootstrapLog("startup.startApplication");
+  logStartupEnvironment();
+  logStartupCheckpoint("startup.begin");
+  validateDesktopRuntimeAssets();
+  validateBundledDisplaySources();
+  logStartupCheckpoint("startup.runtime_assets_validated");
   const releaseVersion = syncElectronReleaseVersion();
   console.info(`[desktop] Release version ${releaseVersion}`);
+  logStartupCheckpoint("startup.release_version", { releaseVersion });
   await createMainWindow();
+  logStartupReady({
+    localApiUrl: localApiServer?.getInfo()?.baseUrl ?? null,
+    nextUrl: nextServer?.getUrl() ?? null,
+  });
 }
 
 async function handleStartupFailure(error: unknown) {
   const message = formatStartupError(error);
   console.error("[desktop] Failed to start:", error);
+  logStartupFailure(error);
   await cleanupStartupResources();
   dialog.showErrorBox("NEUD failed to start", message);
   app.exit(1);
@@ -310,6 +402,9 @@ function handleCloseRequestResponse(action: CloseRequestResponse) {
 async function performGracefulShutdown(): Promise<boolean> {
   if (shutdownInProgress) return true;
   shutdownInProgress = true;
+  logWorkerLifecycleTimeline("application-graceful-shutdown-started", {
+    includeStack: true,
+  });
   shutdownDisplayPreviewWindows();
 
   try {
@@ -414,14 +509,17 @@ function resolveDesktopApplicationIcon() {
   const assetRoots = [
     path.join(__dirname, "..", "assets"),
     path.join(app.getAppPath(), "assets"),
-  ];
+    process.resourcesPath ? path.join(process.resourcesPath, "assets") : null,
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const assetRoot of assetRoots) {
     for (const fileName of ["icon.ico", "icon.png"]) {
       const iconPath = path.join(assetRoot, fileName);
       if (fs.existsSync(iconPath)) {
         const image = nativeImage.createFromPath(iconPath);
-        return image.isEmpty() ? undefined : image;
+        if (!image.isEmpty()) {
+          return image;
+        }
       }
     }
   }
@@ -457,6 +555,7 @@ async function createMainWindow() {
   const credentials = new CredentialStore(paths);
   const host = new MachineRegistration(paths);
   registerAppIpc(host, () => mainWindow, handleCloseRequestResponse);
+  registerUpdateIpc();
 
   const authLicenseManager = new AuthLicenseManager(
     paths,
@@ -464,7 +563,9 @@ async function createMainWindow() {
     host.touch().id,
   );
   const supabaseUserSessionService = new SupabaseUserSessionService(paths);
-  const supabasePublicConfig = loadSupabasePublicConfig(paths);
+  const supabasePublicConfigLoad = loadSupabasePublicConfigWithSource(paths);
+  const supabasePublicConfig = supabasePublicConfigLoad.config;
+  writeCloudRuntimeConfigDiagnostic(paths.logs, supabasePublicConfigLoad.diagnostic);
   const authenticatedCloud = new AuthenticatedCloudCoordinator(
     supabaseUserSessionService,
     supabasePublicConfig,
@@ -556,6 +657,9 @@ async function createMainWindow() {
     paths,
     host.touch().id,
   );
+  if (authLicenseManager.purgeSyntheticLocalDesktopSessionIfPresent()) {
+    appSettingsRepository.set(AUTH_EXPLICITLY_SIGNED_OUT_KEY, false);
+  }
   localAuthBootstrap.ensure();
 
   runMultiTeamDataMigration(localDatabase);
@@ -713,6 +817,7 @@ async function createMainWindow() {
     accessAuthorizationService,
     projectsRepository,
     () => localDataService!.notifyActivitySyncChanged(),
+    paths,
   );
   localDataService.setActivitySync(activitySyncService);
 
@@ -851,7 +956,9 @@ async function createMainWindow() {
     bagLiveStateService,
     bagLiveStateEvents,
   );
+  logStartupCheckpoint("startup.local_api_start");
   const localApiInfo = await localApiServer.start();
+  logStartupCheckpoint("startup.local_api_ready", { baseUrl: localApiInfo.baseUrl });
   const canonicalLocalApiOrigin =
     normalizeLocalApiOrigin(localApiInfo.baseUrl) ?? DEFAULT_LOCAL_API_ORIGIN;
   const storedLocalApiOrigin = appSettingsRepository.get<string | null>(
@@ -951,6 +1058,29 @@ async function createMainWindow() {
   const projectScraperCodeRepository = new ProjectScraperCodeRepository(localDatabase);
   const projectDisplayCodeRepository = new ProjectDisplayCodeRepository(localDatabase);
   localDataService.setProjectDisplayCodeRepository(projectDisplayCodeRepository);
+  activitySyncService?.setEnsureHostedProjectForSync((projectId) =>
+    localDataService!.ensureHostedProjectRegisteredForSync(projectId),
+  );
+
+  const writePackagedRuntimeDiagnostics = () => {
+    void runAndWriteInstalledBrowserDiagnostic(paths).catch((error) => {
+      console.warn("[desktop] installed-browser diagnostic failed:", error);
+    });
+    void runAndWriteCloudIdentityDiagnostic({
+      paths,
+      auth: authLicenseManager,
+      access: accessAuthorizationService,
+      projects: projectsRepository,
+      cloud: authenticatedCloud,
+      settings: appSettingsRepository,
+    }).catch((error) => {
+      console.warn("[desktop] cloud-identity diagnostic failed:", error);
+    });
+  };
+
+  if (isPackagedDesktopRuntime()) {
+    writePackagedRuntimeDiagnostics();
+  }
   const projectCodeRevisionsRepository = new ProjectCodeRevisionsRepository(localDatabase);
   const projectValidationLogsRepository = new ProjectValidationLogsRepository(localDatabase);
   const projectCodeStorageService = new ProjectCodeStorageService(paths);
@@ -969,6 +1099,7 @@ async function createMainWindow() {
     displaySyncQueueRepository,
     displayDeletionTombstonesRepository,
     authLicenseManager,
+    paths,
     () => {
       void localDataService!.notifyActivitySyncChanged();
     },
@@ -997,6 +1128,7 @@ async function createMainWindow() {
   );
   localDataService.setPublishingManager(publishingManager);
   localDataService.setDisplaySync(displaySyncService);
+  displaySyncService.start();
 
   const bootstrapRestoredCloudSession = async () => {
     const authSnapshot = authenticatedCloud.getAuthSnapshot();
@@ -1069,6 +1201,18 @@ async function createMainWindow() {
     startUserDirectorySync();
     void activitySyncService?.syncNow("startup-restore");
     void displaySyncService?.syncNow("startup-restore");
+    if (isPackagedDesktopRuntime()) {
+      void runAndWriteCloudIdentityDiagnostic({
+        paths,
+        auth: authLicenseManager,
+        access: accessAuthorizationService,
+        projects: projectsRepository,
+        cloud: authenticatedCloud,
+        settings: appSettingsRepository,
+      }).catch((error) => {
+        console.warn("[desktop] cloud-identity diagnostic refresh failed:", error);
+      });
+    }
   };
 
   void bootstrapRestoredCloudSession().catch((error) => {
@@ -1226,9 +1370,11 @@ async function createMainWindow() {
   });
 
   const devMode = isDevMode();
+  logStartupCheckpoint("startup.next_server_start", { devMode });
   const appUrl = devMode
     ? getDevServerUrl()
     : await nextServer.start(false, { localApiUrl: canonicalLocalApiOrigin });
+  logStartupCheckpoint("startup.next_server_ready", { appUrl });
 
   const trustedPortal = resolveTrustedPortalOrigin({
     allowLocalDevFallback: devMode,
@@ -1397,6 +1543,24 @@ async function createMainWindow() {
   await loadRendererUrl(mainWindow, rendererUrl);
   attachMainWindowCloseHandler();
   mainWindow.show();
+
+  initializeAutoUpdateService({
+    getMainWindow: () => mainWindow,
+    logActivity: (type, message, metadata) => {
+      console.info(`[updates] ${type}: ${message}`, metadata ?? {});
+    },
+  });
+  setHelpMenuCheckForUpdatesHandler(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    void checkForUpdates("menu");
+  });
+  scheduleStartupUpdateCheck();
 }
 
 

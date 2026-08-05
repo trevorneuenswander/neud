@@ -1,8 +1,8 @@
-# HMG Graphics Server Development Instructions
+# NEUD Development Instructions
 
 ## Project purpose
 
-HMG Graphics Server is the central web platform for HMG's live graphics projects.
+NEUD is a desktop-first data extraction and live graphics control application. Its tagline is "The Ultimate Data Stripper."
 
 Users will be able to:
 
@@ -69,6 +69,7 @@ BAG-Graphics monitors an auction website and provides:
 - Use Client Components only when browser interactivity is required.
 - Follow current Next.js App Router conventions.
 - Never expose service-role keys to the browser.
+- **Never ship `SUPABASE_SERVICE_ROLE_KEY` in packaged Electron apps.** All desktop cloud operations use the signed-in user's Supabase session, RLS, and authenticated RPCs. Service role is allowed only in trusted server environments (Vercel server routes, one-off scripts, workers) — never in desktop bundles, preload, or `server.env` requirements.
 - Validate all form and API input.
 - Verify authentication and project ownership for protected actions.
 - Use Supabase Row Level Security.
@@ -112,7 +113,17 @@ Before making a large change:
 
 ## Current phase
 
-The current phase is **Projects foundation**.
+**Alpha v0.1.0** display baseline remains locked. See [docs/alpha-v0.1.0-baseline.md](./docs/alpha-v0.1.0-baseline.md).
+
+**Alpha v0.1.1** functional development is complete at application version **0.1.1**. See [docs/alpha-v0.1.1-online-delivery-plan.md](./docs/alpha-v0.1.1-online-delivery-plan.md) and [docs/alpha-v0.1.1-packaging-validation.md](./docs/alpha-v0.1.1-packaging-validation.md).
+
+The **current release milestone** is Windows x64 packaging, bundled Puppeteer Chrome, installation validation, and automatic updates. See [docs/windows-packaging.md](./docs/windows-packaging.md).
+
+Do not alter or regress the Alpha v0.1.0 display baseline (Stream Bid Display, Stream Ticker, Legacy Pylon, Legacy Ticker) unless a compatible delivery-only change is explicitly required.
+
+The current engineering phase remains **desktop-first overhaul**.
+
+The installable Windows application is the primary product. The hosted portal remains temporarily during migration, but project/runtime data is moving to local SQLite under Electron.
 
 Completed foundation:
 
@@ -120,25 +131,35 @@ Completed foundation:
 - Access request and admin invitation workflow
 - Platform roles in `profiles` (`owner`, `admin`, `user`)
 - Dark operational portal UI with public and authenticated shells
-- Protected routes for dashboard, projects, admin, users, activity, and settings
-- `projects` and `project_members` tables with RLS
-- Functional Project creation, list, overview, and member management
-- Slug-based Project URLs and sequential Project numbers
+- Generic Data Engine framework with Webpage Scraper / BAG adapter
+- Electron desktop host (Phase 1)
+- Local SQLite schema, backup/migration system, local API server skeleton (Phase A overhaul)
+- **Alpha v0.1.0:** Completed local Broad Arrow workflow; finalized Stream Bid Display, Stream Ticker, Legacy Pylon, and Legacy Ticker (designs locked)
+- **Alpha v0.1.1:** Completed local + online delivery baseline; Windows packaging, bundled browser, and auto-update milestone in progress
 
+Use [docs/desktop-overhaul-audit.md](./docs/desktop-overhaul-audit.md) for the migration inventory and plan.
 Use [docs/design-system.md](./docs/design-system.md) for tokens, components, layout rules, and terminology.
 Use [docs/projects.md](./docs/projects.md) for Projects schema, authorization, and URL structure.
+Use [docs/data-engines.md](./docs/data-engines.md) for Data Engine architecture.
+Use [docs/desktop.md](./docs/desktop.md) for the Electron process model.
 
-User-facing term remains **Projects** (not Graphics).
+User-facing term remains **Projects** (not Graphics). Collection runtimes are **Data Engines** (not Workers).
+
+Do not run destructive Supabase cleanup scripts automatically.
 
 Do not add the following until explicitly requested:
 
-- BAG controller, display, and worker migration
-- Puppeteer and BAG scraper code
-- Functional graphics controllers and displays
-- Public OBS/vMix display routes using `display_token`
-- Activity logging and audit events
-- Command palette (`Ctrl/Command + K`)
-- Billing, organizations, and team permissions
-- Project archive/restore UI
-- Logo file uploads and Supabase Storage buckets
+- Visual redesign of completed displays (Stream Bid, Stream Ticker, Legacy Pylon, Legacy Ticker)
+- macOS packaging (Windows packaging is the current milestone)
+- Beta features: Online JSON Viewer product surface, browser-based controller, multi-computer synchronization
 
+Alpha v0.1.1 explicitly **includes** online display/JSON delivery via the existing Vercel `neud` project (see v0.1.1 plan doc). The old "Full public publishing relay deployment (Phase E)" deferral is superseded for v0.1.1 scope only.
+
+## Branding and migration notes
+
+- Product name: **NEUD** (technical: `neud`, packages: `@neud/*`)
+- Environment variables: use `NEUD_*` only
+- Desktop IPC: use `neud:*` channels only
+- Application data lives under `%APPDATA%\NEUD\`
+- Do not rename BAG-Graphics project types, Webpage Scraper, or `broad-arrow-auction-*` export folders
+- Legacy startup URL redirects (`/hmg`, `/hmg-graphics-server`, etc.) remain in `startup-paths.ts` and `startup-route.ts` only

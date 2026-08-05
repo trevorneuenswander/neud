@@ -13,13 +13,14 @@ import {
   isBroadArrowConfigurationError,
   type ControlButtonState,
 } from "@/lib/data-engines/control-state";
+import { resolveEngineOperationalState } from "@/lib/data-engines/operational-state";
 import { getActiveCommandMessage, isCommandStale } from "@/lib/data-engines/command-utils";
 import type { EngineActualState, EngineCommand } from "@/lib/data-engines/constants";
 import { initialDataEngineActionState } from "@/lib/data-engines/state";
 import type { DataEngineCommand, DataEngineLog, DataEngineStatus } from "@/lib/data-engines/types";
 import type { DataEngine } from "@/lib/data-engines/types";
 import { getRunOnceStageFromLogs } from "@/lib/data-engines/bag-diagnostic-log";
-import { controlDesktopEngine, shouldUseLocalDesktopEngine } from "@/lib/desktop/client";
+import { controlDesktopEngine, getDesktopEngineStatus, shouldUseLocalDesktopEngine } from "@/lib/desktop/client";
 import {
   cancelCurrentWebpageDownload,
   getWebpageExportOperation,
@@ -222,6 +223,8 @@ export function EngineControls({
   const [userId, setUserId] = useState<string | null>(null);
   const [pendingDesktopCommand, setPendingDesktopCommand] = useState(false);
   const [stoppingDesktop, setStoppingDesktop] = useState(false);
+  const [localProcessState, setLocalProcessState] = useState<string | null>(null);
+  const [localProcessLive, setLocalProcessLive] = useState(false);
   const [runOnceQueuedAt, setRunOnceQueuedAt] = useState<number | null>(null);
   const [runOnceRefreshSent, setRunOnceRefreshSent] = useState(false);
   const [scraperInterruptDialog, setScraperInterruptDialog] =
@@ -272,24 +275,53 @@ export function EngineControls({
   }, [onRefresh, runOncePhase, runOnceQueuedAt, runOnceRefreshSent]);
 
   useEffect(() => {
+    if (!useLocalDesktop) {
+      setLocalProcessState(null);
+      setLocalProcessLive(false);
+      return;
+    }
+
+    const pollLocalProcess = () => {
+      void getDesktopEngineStatus(engineId).then((localStatus) => {
+        setLocalProcessState(localStatus?.state ?? null);
+        setLocalProcessLive(Boolean(localStatus?.pid));
+      });
+    };
+
+    pollLocalProcess();
+    const interval = window.setInterval(pollLocalProcess, 1000);
+    return () => window.clearInterval(interval);
+  }, [engineId, useLocalDesktop]);
+
+  useEffect(() => {
     if (
       stoppingDesktop &&
-      (actualState === "stopped" || actualState === "offline")
+      (actualState === "stopped" ||
+        actualState === "offline" ||
+        localProcessState === "stopped")
     ) {
       startTransition(() => {
         setStoppingDesktop(false);
       });
     }
-  }, [actualState, stoppingDesktop]);
+  }, [actualState, localProcessState, stoppingDesktop]);
+
+  const resolvedActualState = resolveEngineOperationalState({
+    actualState,
+    desiredState,
+    workerLive: useLocalDesktop && localProcessLive,
+    lastHeartbeatAt: status?.last_heartbeat_at ?? null,
+    managedProcessState: localProcessState,
+  });
 
   const desktopStoppingActive =
     stoppingDesktop &&
-    actualState !== "stopped" &&
-    actualState !== "offline";
+    resolvedActualState !== "stopped" &&
+    resolvedActualState !== "offline";
 
   const effectiveActualState: EngineActualState = desktopStoppingActive
     ? "stopping"
-    : actualState;
+    : resolvedActualState;
 
   const controlState = getEngineControlState({
     canControl,
@@ -328,10 +360,6 @@ export function EngineControls({
         if (result.ok) {
           if (command === "run_once") {
             setDesktopMessage("Run Once queued. Waiting for scrape completion.");
-          } else if (command === "stop") {
-            setDesktopMessage("Stop requested. Waiting for worker shutdown.");
-          } else {
-            setDesktopMessage(result.message);
           }
           onRefresh?.();
         } else {
@@ -411,13 +439,6 @@ export function EngineControls({
       setInterruptBusy(false);
     }
   }
-
-  const helperMessages = [
-    controlState.start.reason,
-    controlState.stop.reason,
-    controlState.restart.reason,
-    controlState.runOnce.reason,
-  ].filter((reason, index, list) => reason && list.indexOf(reason) === index);
 
   const desktopDisabled =
     pendingDesktopCommand || effectiveActualState === "stopping" || !canControl || interruptBusy;
@@ -547,12 +568,6 @@ export function EngineControls({
 
       {!canControl ? (
         <p className="text-xs text-muted">You have read-only access to this Data Engine.</p>
-      ) : helperMessages.length > 0 && !controlState.hasActiveCommand ? (
-        <div className="space-y-1 text-xs text-muted">
-          {helperMessages.map((reason) => (
-            <p key={reason}>{reason}</p>
-          ))}
-        </div>
       ) : null}
 
       {layout === "default" && desiredState === "running" && actualState !== "running" ? (
@@ -589,7 +604,6 @@ export function EngineControls({
     Boolean(runOnceFailedMessage) ||
     (controlState.hasActiveCommand && Boolean(activeCommandMessage)) ||
     !canControl ||
-    (helperMessages.length > 0 && !controlState.hasActiveCommand) ||
     (layout === "default" && desiredState === "running" && actualState !== "running") ||
     Boolean(showDesktopError) ||
     Boolean(desktopMessage) ||
@@ -653,6 +667,9 @@ export function EngineControls({
           notification={hasNotification ? statusMessages : null}
           showNotificationArea={showNotificationArea}
         />
+        {!showNotificationArea && hasNotification ? (
+          <div className="mt-2 min-w-0 space-y-2">{statusMessages}</div>
+        ) : null}
         {interruptDialog}
       </>
     );

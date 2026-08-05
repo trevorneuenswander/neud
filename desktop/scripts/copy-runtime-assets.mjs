@@ -241,6 +241,52 @@ function removeForbiddenDistArtifacts() {
   }
 }
 
+function copyApplicationIcons() {
+  const buildIcon = path.join(desktopRoot, "build", "icon.ico");
+  const assetsIcon = path.join(desktopRoot, "assets", "icon.ico");
+  const targetDir = path.join(desktopRoot, "dist", "assets");
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  for (const source of [buildIcon, assetsIcon, path.join(desktopRoot, "assets", "icon.png")]) {
+    if (!fs.existsSync(source)) {
+      continue;
+    }
+    fs.copyFileSync(source, path.join(targetDir, path.basename(source)));
+  }
+}
+
+function copyBootstrapEntry() {
+  fs.copyFileSync(
+    path.join(desktopRoot, "scripts", "bootstrap-main.cjs"),
+    path.join(desktopRoot, "dist", "bootstrap.js"),
+  );
+}
+
+function copyBagRuntimeConfig() {
+  const source = path.join(repoRoot, "shared", "bag", "bag-runtime-config.json");
+  const target = path.join(desktopRoot, "dist", "bag", "config", "bag-runtime-config.json");
+
+  if (!fs.existsSync(source)) {
+    console.error(`Missing BAG runtime config source: ${source}`);
+    process.exit(1);
+  }
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  console.log(`Copied BAG runtime config to ${target}`);
+}
+
+function syncRuntimeAssets() {
+  const { execSync } = require("child_process");
+  execSync(`node "${path.join(__dirname, "sync-runtime-assets.mjs")}"`, {
+    stdio: "inherit",
+    cwd: desktopRoot,
+  });
+}
+
+copyBootstrapEntry();
+copyBagRuntimeConfig();
+syncRuntimeAssets();
 copyMigrations();
 copySqlWasm();
 copyDisplayBridgeAssets();
@@ -249,3 +295,4 @@ validateStreamTickerLogoAsset();
 validateDataEngineRuntimeAssets();
 syncReleaseVersion();
 removeForbiddenDistArtifacts();
+copyApplicationIcons();

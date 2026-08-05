@@ -10,7 +10,8 @@ import {
 } from "../auth/local-desktop-identity";
 import { LocalSessionTokenService } from "../auth/local-session-token";
 import { AUTH_EXPLICITLY_SIGNED_OUT_KEY } from "../auth/session-recovery-keys";
-import { NEUD_AUTH_SIGNING_SECRET } from "../env/neud-env";
+import { NEUD_AUTH_SIGNING_SECRET, NEUD_ALLOW_LOCAL_DESKTOP_AUTH } from "../env/neud-env";
+import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
 import { createHmac } from "crypto";
 
 export type LocalAuthBootstrapResult = {
@@ -71,7 +72,11 @@ export class LocalAuthBootstrapService {
       AUTH_EXPLICITLY_SIGNED_OUT_KEY,
       false,
     );
-    if (!this.auth.isAccessAllowed() && !explicitlySignedOut) {
+    if (
+      !this.auth.isAccessAllowed() &&
+      !explicitlySignedOut &&
+      shouldAutoEstablishLocalDesktopSession()
+    ) {
       this.auth.establishLocalDesktopSession({
         userId: identity.userId,
         email: identity.email,
@@ -80,6 +85,15 @@ export class LocalAuthBootstrapService {
         deviceId: this.auth.getDeviceId(),
       });
       establishedLocalSession = true;
+      console.info("[local-auth] Established development local-desktop session");
+    } else if (
+      !this.auth.isAccessAllowed() &&
+      !explicitlySignedOut &&
+      isPackagedDesktopRuntime()
+    ) {
+      console.info(
+        "[local-auth] Packaged startup without authenticated session; login required",
+      );
     }
 
     const { token, created: createdSessionToken } =
@@ -122,4 +136,11 @@ function resolveSigningSecret(deviceId: string): string {
   const fromEnv = NEUD_AUTH_SIGNING_SECRET();
   if (fromEnv) return fromEnv;
   return createHmac("sha256", "neud-dev").update(deviceId).digest("hex");
+}
+
+function shouldAutoEstablishLocalDesktopSession(): boolean {
+  if (isPackagedDesktopRuntime()) {
+    return false;
+  }
+  return NEUD_ALLOW_LOCAL_DESKTOP_AUTH();
 }

@@ -448,6 +448,17 @@ export class DisplaySyncQueueRepository {
     return Number(row?.count ?? 0);
   }
 
+  hasPendingOperation(entityId: string, operationType: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM display_sync_queue
+         WHERE entity_id = ? AND operation_type = ?
+           AND sync_state IN ('pending', 'failed')`,
+      )
+      .get(entityId, operationType) as { count: number | string } | undefined;
+    return Number(row?.count ?? 0) > 0;
+  }
+
   private findPendingDuplicate(
     entityType: string,
     entityId: string,

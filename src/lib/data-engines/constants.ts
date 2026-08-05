@@ -10,6 +10,7 @@ export type ExecutionMode = (typeof ENGINE_EXECUTION_MODES)[number];
 export const ENGINE_ACTUAL_STATES = [
   "offline",
   "starting",
+  "authenticating",
   "running",
   "stopping",
   "stopped",
@@ -70,6 +71,7 @@ export const ENGINE_TYPE_LABELS: Record<EngineType, string> = {
 export const ENGINE_ACTUAL_STATE_LABELS: Record<EngineActualState, string> = {
   offline: "Offline",
   starting: "Starting",
+  authenticating: "Authenticating",
   running: "Running",
   stopping: "Stopping",
   stopped: "Stopped",

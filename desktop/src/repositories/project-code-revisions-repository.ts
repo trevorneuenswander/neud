@@ -94,11 +94,259 @@ export class ProjectCodeRevisionsRepository {
     return record;
   }
 
+  insertFromCloudIfMissing(input: {
+    id: string;
+    projectId: string;
+    resourceType: "scraper" | "display";
+    resourceId: string;
+    revisionName?: string | null;
+    changeNote?: string | null;
+    message?: string | null;
+    sourceHash: string;
+    validationStatus?: "valid" | "invalid" | "not-validated";
+    createdBy: string;
+    metadata?: Record<string, unknown>;
+    versionNumber: number;
+    createdAt?: string;
+  }): ProjectCodeRevisionRow | null {
+    if (this.getById(input.id)) {
+      return this.getById(input.id);
+    }
+
+    const duplicateHash = this.db
+      .prepare(
+        `SELECT id FROM project_code_revisions
+         WHERE project_id = ? AND resource_type = ? AND resource_id = ? AND source_hash = ?
+         LIMIT 1`,
+      )
+      .get(input.projectId, input.resourceType, input.resourceId, input.sourceHash) as
+      | { id: string }
+      | undefined;
+    if (duplicateHash) {
+      return this.getById(duplicateHash.id);
+    }
+
+    const now = input.createdAt ?? new Date().toISOString();
+    const record: ProjectCodeRevisionRow = {
+      id: input.id,
+      projectId: input.projectId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      revisionName: input.revisionName ?? null,
+      changeNote: input.changeNote ?? null,
+      message: input.message ?? null,
+      sourceHash: input.sourceHash,
+      validationStatus: input.validationStatus ?? "valid",
+      versionNumber: input.versionNumber,
+      createdAt: now,
+      createdBy: input.createdBy,
+      metadata: input.metadata ?? {},
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO project_code_revisions (
+          id, project_id, resource_type, resource_id, revision_name, change_note,
+          message, source_hash, validation_status, version_number, created_at, created_by, metadata_json,
+          sync_status, synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?)`,
+      )
+      .run(
+        record.id,
+        record.projectId,
+        record.resourceType,
+        record.resourceId,
+        record.revisionName,
+        record.changeNote,
+        record.message,
+        record.sourceHash,
+        record.validationStatus,
+        record.versionNumber,
+        record.createdAt,
+        record.createdBy,
+        JSON.stringify(record.metadata),
+        now,
+      );
+
+    return record;
+  }
+
   getById(revisionId: string): ProjectCodeRevisionRow | null {
     const row = this.db
       .prepare("SELECT * FROM project_code_revisions WHERE id = ?")
       .get(revisionId) as Record<string, unknown> | undefined;
     return row ? mapRow(row) : null;
+  }
+
+  findByResourceAndSourceHash(input: {
+    projectId: string;
+    resourceType: "scraper" | "display";
+    resourceId: string;
+    sourceHash: string;
+  }): ProjectCodeRevisionRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM project_code_revisions
+         WHERE project_id = ? AND resource_type = ? AND resource_id = ? AND source_hash = ?
+         LIMIT 1`,
+      )
+      .get(input.projectId, input.resourceType, input.resourceId, input.sourceHash) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? mapRow(row) : null;
+  }
+
+  findByResourceAndVersionNumber(input: {
+    projectId: string;
+    resourceType: "scraper" | "display";
+    resourceId: string;
+    versionNumber: number;
+  }): ProjectCodeRevisionRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM project_code_revisions
+         WHERE project_id = ? AND resource_type = ? AND resource_id = ? AND version_number = ?
+         LIMIT 1`,
+      )
+      .get(
+        input.projectId,
+        input.resourceType,
+        input.resourceId,
+        input.versionNumber,
+      ) as Record<string, unknown> | undefined;
+    return row ? mapRow(row) : null;
+  }
+
+  countForResource(input: {
+    projectId: string;
+    resourceType: "scraper" | "display";
+    resourceId: string;
+  }): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM project_code_revisions
+         WHERE project_id = ? AND resource_type = ? AND resource_id = ?`,
+      )
+      .get(input.projectId, input.resourceType, input.resourceId) as { count: number };
+    return Number(row?.count ?? 0);
+  }
+
+  reassignVersionNumber(revisionId: string, versionNumber: number): boolean {
+    if (!this.getById(revisionId)) {
+      return false;
+    }
+    this.db
+      .prepare("UPDATE project_code_revisions SET version_number = ? WHERE id = ?")
+      .run(versionNumber, revisionId);
+    return true;
+  }
+
+  reconcileRevisionIdentity(input: {
+    fromRevisionId: string;
+    toRevisionId: string;
+    displayId: string;
+    versionNumber: number;
+    onStorageRelocate?: (fromRevisionId: string, toRevisionId: string) => void;
+  }): boolean {
+    if (input.fromRevisionId === input.toRevisionId) {
+      return true;
+    }
+    if (this.getById(input.toRevisionId)) {
+      return true;
+    }
+    if (!this.getById(input.fromRevisionId)) {
+      return false;
+    }
+
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE project_code_revisions
+           SET id = ?, version_number = ?
+           WHERE id = ?`,
+        )
+        .run(input.toRevisionId, input.versionNumber, input.fromRevisionId);
+
+      this.db
+        .prepare(
+          `UPDATE project_display_code
+           SET published_revision_id = ?
+           WHERE display_id = ? AND published_revision_id = ?`,
+        )
+        .run(input.toRevisionId, input.displayId, input.fromRevisionId);
+
+      this.db
+        .prepare(
+          `UPDATE display_sync_queue
+           SET entity_id = ?
+           WHERE entity_type = 'display_revision' AND entity_id = ?`,
+        )
+        .run(input.toRevisionId, input.fromRevisionId);
+    });
+
+    input.onStorageRelocate?.(input.fromRevisionId, input.toRevisionId);
+    return true;
+  }
+
+  insertCloudRevision(input: {
+    id: string;
+    projectId: string;
+    resourceType: "scraper" | "display";
+    resourceId: string;
+    revisionName?: string | null;
+    changeNote?: string | null;
+    message?: string | null;
+    sourceHash: string;
+    validationStatus?: "valid" | "invalid" | "not-validated";
+    createdBy: string;
+    metadata?: Record<string, unknown>;
+    versionNumber: number;
+    createdAt?: string;
+  }): ProjectCodeRevisionRow {
+    const now = input.createdAt ?? new Date().toISOString();
+    const record: ProjectCodeRevisionRow = {
+      id: input.id,
+      projectId: input.projectId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      revisionName: input.revisionName ?? null,
+      changeNote: input.changeNote ?? null,
+      message: input.message ?? null,
+      sourceHash: input.sourceHash,
+      validationStatus: input.validationStatus ?? "valid",
+      versionNumber: input.versionNumber,
+      createdAt: now,
+      createdBy: input.createdBy,
+      metadata: { ...(input.metadata ?? {}), cloudSynced: true },
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO project_code_revisions (
+          id, project_id, resource_type, resource_id, revision_name, change_note,
+          message, source_hash, validation_status, version_number, created_at, created_by, metadata_json,
+          sync_status, synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?)`,
+      )
+      .run(
+        record.id,
+        record.projectId,
+        record.resourceType,
+        record.resourceId,
+        record.revisionName,
+        record.changeNote,
+        record.message,
+        record.sourceHash,
+        record.validationStatus,
+        record.versionNumber,
+        record.createdAt,
+        record.createdBy,
+        JSON.stringify(record.metadata),
+        now,
+      );
+
+    return record;
   }
 
   listForResource(input: {

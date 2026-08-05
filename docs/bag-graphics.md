@@ -1,6 +1,6 @@
 # BAG-Graphics
 
-BAG-Graphics is the first graphics project type on HMG Graphics Server. It monitors an auction website and drives live broadcast overlays.
+BAG-Graphics is the first graphics project type on NEUD. It monitors an auction website and drives live broadcast overlays.
 
 Project type identifier: `bag-graphics`
 

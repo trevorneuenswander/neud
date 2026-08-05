@@ -216,7 +216,7 @@ test("push pending uploads rows individually and marks only uploaded rows synced
   const service = readSrc("desktop/src/services/activity-sync/activity-sync-service.ts");
   assert.match(service, /for \(const record of pending\)/);
   assert.match(service, /upsertEvents\(\[row\]\)/);
-  assert.match(service, /markSynced\(record\.cloudId/);
+  assert.match(service, /markSynced\(activeRecord\.cloudId/);
 });
 
 test("realtime subscription supplements periodic pull sync", () => {

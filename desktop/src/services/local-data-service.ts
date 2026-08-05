@@ -24,6 +24,7 @@ import {
 } from "./cloud-access-directory";
 import path from "path";
 import fs from "fs";
+import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
 import type { AppSettingsRepository } from "../repositories/app-settings-repository";
 import type {
   DataSourcesRepository,
@@ -88,6 +89,10 @@ import {
   DisplayViewerSessionStore,
 } from "./display-viewer-session-store";
 import type { EngineManager } from "./engine-manager";
+import {
+  logDesiredStateTransition,
+  logHeartbeatReceivedByParent,
+} from "./worker-lifecycle-diagnostics";
 import type {
   AuctionDatasetDisplayInfo,
   AuctionDatasetService,
@@ -144,6 +149,7 @@ import { getDownloadSizeForJsonPath } from "./auction-download-json-sync";
 import { formatDownloadSize } from "./auction-download-size";
 import type { UserDisplayOrderRepository } from "../repositories/user-display-order-repository";
 import type { ProjectDisplayCodeRepository } from "../repositories/project-display-code-repository";
+import { reconcileHostedProjectAndDisplayIdentity } from "./display-sync/hosted-identity-reconciliation";
 import type { LocalDisplay } from "../repositories/displays-repository";
 import { mergeDisplayOrder } from "../lib/displays/merge-display-order";
 import {
@@ -848,6 +854,57 @@ export class LocalDataService {
 
   setProjectDisplayCodeRepository(repository: ProjectDisplayCodeRepository) {
     this.displayCodeRepo = repository;
+  }
+
+  async ensureHostedProjectRegisteredForSync(projectId: string): Promise<{
+    ok: boolean;
+    projectId: string;
+    realigned: boolean;
+    error?: string;
+  }> {
+    if (!this.cloudCoordinator?.isAuthenticatedCloudSessionAvailable()) {
+      return {
+        ok: false,
+        projectId,
+        realigned: false,
+        error: "Cloud session unavailable.",
+      };
+    }
+    if (!this.displayCodeRepo) {
+      return {
+        ok: false,
+        projectId,
+        realigned: false,
+        error: "Display code repository unavailable.",
+      };
+    }
+
+    const result = await reconcileHostedProjectAndDisplayIdentity({
+      cloud: this.cloudCoordinator,
+      projects: this.projects,
+      displays: this.displays,
+      displayCode: this.displayCodeRepo,
+      projectId,
+    });
+
+    if (!result.ok) {
+      return {
+        ok: false,
+        projectId,
+        realigned: false,
+        error: result.message,
+      };
+    }
+
+    if (result.realignedProjectId && this.activityEventsRepository) {
+      this.activityEventsRepository.repairMetadataProjectId(projectId, result.projectId);
+    }
+
+    return {
+      ok: true,
+      projectId: result.projectId,
+      realigned: result.realignedProjectId,
+    };
   }
 
   getAccessAuthorization(): AccessAuthorizationService | null {
@@ -3900,8 +3957,65 @@ export class LocalDataService {
     this.settings.set(`pending_run_once:${engineId}`, false);
   }
 
-  updateDesiredState(engineId: string, desiredState: "running" | "stopped") {
+  updateDesiredState(
+    engineId: string,
+    desiredState: "running" | "stopped",
+    meta?: { source?: string; requestedBy?: string | null },
+  ) {
+    const previous = this.dataSources.getById(engineId)?.desiredState ?? null;
+    logDesiredStateTransition({
+      engineId,
+      previousDesiredState: previous,
+      nextDesiredState: desiredState,
+      source: meta?.source ?? "LocalDataService.updateDesiredState",
+      requestedBy: meta?.requestedBy ?? null,
+    });
     this.dataSources.updateDesiredState(engineId, desiredState);
+  }
+
+  async applyDesiredState(
+    engineId: string,
+    desiredState: "running" | "stopped",
+    requestedBy?: string | null,
+  ): Promise<void> {
+    this.updateDesiredState(engineId, desiredState, {
+      source: "LocalDataService.applyDesiredState",
+      requestedBy: requestedBy ?? null,
+    });
+
+    if (!this.engineManager) {
+      console.warn(
+        `[engine] desired-state=${desiredState} engineId=${engineId} (engine manager unavailable)`,
+      );
+      return;
+    }
+
+    const source = this.dataSources.getById(engineId);
+    if (!source) {
+      console.warn(`[engine] desired-state=${desiredState} engineId=${engineId} (engine not found)`);
+      return;
+    }
+
+    const mode = isPackagedDesktopRuntime()
+      ? "local-desktop"
+      : ((source.config.execution_mode as string | undefined) ?? "local-desktop");
+    if (mode !== "local-desktop") {
+      return;
+    }
+
+    console.info(
+      `[engine] Apply desired-state=${desiredState} engineId=${engineId} mode=${mode}`,
+    );
+
+    if (desiredState === "running") {
+      const result = await this.engineManager.start(engineId, requestedBy ?? null);
+      if (!result.ok) {
+        console.warn(`[engine] Start failed engineId=${engineId} message=${result.message}`);
+      }
+      return;
+    }
+
+    await this.engineManager.stop(engineId, requestedBy ?? null);
   }
 
   setExecutionMode(engineId: string, mode: "local-desktop" | "remote-worker") {
@@ -4629,6 +4743,15 @@ export class LocalDataService {
       lastRunAt: patch.lastRunAt,
       lastError: patch.lastError,
     });
+    if (patch.lastHeartbeatAt) {
+      logHeartbeatReceivedByParent({
+        engineId,
+        lastHeartbeatAt: patch.lastHeartbeatAt,
+        actualState: patch.actualState ?? null,
+        workerId: patch.workerId ?? null,
+        source: "LocalDataService.recordStatus",
+      });
+    }
     this.bagLiveState.syncEngineStatus(engineId);
     this.pushEngineStatusSnapshot(engineId);
   }

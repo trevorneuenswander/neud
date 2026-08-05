@@ -574,15 +574,42 @@ export class DeveloperToolsService {
         };
       }
 
+      const revisionHistory = this.revisions.listForResource({
+        projectId: project.id,
+        resourceType: "display",
+        resourceId: display.id,
+      });
       const activeRevision = this.revisions.getById(code.publishedRevisionId);
 
       return {
         displayId: display.id,
         displayKey: display.displayKey,
-        activeVersionNumber: activeRevision?.versionNumber ?? null,
+        activeVersionNumber: activeRevision
+          ? this.resolveDisplayRevisionVersionNumber(activeRevision, revisionHistory)
+          : null,
         activeVersionCreatedAt: activeRevision?.createdAt ?? null,
       };
     });
+  }
+
+  private resolveDisplayRevisionVersionNumber(
+    revision: NonNullable<ReturnType<ProjectCodeRevisionsRepository["getById"]>>,
+    allRevisions: ReturnType<ProjectCodeRevisionsRepository["listForResource"]>,
+  ): number | null {
+    if (typeof revision.versionNumber === "number" && revision.versionNumber > 0) {
+      return revision.versionNumber;
+    }
+
+    const sorted = [...allRevisions].sort((left, right) => {
+      const byCreated =
+        new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+      if (byCreated !== 0) {
+        return byCreated;
+      }
+      return left.id.localeCompare(right.id);
+    });
+    const index = sorted.findIndex((entry) => entry.id === revision.id);
+    return index >= 0 ? index + 1 : null;
   }
 
   listDisplays(projectSlug: string) {
@@ -993,7 +1020,7 @@ export class DeveloperToolsService {
       };
       this.storage.writeDisplayPublished(project.id, display.id, bundle);
       this.storage.writeDisplayRevision(project.id, display.id, revisionId, bundle);
-      this.revisions.create({
+      const createdRevision = this.revisions.create({
         id: revisionId,
         projectId: project.id,
         resourceType: "display",
@@ -1066,7 +1093,7 @@ export class DeveloperToolsService {
           publishedRevisionId: revisionId,
           activeVersion: {
             id: revisionId,
-            versionNumber: 1,
+            versionNumber: createdRevision.versionNumber ?? 1,
             createdAt,
           },
         },
@@ -1464,7 +1491,7 @@ export class DeveloperToolsService {
     };
     this.storage.writeDisplayPublished(project.id, display.id, bundle);
     this.storage.writeDisplayRevision(project.id, display.id, revisionId, bundle);
-    this.revisions.create({
+    const createdRevision = this.revisions.create({
       id: revisionId,
       projectId: project.id,
       resourceType: "display",
@@ -1537,7 +1564,7 @@ export class DeveloperToolsService {
         publishedRevisionId: revisionId,
         activeVersion: {
           id: revisionId,
-          versionNumber: 1,
+          versionNumber: createdRevision.versionNumber ?? 1,
           createdAt,
         },
       },
@@ -2004,6 +2031,15 @@ export class DeveloperToolsService {
       updatedBy: actor.userId,
     });
 
+    this.displays.markSyncPending(displayId);
+    this.displaySyncHooks.queueOperation?.({
+      operationType: "display.active_revision.update",
+      entityType: "display",
+      entityId: displayId,
+      payload: { projectId: project.id, revisionId },
+    });
+    this.displaySyncHooks.syncNow?.("display-version-activated");
+
     if (code.publishedRevisionId !== revisionId) {
       this.recordProjectActivity(
         project,
@@ -2440,6 +2476,7 @@ export class DeveloperToolsService {
         projectId: project.id,
         resourceType: input.resourceType,
         resourceId: input.resourceId,
+        limit: input.resourceType === "display" ? 500 : 50,
       })
       .map((revision) => ({
         id: revision.id,

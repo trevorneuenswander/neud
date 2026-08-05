@@ -1,0 +1,382 @@
+﻿Γ£û shared HTML runtime script exists with iframe and standalone support (1.9063ms)
+Γ£ö standalone HTML wrapping uses external runtime script (0.2662ms)
+Γ£ö bridge data includes shared broadArrowDisplay payload (0.3431ms)
+Γ£ö TypeScript display path remains separate from HTML iframe bridge (0.2139ms)
+Γ£ö profile page uses profile-table full_name without email guessing (0.2544ms)
+Γ£ö profiles migration adds email phone and renames company to team (0.1837ms)
+Γ£ö profile types include email phone_number and team (0.1837ms)
+Γä╣ tests 7
+Γä╣ suites 0
+Γä╣ pass 6
+Γä╣ fail 1
+Γä╣ cancelled 0
+Γä╣ skipped 0
+Γä╣ todo 0
+Γä╣ duration_ms 58.3027
+
+Γ£û failing tests:
+
+test at desktop\scripts\test-neud-display-profile-updates.mjs:13:1
+Γ£û shared HTML runtime script exists with iframe and standalone support (1.9063ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /window\.NEUDDisplay\.subscribe/. Input:
+  
+  '(function () {\n' +
+    '  "use strict";\n' +
+    '\n' +
+    '  var NEUD_DISPLAY_SOURCE = "neud-display";\n' +
+    '  var NEUD_RUNTIME_SOURCE = "neud-runtime";\n' +
+    '  var NEUD_DISPLAY_READY = "NEUD_DISPLAY_READY";\n' +
+    '  var NEUD_DATA_UPDATE = "NEUD_DATA_UPDATE";\n' +
+    '  var NEUD_DISPLAY_BRIDGE_ACK = "NEUD_DISPLAY_BRIDGE_ACK";\n' +
+    '\n' +
+    '  if (window.__NEUD_DISPLAY_RUNTIME_LOADED__) {\n' +
+    '    return;\n' +
+    '  }\n' +
+    '  window.__NEUD_DISPLAY_RUNTIME_LOADED__ = true;\n' +
+    '\n' +
+    '  window.NEUDDisplay = window.NEUDDisplay || {\n' +
+    '    _subscribers: [],\n' +
+    '    _snapshot: null,\n' +
+    '    _displayInfo: null,\n' +
+    '    _ready: false,\n' +
+    '    subscribe: function (callback) {\n' +
+    '      this._subscribers.push(callback);\n' +
+    '      if (this._snapshot) {\n' +
+    '        try {\n' +
+    '          callback(this._snapshot);\n' +
+    '        } catch (error) {\n' +
+    '          reportError("subscriber callback failed", error);\n' +
+    '        }\n' +
+    '      }\n' +
+    '      var self = this;\n' +
+    '      return function () {\n' +
+    '        self._subscribers = self._subscribers.filter(function (entry) {\n' +
+    '          return entry !== callback;\n' +
+    '        });\n' +
+    '      };\n' +
+    '    },\n' +
+    '    getSnapshot: function () {\n' +
+    '      return this._snapshot;\n' +
+    '    },\n' +
+    '    getDisplayInfo: function () {\n' +
+    '      return this._displayInfo || null;\n' +
+    '    },\n' +
+    '    signalReady: function () {\n' +
+    '      this._ready = true;\n' +
+    '      try {\n' +
+    '        window.dispatchEvent(new CustomEvent("NEUD_DISPLAY_READY"));\n' +
+    '      } catch (_) {}\n' +
+    '      try {\n' +
+    '        window.postMessage(\n' +
+    '          { source: NEUD_DISPLAY_SOURCE, type: NEUD_DISPLAY_READY },\n' +
+    '          window.location.origin,\n' +
+    '        );\n' +
+    '      } catch (_) {}\n' +
+    '    },\n' +
+    '    _publish: function (snapshot, displayInfo) {\n' +
+    '      this._snapshot = snapshot;\n' +
+    '      this._displayInfo = displayInfo;\n' +
+    '      window.NEUD_DATA = snapshot;\n' +
+    '      window.displayData = snapshot;\n' +
+    '      try {\n' +
+    '        window.dispatchEvent(new CustomEvent("neud:data", { detail: snapshot }));\n' +
+    '      } catch (_) {}\n' +
+    '      try {\n' +
+    '        window.postMessage(\n' +
+    '          {\n' +
+    '            source: NEUD_RUNTIME_SOURCE,\n' +
+    '            type: NEUD_DATA_UPDATE,\n' +
+    '            version: 1,\n' +
+    '            payload: snapshot,\n' +
+    '            revision:\n' +
+    '              displayInfo && displayInfo.revision != null ? displayInfo.revision : null,\n' +
+    '          },\n' +
+    '          window.location.origin,\n' +
+    '        );\n' +
+    '      } catch (_) {}\n' +
+    '      if (typeof window.updateDisplay === "function") {\n' +
+    '        try {\n' +
+    '          window.updateDisplay(snapshot);\n' +
+    '        } catch (error) {\n' +
+    '          reportError("updateDisplay hook failed", error);\n' +
+    '        }\n' +
+    '      }\n' +
+    '      for (var i = 0; i < this._subscribers.length; i++) {\n' +
+    '        try {\n' +
+    '          this._subscribers[i](snapshot);\n' +
+    '        } catch (error) {\n' +
+    '          reportError("subscriber callback failed", error);\n' +
+    '        }\n' +
+    '      }\n' +
+    '    },\n' +
+    '  };\n' +
+    '\n' +
+    '  var config = window.__NEUD_DISPLAY_CONFIG__ || {};\n' +
+    '  var dataUrl = typeof config.dataUrl === "string" ? config.dataUrl : "";\n' +
+    '  var displayInfo = config.displayInfo && typeof config.displayInfo === "object"\n' +
+    '    ? config.displayInfo\n' +
+    '    : {};\n' +
+    '  var projectId = typeof displayInfo.projectId === "string" ? displayInfo.projectId : null;\n' +
+    '  var liveEventsUrl =\n' +
+    '    typeof config.liveEventsUrl === "string"\n' +
+    '      ? config.liveEventsUrl\n' +
+    '      : projectId\n' +
+    '        ? String(config.localApiBase || "http://127.0.0.1:8070").replace(/\\/$/, "") +\n' +
+    '          "/api/projects/" +\n' +
+    '          encodeURIComponent(projectId) +\n' +
+    '          "/bag/live/events"\n' +
+    '        : null;\n' +
+    '\n' +
+    '  var isEmbedded = window.parent && window.parent !== window;\n' +
+    '  var pollTimer = null;\n' +
+    '  var activeRequest = null;\n' +
+    '  var eventSource = null;\n' +
+    '  var bridgeReady = false;\n' +
+    '  var runtimeStarted = false;\n' +
+    '  var latestSnapshot = null;\n' +
+    '  var latestRevision = null;\n' +
+    '\n' +
+    '  function reportError(message, error) {\n' +
+    '    if (typeof console !== "undefined" && typeof console.error === "function") {\n' +
+    '      console.error("[NEUD Display Runtime] " + message, error || "");\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  function debugLog(message) {\n' +
+    '    if (config.debug && typeof console !== "undefined" && typeof console.debug === "function") {\n' +
+    '      console.debug("[NEUD Display Runtime] " + message);\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  function readPollIntervalMs() {\n' +
+    '    if (typeof config.pollIntervalMs === "number" && config.pollIntervalMs >= 250) {\n' +
+    '      return config.pollIntervalMs;\n' +
+    '    }\n' +
+    '    try {\n' +
+    '      var parsed = Number(new URLSearchParams(window.location.search).get("poll"));\n' +
+    '      if (Number.isFinite(parsed) && parsed >= 250) {\n' +
+    '        return parsed;\n' +
+    '      }\n' +
+    '    } catch (_) {}\n' +
+    '    return 1000;\n' +
+    '  }\n' +
+    '\n' +
+    '  var pollIntervalMs = readPollIntervalMs();\n' +
+    '\n' +
+    '  function stopPolling() {\n' +
+    '    if (pollTimer !== null) {\n' +
+    '      window.clearInterval(pollTimer);\n' +
+    '      pollTimer = null;\n' +
+    '    }\n' +
+    '    if (activeRequest) {\n' +
+    '      activeRequest.abort();\n' +
+    '      activeRequest = null;\n' +
+    '    }\n' +
+    '    if (eventSource) {\n' +
+    '      eventSource.close();\n' +
+    '      eventSource = null;\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  window.__NEUD_RUNTIME_STOP__ = stopPolling;\n' +
+    '\n' +
+    '  function resolveCanonicalSnapshot(payload) {\n' +
+    '    if (!payload || typeof payload !== "object") {\n' +
+    '      return null;\n' +
+    '    }\n' +
+    '    var candidate =\n' +
+    '      payload.snapshot && typeof payload.snapshot === "object"\n' +
+    '        ? payload.snapshot\n' +
+    '        : payload.broadArrowDisplay && typeof payload.broadArrowDisplay === "object"\n' +
+    '          ? payload.broadArrowDisplay\n' +
+    '          : payload;\n' +
+    '    if (\n' +
+    '      candidate &&\n' +
+    '      (candidate.current ||\n' +
+    '        candidate.dataSource ||\n' +
+    '        Array.isArray(candidate.next) ||\n' +
+    '        candidate.auctionDisplay ||\n' +
+    '        candidate.pylon ||\n' +
+    '        candidate.ticker)\n' +
+    '    ) {\n' +
+    '      if (candidate.pylon || candidate.ticker) {\n' +
+    '        var merged = {};\n' +
+    '        if (candidate.pylon && candidate.pylon.auctionDisplay) {\n' +
+    '          merged.auctionDisplay = candidate.pylon.auctionDisplay;\n' +
+    '        } else if (candidate.pylon) {\n' +
+    '          merged.auctionDisplay = candidate.pylon;\n' +
+    '        }\n' +
+    '        if (candidate.ticker && Array.isArray(candidate.ticker.next)) {\n' +
+    '          merged.next = candidate.ticker.next;\n' +
+    '        }\n' +
+    '        merged.updatedAt = candidate.updatedAt || null;\n' +
+    '        merged.dataSource = candidate.dataSource || payload.dataSource || null;\n' +
+    '        return merged;\n' +
+    '      }\n' +
+    '      return candidate;\n' +
+    '    }\n' +
+    '    return null;\n' +
+    '  }\n' +
+    '\n' +
+    '  function notifyParentAck(revision) {\n' +
+    '    if (!isEmbedded) {\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    try {\n' +
+    '      window.parent.postMessage(\n' +
+    '        {\n' +
+    '          type: NEUD_DISPLAY_BRIDGE_ACK,\n' +
+    '          displayId: displayInfo.displayId || null,\n' +
+    '          projectId: displayInfo.projectId || null,\n' +
+    '          revision: revision != null ? revision : null,\n' +
+    '        },\n' +
+    '        window.location.origin,\n' +
+    '      );\n' +
+    '    } catch (error) {\n' +
+    '      reportError("bridge ack failed", error);\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  function isAllowedMessageOrigin(origin) {\n' +
+    '    if (!origin || origin === "null") {\n' +
+    '      return true;\n' +
+    '    }\n' +
+    '    if (origin === window.location.origin) {\n' +
+    '      return true;\n' +
+    '    }\n' +
+    '    return /^https?:\\/\\/(127\\.0\\.0\\.1|localhost)(:\\d+)?$/i.test(origin);\n' +
+    '  }\n' +
+    '\n' +
+    '  function publishSnapshot(snapshot, meta) {\n' +
+    '    window.NEUDDisplay._publish(snapshot, meta);\n' +
+    '    notifyParentAck(meta.revision != null ? meta.revision : null);\n' +
+    '    debugLog("snapshot delivered");\n' +
+    '  }\n' +
+    '\n' +
+    '  function deliverLatestSnapshot() {\n' +
+    '    if (!bridgeReady || latestSnapshot == null) {\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    publishSnapshot(latestSnapshot, {\n' +
+    '      projectId: displayInfo.projectId || null,\n' +
+    '      displayId: displayInfo.displayId || null,\n' +
+    '      slug: displayInfo.slug || null,\n' +
+    '      name: displayInfo.name || null,\n' +
+    '      revision: latestRevision,\n' +
+    '      enabled: true,\n' +
+    '    });\n' +
+    '  }\n' +
+    '\n' +
+    '  function markBridgeReady() {\n' +
+    '    if (bridgeReady) {\n' +
+    '      deliverLatestSnapshot();\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    bridgeReady = true;\n' +
+    '    debugLog("runtime connected");\n' +
+    '    deliverLatestSnapshot();\n' +
+    '    if (!runtimeStarted) {\n' +
+    '      runtimeStarted = true;\n' +
+    '      if (!isEmbedded && liveEventsUrl && typeof EventSource !== "undefined") {\n' +
+    '        startLiveEvents();\n' +
+    '      } else if (dataUrl) {\n' +
+    '        void fetchLatest();\n' +
+    '        pollTimer = window.setInterval(fetchLatest, pollIntervalMs);\n' +
+    '      }\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  async function fetchLatest() {\n' +
+    '    if (!dataUrl || window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {\n' +
+    '      stopPolling();\n' +
+    '      return;\n' +
+    '    }\n' +
+    '\n' +
+    '    activeRequest && activeRequest.abort();\n' +
+    '    activeRequest = new AbortController();\n' +
+    '    try {\n' +
+    '      var response = await fetch(dataUrl, {\n' +
+    '        cache: "no-store",\n' +
+    '        signal: activeRequest.signal,\n' +
+    '        headers: { "X-NEUD-Display-Client": "neud-display-runtime" },\n' +
+    '      });\n' +
+    '      if (response.status === 409 || response.status === 423 || response.status === 403) {\n' +
+    '        stopPolling();\n' +
+    '        return;\n' +
+    '      }\n' +
+    '      if (!response.ok) {\n' +
+    '        return;\n' +
+    '      }\n' +
+    '      var payload = await response.json();\n' +
+    '      if (\n' +
+    '        payload.enabled === false ||\n' +
+    '        payload.status === "display_disabled" ||\n' +
+    '        payload.dataConnected === false\n' +
+    '      ) {\n' +
+    '        stopPolling();\n' +
+    '        return;\n' +
+    '      }\n' +
+    '      applyPayload(payload);\n' +
+    '    } catch (error) {\n' +
+    '      if (error && error.name === "AbortError") {\n' +
+    '        return;\n' +
+    '      }\n' +
+    '      reportError("data fetch failed", error);\n' +
+    '    } finally {\n' +
+    '      activeRequest = null;\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  function applyPayload(payload) {\n' +
+    '    var snapshot = resolveCanonicalSnapshot(payload);\n' +
+    '    if (!snapshot) {\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    latestSnapshot = snapshot;\n' +
+    '    latestRevision = payload.revision != null ? payload.revision : null;\n' +
+    '    if (!bridgeReady) {\n' +
+    '      debugLog("initial snapshot retained until readiness");\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    publishSnapshot(snapshot, {\n' +
+    '      projectId: displayInfo.projectId || null,\n' +
+    '      displayId: displayInfo.displayId || null,\n' +
+    '      slug: displayInfo.slug || null,\n' +
+    '      name: displayInfo.name || null,\n' +
+    '      source: payload.source || null,\n' +
+    '      revision: latestRevision,\n' +
+    '      enabled: payload.enabled !== false,\n' +
+    '    });\n' +
+    '  }\n' +
+    '\n' +
+    '  function startLiveEvents() {\n' +
+    '    if (!liveEventsUrl) {\n' +
+    '      return;\n' +
+    '    }\n' +
+    '    try {\n' +
+    '      eventSource = new EventSource(liveEventsUrl);\n' +
+    '      eventSource.addEventListener("bag.live-state.updated", function (event) {\n' +
+    '        try {\n' +
+    '          var envelope = JSON.parse(event.data);\n' +
+    '          if (envelope && envelope.state) {\n' +
+    '            void fetchLatest();\n' +
+    '          }\n' +
+    '        } catch (error) {\n' +
+    '          reportError("live event parse failed", error);\n' +
+    '        }\n' +
+    '      });\n' +
+    '      eventSource.onerror = function () {\n' +
+    '     '... 1509 more characters
+  
+      at TestContext.<anonymous> (file:///C:/Users/Trevor/Desktop/Neud/desktop/scripts/test-neud-display-profile-updates.mjs:18:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1325:25)
+      at Test.start (node:internal/test_runner/test:1191:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:385:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '(function () {\n  "use strict";\n\n  var NEUD_DISPLAY_SOURCE = "neud-display";\n  var NEUD_RUNTIME_SOURCE = "neud-runtime";\n  var NEUD_DISPLAY_READY = "NEUD_DISPLAY_READY";\n  var NEUD_DATA_UPDATE = "NEUD_DATA_UPDATE";\n  var NEUD_DISPLAY_BRIDGE_ACK = "NEUD_DISPLAY_BRIDGE_ACK";\n\n  if (window.__NEUD_DISPLAY_RUNTIME_LOADED__) {\n    return;\n  }\n  window.__NEUD_DISPLAY_RUNTIME_LOADED__ = true;\n\n  window.NEUDDisplay = window.NEUDDisplay || {\n    _subscribers: [],\n    _snapshot: null,\n    _displayInfo: null,\n    _ready: false,\n    subscribe: function (callback) {\n      this._subscribers.push(callback);\n      if (this._snapshot) {\n        try {\n          callback(this._snapshot);\n        } catch (error) {\n          reportError("subscriber callback failed", error);\n        }\n      }\n      var self = this;\n      return function () {\n        self._subscribers = self._subscribers.filter(function (entry) {\n          return entry !== callback;\n        });\n      };\n    },\n    getSnapshot: function () {\n      return this._snapshot;\n    },\n    getDisplayInfo: function () {\n      return this._displayInfo || null;\n    },\n    signalReady: function () {\n      this._ready = true;\n      try {\n        window.dispatchEvent(new CustomEvent("NEUD_DISPLAY_READY"));\n      } catch (_) {}\n      try {\n        window.postMessage(\n          { source: NEUD_DISPLAY_SOURCE, type: NEUD_DISPLAY_READY },\n          window.location.origin,\n        );\n      } catch (_) {}\n    },\n    _publish: function (snapshot, displayInfo) {\n      this._snapshot = snapshot;\n      this._displayInfo = displayInfo;\n      window.NEUD_DATA = snapshot;\n      window.displayData = snapshot;\n      try {\n        window.dispatchEvent(new CustomEvent("neud:data", { detail: snapshot }));\n      } catch (_) {}\n      try {\n        window.postMessage(\n          {\n            source: NEUD_RUNTIME_SOURCE,\n            type: NEUD_DATA_UPDATE,\n            version: 1,\n            payload: snapshot,\n            revision:\n              displayInfo && displayInfo.revision != null ? displayInfo.revision : null,\n          },\n          window.location.origin,\n        );\n      } catch (_) {}\n      if (typeof window.updateDisplay === "function") {\n        try {\n          window.updateDisplay(snapshot);\n        } catch (error) {\n          reportError("updateDisplay hook failed", error);\n        }\n      }\n      for (var i = 0; i < this._subscribers.length; i++) {\n        try {\n          this._subscribers[i](snapshot);\n        } catch (error) {\n          reportError("subscriber callback failed", error);\n        }\n      }\n    },\n  };\n\n  var config = window.__NEUD_DISPLAY_CONFIG__ || {};\n  var dataUrl = typeof config.dataUrl === "string" ? config.dataUrl : "";\n  var displayInfo = config.displayInfo && typeof config.displayInfo === "object"\n    ? config.displayInfo\n    : {};\n  var projectId = typeof displayInfo.projectId === "string" ? displayInfo.projectId : null;\n  var liveEventsUrl =\n    typeof config.liveEventsUrl === "string"\n      ? config.liveEventsUrl\n      : projectId\n        ? String(config.localApiBase || "http://127.0.0.1:8070").replace(/\\/$/, "") +\n          "/api/projects/" +\n          encodeURIComponent(projectId) +\n          "/bag/live/events"\n        : null;\n\n  var isEmbedded = window.parent && window.parent !== window;\n  var pollTimer = null;\n  var activeRequest = null;\n  var eventSource = null;\n  var bridgeReady = false;\n  var runtimeStarted = false;\n  var latestSnapshot = null;\n  var latestRevision = null;\n\n  function reportError(message, error) {\n    if (typeof console !== "undefined" && typeof console.error === "function") {\n      console.error("[NEUD Display Runtime] " + message, error || "");\n    }\n  }\n\n  function debugLog(message) {\n    if (config.debug && typeof console !== "undefined" && typeof console.debug === "function") {\n      console.debug("[NEUD Display Runtime] " + message);\n    }\n  }\n\n  function readPollIntervalMs() {\n    if (typeof config.pollIntervalMs === "number" && config.pollIntervalMs >= 250) {\n      return config.pollIntervalMs;\n    }\n    try {\n      var parsed = Number(new URLSearchParams(window.location.search).get("poll"));\n      if (Number.isFinite(parsed) && parsed >= 250) {\n        return parsed;\n      }\n    } catch (_) {}\n    return 1000;\n  }\n\n  var pollIntervalMs = readPollIntervalMs();\n\n  function stopPolling() {\n    if (pollTimer !== null) {\n      window.clearInterval(pollTimer);\n      pollTimer = null;\n    }\n    if (activeRequest) {\n      activeRequest.abort();\n      activeRequest = null;\n    }\n    if (eventSource) {\n      eventSource.close();\n      eventSource = null;\n    }\n  }\n\n  window.__NEUD_RUNTIME_STOP__ = stopPolling;\n\n  function resolveCanonicalSnapshot(payload) {\n    if (!payload || typeof payload !== "object") {\n      return null;\n    }\n    var candidate =\n      payload.snapshot && typeof payload.snapshot === "object"\n        ? payload.snapshot\n        : payload.broadArrowDisplay && typeof payload.broadArrowDisplay === "object"\n          ? payload.broadArrowDisplay\n          : payload;\n    if (\n      candidate &&\n      (candidate.current ||\n        candidate.dataSource ||\n        Array.isArray(candidate.next) ||\n        candidate.auctionDisplay ||\n        candidate.pylon ||\n        candidate.ticker)\n    ) {\n      if (candidate.pylon || candidate.ticker) {\n        var merged = {};\n        if (candidate.pylon && candidate.pylon.auctionDisplay) {\n          merged.auctionDisplay = candidate.pylon.auctionDisplay;\n        } else if (candidate.pylon) {\n          merged.auctionDisplay = candidate.pylon;\n        }\n        if (candidate.ticker && Array.isArray(candidate.ticker.next)) {\n          merged.next = candidate.ticker.next;\n        }\n        merged.updatedAt = candidate.updatedAt || null;\n        merged.dataSource = candidate.dataSource || payload.dataSource || null;\n        return merged;\n      }\n      return candidate;\n    }\n    return null;\n  }\n\n  function notifyParentAck(revision) {\n    if (!isEmbedded) {\n      return;\n    }\n    try {\n      window.parent.postMessage(\n        {\n          type: NEUD_DISPLAY_BRIDGE_ACK,\n          displayId: displayInfo.displayId || null,\n          projectId: displayInfo.projectId || null,\n          revision: revision != null ? revision : null,\n        },\n        window.location.origin,\n      );\n    } catch (error) {\n      reportError("bridge ack failed", error);\n    }\n  }\n\n  function isAllowedMessageOrigin(origin) {\n    if (!origin || origin === "null") {\n      return true;\n    }\n    if (origin === window.location.origin) {\n      return true;\n    }\n    return /^https?:\\/\\/(127\\.0\\.0\\.1|localhost)(:\\d+)?$/i.test(origin);\n  }\n\n  function publishSnapshot(snapshot, meta) {\n    window.NEUDDisplay._publish(snapshot, meta);\n    notifyParentAck(meta.revision != null ? meta.revision : null);\n    debugLog("snapshot delivered");\n  }\n\n  function deliverLatestSnapshot() {\n    if (!bridgeReady || latestSnapshot == null) {\n      return;\n    }\n    publishSnapshot(latestSnapshot, {\n      projectId: displayInfo.projectId || null,\n      displayId: displayInfo.displayId || null,\n      slug: displayInfo.slug || null,\n      name: displayInfo.name || null,\n      revision: latestRevision,\n      enabled: true,\n    });\n  }\n\n  function markBridgeReady() {\n    if (bridgeReady) {\n      deliverLatestSnapshot();\n      return;\n    }\n    bridgeReady = true;\n    debugLog("runtime connected");\n    deliverLatestSnapshot();\n    if (!runtimeStarted) {\n      runtimeStarted = true;\n      if (!isEmbedded && liveEventsUrl && typeof EventSource !== "undefined") {\n        startLiveEvents();\n      } else if (dataUrl) {\n        void fetchLatest();\n        pollTimer = window.setInterval(fetchLatest, pollIntervalMs);\n      }\n    }\n  }\n\n  async function fetchLatest() {\n    if (!dataUrl || window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {\n      stopPolling();\n      return;\n    }\n\n    activeRequest && activeRequest.abort();\n    activeRequest = new AbortController();\n    try {\n      var response = await fetch(dataUrl, {\n        cache: "no-store",\n        signal: activeRequest.signal,\n        headers: { "X-NEUD-Display-Client": "neud-display-runtime" },\n      });\n      if (response.status === 409 || response.status === 423 || response.status === 403) {\n        stopPolling();\n        return;\n      }\n      if (!response.ok) {\n        return;\n      }\n      var payload = await response.json();\n      if (\n        payload.enabled === false ||\n        payload.status === "display_disabled" ||\n        payload.dataConnected === false\n      ) {\n        stopPolling();\n        return;\n      }\n      applyPayload(payload);\n    } catch (error) {\n      if (error && error.name === "AbortError") {\n        return;\n      }\n      reportError("data fetch failed", error);\n    } finally {\n      activeRequest = null;\n    }\n  }\n\n  function applyPayload(payload) {\n    var snapshot = resolveCanonicalSnapshot(payload);\n    if (!snapshot) {\n      return;\n    }\n    latestSnapshot = snapshot;\n    latestRevision = payload.revision != null ? payload.revision : null;\n    if (!bridgeReady) {\n      debugLog("initial snapshot retained until readiness");\n      return;\n    }\n    publishSnapshot(snapshot, {\n      projectId: displayInfo.projectId || null,\n      displayId: displayInfo.displayId || null,\n      slug: displayInfo.slug || null,\n      name: displayInfo.name || null,\n      source: payload.source || null,\n      revision: latestRevision,\n      enabled: payload.enabled !== false,\n    });\n  }\n\n  function startLiveEvents() {\n    if (!liveEventsUrl) {\n      return;\n    }\n    try {\n      eventSource = new EventSource(liveEventsUrl);\n      eventSource.addEventListener("bag.live-state.updated", function (event) {\n        try {\n          var envelope = JSON.parse(event.data);\n          if (envelope && envelope.state) {\n            void fetchLatest();\n          }\n        } catch (error) {\n          reportError("live event parse failed", error);\n        }\n      });\n      eventSource.onerror = function () {\n     '... 1509 more characters,
+    expected: /window\.NEUDDisplay\.subscribe/,
+    operator: 'match',
+    diff: 'simple'
+  }

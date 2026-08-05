@@ -1,4 +1,4 @@
-import runtimeConfig from "../../../../shared/bag/bag-runtime-config.json";
+import runtimeConfig from "./bag-runtime-config.json";
 import { BAG_LOGIN_CONFIG } from "../default-sources";
 
 export type BagRuntimeConfig = typeof runtimeConfig;

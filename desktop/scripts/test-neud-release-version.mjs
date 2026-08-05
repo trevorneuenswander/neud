@@ -15,7 +15,7 @@ function readJson(relativePath) {
 }
 
 function createVersionApi() {
-  const BUILD_APP_VERSION = "0.1.0";
+  const BUILD_APP_VERSION = "0.1.1";
 
   function stripChannelSuffix(version, channel) {
     const pattern = new RegExp(`[-.]?${channel}.*$`, "i");
@@ -87,28 +87,28 @@ function createVersionApi() {
 
 const versionApi = createVersionApi();
 
-test("0.1.0 formats as Alpha 0.1.0", () => {
-  assert.equal(versionApi.getDisplayVersion("0.1.0"), "Alpha 0.1.0");
+test("0.1.1 formats as Alpha 0.1.1", () => {
+  assert.equal(versionApi.getDisplayVersion("0.1.1"), "Alpha 0.1.1");
 });
 
 test("alpha suffix does not duplicate Alpha prefix", () => {
-  assert.equal(versionApi.getDisplayVersion("0.1.0-alpha"), "Alpha 0.1.0");
-  assert.ok(!versionApi.getDisplayVersion("0.1.0-alpha").toLowerCase().includes("alpha alpha"));
+  assert.equal(versionApi.getDisplayVersion("0.1.1-alpha"), "Alpha 0.1.1");
+  assert.ok(!versionApi.getDisplayVersion("0.1.1-alpha").toLowerCase().includes("alpha alpha"));
 });
 
 test("missing runtime data does not render Alpha undefined", () => {
-  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.1.0");
-  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.1.0");
+  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.1.1");
+  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.1.1");
   assert.ok(!versionApi.getDisplayVersion("").includes("undefined"));
   assert.ok(!versionApi.getDisplayVersion("").includes("null"));
 });
 
-test("canonical package metadata stays at 0.1.0 in root and desktop packages", () => {
+test("canonical package metadata stays at 0.1.1 in root and desktop packages", () => {
   const rootPkg = readJson("package.json");
   const desktopPkg = readJson("desktop/package.json");
 
-  assert.equal(rootPkg.version, "0.1.0");
-  assert.equal(desktopPkg.version, "0.1.0");
+  assert.equal(rootPkg.version, "0.1.1");
+  assert.equal(desktopPkg.version, "0.1.1");
   assert.equal(rootPkg.version, desktopPkg.version);
 });
 
@@ -192,8 +192,17 @@ test("version hook resolves desktop bridge then falls back to build label", () =
 
 test("release versioning policy is documented", () => {
   const doc = readSrc("docs/release-versioning.md");
+  const githubRelease = readSrc("docs/github-release.md");
   assert.match(doc, /Alpha MAJOR\.MINOR\.PATCH/);
   assert.match(doc, /package\.json/);
   assert.match(doc, /getCanonicalReleaseVersion\(\)/);
   assert.match(doc, /Do not add automatic version bumps/);
+  assert.match(githubRelease, /NEUD-Setup-latest-x64\.exe/);
+});
+
+test("electron-builder publish metadata matches GitHub repository", () => {
+  const config = readSrc("desktop/electron-builder.yml");
+  assert.match(config, /owner: trevorneuenswander/);
+  assert.match(config, /repo: neud/);
+  assert.match(config, /appId: com\.hildreths\.neud/);
 });

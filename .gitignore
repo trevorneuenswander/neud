@@ -57,6 +57,7 @@ desktop/validation-output/
 desktop/dist/
 desktop/staging/
 desktop/release/
+desktop/.release-scan/
 workers/data-engine/logs/
 
 docs/*-diagnostic.json

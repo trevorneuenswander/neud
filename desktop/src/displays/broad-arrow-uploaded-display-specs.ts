@@ -20,7 +20,7 @@ export const AUCTION_TICKER_OVERLAY_SPEC: BroadArrowUploadedDisplaySpec = {
   description:
     "1920×1080 lower-bar overlay showing up to three upcoming lots with animated title marquee.",
   uploadedFilename: "3. TICKER.html",
-  bundledV1RelativePath: "desktop/src/displays/bundled/auction-ticker-overlay-v1.html",
+  bundledV1RelativePath: "auction-ticker-overlay-v1.html",
   graphicType: "ticker",
   displayWidth: 1920,
   displayHeight: 1080,
@@ -34,7 +34,7 @@ export const AUCTION_PYLON_DISPLAY_SPEC: BroadArrowUploadedDisplaySpec = {
   description:
     "1920×1080 left-side pylon with current lot photo, title, bid, and currency rows.",
   uploadedFilename: "3b. PYLON.html",
-  bundledV1RelativePath: "desktop/src/displays/bundled/auction-pylon-display-v1.html",
+  bundledV1RelativePath: "auction-pylon-display-v1.html",
   graphicType: "pylon",
   displayWidth: 1920,
   displayHeight: 1080,

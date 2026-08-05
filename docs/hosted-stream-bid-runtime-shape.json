@@ -1,0 +1,29 @@
+{
+  "version": "2026-07-31.1",
+  "source": "hosted-viewer-before-unification",
+  "description": "Prior hosted path extracted only payload.data from published RPC canonical_payload and did not unwrap payload.snapshot or merge broadArrowDisplay pylon/ticker.",
+  "hostedParentPayloadBeforeFix": {
+    "topLevelKeys": [
+      "prev",
+      "current",
+      "next",
+      "lots",
+      "lastSold",
+      "auctionDisplay",
+      "updatedAt",
+      "dataSource"
+    ],
+    "normalization": "resolveHostedCanonicalSnapshot(payload.data || payload)"
+  },
+  "hostedIframeBridgePayloadBeforeFix": {
+    "messageType": "NEUD_DATA_UPDATE",
+    "payloadTopLevelKeys": ["same flat canonical fields as parent"],
+    "secondPassNormalization": "hosted-only resolveCanonicalSnapshot checked payload.data only"
+  },
+  "firstDivergence": "Local runtime selected payload.snapshot and broadArrowDisplay merge paths; hosted normalization only unwrapped payload.data and ignored snapshot/broadArrowDisplay wrappers present in local bridge responses.",
+  "afterFix": {
+    "sharedFunction": "resolveDisplayRuntimeSnapshot",
+    "hostedParentPayload": "identical normalized runtime snapshot object as local _publish input",
+    "hostedIframeBridgePayload": "NEUD_DATA_UPDATE.payload is normalized runtime snapshot; iframe uses same resolveDisplayRuntimeSnapshot before publishRuntimeSnapshot"
+  }
+}

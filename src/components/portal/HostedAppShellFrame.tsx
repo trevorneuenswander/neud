@@ -7,7 +7,6 @@ import { PortalMobileNavFallback } from "@/components/portal/PortalMobileNavFall
 import { Sidebar } from "@/components/portal/Sidebar";
 import { SidebarBranding } from "@/components/portal/SidebarBranding";
 import { SidebarUserPanel } from "@/components/portal/SidebarUserPanel";
-import { SidebarDownloadLink } from "@/components/portal/SidebarDownloadLink";
 import { isHostedFullscreenViewerPath, HOSTED_PORTAL_PATHS } from "@/lib/routing/hosted-routes";
 import type { NavItem } from "@/lib/portal/navigation";
 import type { Profile } from "@/types/database";

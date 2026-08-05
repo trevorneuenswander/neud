@@ -3,6 +3,11 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import {
+  buildPuppeteerLaunchOptions,
+  normalizePuppeteerEnvironment,
+  resolvePuppeteerBrowser,
+} from "../../browser/resolve-puppeteer-browser.js";
+import {
   getNavigationTimeoutMs,
   getPageTimeoutMs,
   getProtocolTimeoutMs,
@@ -104,18 +109,19 @@ function chromeMissingError() {
 }
 
 export async function launchBrowser(headless) {
+  normalizePuppeteerEnvironment();
   const { protocolTimeoutMs } = getBrowserTimeouts();
   const userDataDir = resolveBrowserUserDataDir();
-  const chromeExecutable = resolveChromeExecutable();
+  const resolved = await resolvePuppeteerBrowser({ puppeteerModule: puppeteer });
+  const chromeExecutable = resolved.executablePath;
 
   if (!chromeExecutable) {
     throw chromeMissingError();
   }
 
-  const launchOptions = {
+  const launchOptions = buildPuppeteerLaunchOptions(resolved, {
     headless,
     protocolTimeout: protocolTimeoutMs,
-    executablePath: chromeExecutable,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -123,7 +129,7 @@ export async function launchBrowser(headless) {
       "--disable-dev-shm-usage",
     ],
     defaultViewport: { width: 1366, height: 900 },
-  };
+  });
 
   if (userDataDir) {
     fs.mkdirSync(userDataDir, { recursive: true });

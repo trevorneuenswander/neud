@@ -15,6 +15,8 @@ import { loadBroadArrowPuppeteer } from "./legacy-puppeteer-resolver.js";
 import {
   getCookiesFile,
 } from "./webpage-scraper/browser.js";
+import { setLifecycleActualState } from "../lifecycle-state.js";
+import { updateEngineStatus } from "../heartbeat.js";
 
 const LEGACY_REFERENCE_URLS = {
   auctionTable: "https://bagauction-jumbotron.auctionaccelerate.com/vehicles",
@@ -166,6 +168,10 @@ export function createBagAuctionAdapter() {
       puppeteer,
       runtimeInfo,
       referenceRuntimeInfo,
+      onLifecycleState: async (state) => {
+        setLifecycleActualState(state);
+        await updateEngineStatus(engineId, { actual_state: state });
+      },
       logStage: async (stage, message, metadata = {}) => {
         await logBagDiagnostic(engineId, stage, message, {
           broadArrowRuntimeVersion: LEGACY_RUNTIME_VERSION,

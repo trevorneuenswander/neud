@@ -1,0 +1,47 @@
+{
+  "version": "2026-07-31.1",
+  "source": "local-display-api-bridge",
+  "description": "Structural snapshot immediately before NEUDDisplay._publish in local Stream Bid Display runtime.",
+  "inputEnvelope": {
+    "topLevelKeys": ["string"],
+    "nestedKeys": {
+      "snapshot": ["string"],
+      "data": ["string"],
+      "current": ["string"],
+      "auctionDisplay": ["string"],
+      "broadArrowDisplay": ["string"]
+    }
+  },
+  "normalizedRuntimeSnapshot": {
+    "topLevelKeys": [
+      "prev",
+      "current",
+      "next",
+      "lots",
+      "lastSold",
+      "auctionDisplay",
+      "updatedAt",
+      "dataSource"
+    ],
+    "nestedKeys": {
+      "current": ["lot", "title", "price", "status", "photos"],
+      "auctionDisplay": ["lot", "title", "biddingPrice", "reserveStatus", "currencies", "photos"],
+      "next": ["array"],
+      "lots": ["array"]
+    }
+  },
+  "presence": {
+    "current": "boolean",
+    "next": "boolean",
+    "prev": "boolean",
+    "lots": "boolean",
+    "auctionDisplay": "boolean",
+    "broadArrowDisplay": "boolean",
+    "snapshot": "boolean",
+    "data": "boolean",
+    "currentLotPresent": "boolean",
+    "currentBidPresent": "boolean",
+    "photoCount": "number"
+  },
+  "normalizationRule": "resolveDisplayRuntimeSnapshot prefers payload.snapshot, then payload.data, then payload.broadArrowDisplay (pylon/ticker merge), then flat canonical."
+}

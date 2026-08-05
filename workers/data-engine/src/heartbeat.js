@@ -1,6 +1,7 @@
 import { isLocalApiEnabled } from "./local-client.js";
 import * as localClient from "./local-client.js";
 import { getSupabase } from "./cloud-client.js";
+import { logFirstHeartbeatSent } from "./lifecycle-diagnostics.js";
 
 export async function updateEngineStatus(engineId, patch) {
   if (isLocalApiEnabled()) {
@@ -18,6 +19,13 @@ export async function updateEngineStatus(engineId, patch) {
 }
 
 export async function writeHeartbeat(engineId, meta) {
+  logFirstHeartbeatSent({
+    engineId,
+    workerId: meta.workerId ?? null,
+    actualState: meta.actualState ?? null,
+    pollIntervalMs: meta.pollIntervalMs ?? null,
+  });
+
   if (isLocalApiEnabled()) {
     return localClient.writeHeartbeat(engineId, meta);
   }

@@ -43,8 +43,8 @@ export function shouldUseLocalDesktopEngine(engine: DataEngine): boolean {
     return false;
   }
 
-  const mode = engine.execution_mode ?? "remote-worker";
-  return mode === "local-desktop";
+  // Packaged/desktop NEUD always runs webpage scrapers locally via IPC.
+  return true;
 }
 
 export async function getDesktopEngineStatus(

@@ -5,7 +5,7 @@ export function connectivityToneClassName(tone: InternetConnectivityTone): strin
     case "success":
       return "text-success";
     case "destructive":
-      return "text-destructive";
+      return "text-danger";
     default:
       return "text-muted opacity-70";
   }

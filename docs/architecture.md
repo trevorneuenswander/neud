@@ -1,134 +1,74 @@
 # Architecture
 
-HMG Graphics Server is a centralized web platform for HMG's live graphics projects. The platform is designed to support multiple graphics project types while keeping shared portal services reusable.
+NEUD is an installable Windows desktop application for live graphics projects. The existing portal UI is preserved, but project and runtime data move to local SQLite while a minimal Supabase account service handles online authentication and entitlement checks.
 
 ## High-level layout
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  HMG Graphics Server                    │
-│              (Next.js on Vercel)                        │
-│                                                         │
-│  Portal: auth, projects, controllers, displays, status  │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-              ┌────────────┴────────────┐
-              │                         │
-     ┌────────▼────────┐      ┌────────▼────────┐
-     │  bag-graphics   │      │  future types   │
-     │  web modules    │      │  web modules    │
-     └────────┬────────┘      └─────────────────┘
-              │
-     ┌────────▼────────┐
-     │  bag-graphics   │
-     │  worker         │
-     │  (Node.js)      │
-     └─────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      NEUD Desktop                            │
+│  Electron main + embedded Next.js UI (same visual design)    │
+└───────────────┬───────────────────────────────┬──────────────┘
+                │                               │
+     ┌──────────▼──────────┐         ┌──────────▼──────────┐
+     │ Local SQLite + files │         │ Minimal cloud auth  │
+     │ Projects, engines,   │         │ login, entitlement, │
+     │ displays, logs       │         │ device records      │
+     └──────────┬──────────┘         └─────────────────────┘
+                │
+     ┌──────────▼──────────────────────────────────────────┐
+     │ Local runtime on 127.0.0.1                           │
+     │ Data Engines, Puppeteer, displays, controllers       │
+     │ Optional public publishing relay (Phase E)           │
+     └──────────────────────────────────────────────────────┘
 ```
 
-## Reusable platform services
+See [desktop.md](./desktop.md) and [desktop-overhaul-audit.md](./desktop-overhaul-audit.md).
 
-The portal provides shared capabilities used by every graphics project type:
+## Framework decision
 
-- Authentication and access requests
-- User and project management
-- Realtime project state
-- Graphic display URLs
-- Web controllers
-- Worker commands
-- Worker monitoring
-- Event logging
+**Keep the existing Next.js UI embedded in Electron** for Phase A–C because:
 
-## Authorization model
+- The operational UI, Data Engine pages, JSON viewer, and design system already exist
+- Packaging via Next standalone is proven in this repository
+- Server Actions and Supabase reads can be replaced incrementally with local API/IPC calls without a visual redesign
 
-HMG Graphics Server uses two independent authorization layers.
+A React/Vite migration remains a fallback if standalone packaging becomes unstable, but it is not the first choice.
 
-### Layer 1: Platform roles (`profiles`)
+## Local services owned by Electron main
 
-| Role | Access |
-|------|--------|
-| `owner` | Full platform control; may access all Projects |
-| `admin` | Platform administration; may access all Projects |
-| `user` | General portal access only |
+| Service | Responsibility |
+|---------|----------------|
+| SQLite database | Projects, data sources, displays, controllers, logs, snapshots |
+| Local API server | Loopback HTTP for UI, graphics, controllers, health |
+| Engine manager | Local Puppeteer workers only |
+| Credential manager | OS-backed scraper credential storage |
+| Auth/license manager | 7-day offline authorization cache |
+| Publishing manager | Optional public graphics relay (Phase E) |
 
-Platform roles are stored in `profiles` and checked by `requireAdmin()` / `isAdmin()` on the server. They control portal administration and bypass Project membership checks.
+## Authorization model (target)
 
-### Layer 2: Project memberships (`project_members`)
-
-| Access level | Purpose |
-|--------------|---------|
-| `manager` | Manage a specific Project and its members |
-| `operator` | Operate a specific Project (future controllers) |
-| `viewer` | View a specific Project (future read-only access) |
-
-An approved portal user with `profiles.role = 'user'` does **not** automatically receive access to any Project. Project access requires a separate `project_members` record.
-
-Server-side helpers in `src/lib/projects/authorization.ts`:
-
-- `getProjectAccess(slug)` / `requireProjectAccess(slug)`
-- `requireProjectRole(slug, allowedRoles)`
-- `requireProjectMemberManagement(slug)`
-
-Owners and platform admins may access all Projects. Regular users may only access Projects where they have a membership record. Unauthorized slug access returns `notFound()` and does not reveal whether a private Project exists.
+Platform roles and entitlements remain cloud-backed. Local project data is owned by the signed-in desktop installation. Offline access is allowed for up to 7 days after the last successful online verification.
 
 ## Code organization
 
 | Area | Location | Purpose |
 |------|----------|---------|
-| Public pages | `src/app/(public)/` | Landing, login, request access, and auth flows |
-| Portal pages | `src/app/(portal)/` | Dashboard, projects, admin, users, activity, settings |
-| Auth routes | `src/app/auth/` | Token confirmation (`/auth/confirm`) |
-| Shared UI | `src/components/` | Layout shells, portal navigation, and UI primitives |
-| Shared utilities | `src/lib/` | Platform helpers, Supabase clients, auth, access requests, and projects |
-| Shared types | `src/types/` | Platform TypeScript types |
-| Graphic modules | `src/graphics/[project-type]/` | Project-type-specific web code |
-| Workers | `workers/[project-type]/` | Background data collection processes |
-| Migrations | `supabase/migrations/` | Database schema and RLS policies |
+| Desktop host | `desktop/src/` | Electron main, IPC, SQLite, local server |
+| UI (transitional) | `src/app/` | Existing Next.js portal UI |
+| Shared UI | `src/components/` | Preserved design system and pages |
+| Worker runtime | `workers/data-engine/` | BAG scraper (moving to local-only mode) |
+| Cloud auth migrations | `supabase/migrations/007_*` | Entitlements/devices only |
+| Manual cleanup | `supabase/cleanup/` | Export + destructive cleanup scripts |
 
-## UI layout
+## Migration phases
 
-The application uses two route-group shells. See [design-system.md](./design-system.md) for tokens, components, and responsive behavior.
+1. **Phase A** — Local database, paths, auth cache skeleton, cleanup scripts
+2. **Phase B** — Portal reads/writes through local repositories
+3. **Phase C** — Local-only engines and graphics URLs
+4. **Phase D** — Signed offline authorization enforcement in UI
+5. **Phase E** — Public publishing relay
+6. **Phase F** — Remove hosted portal/runtime Supabase usage
+7. **Phase G** — Self-contained Windows installer with bundled Chromium
 
-**Public shell** (`src/app/(public)/layout.tsx`) — lighter layout with `PublicHeader` for marketing and auth pages.
-
-**Portal shell** (`src/app/(portal)/layout.tsx`) — dark operational layout with `AppShell` (sidebar, top bar, mobile drawer).
-
-Navigation visibility is not authorization. Portal routes enforce access with `requireUser()` or `requireAdmin()` on the server.
-
-## Isolation rules
-
-- Graphic-specific controller, display, validation, state, and worker logic must stay inside each project type's directories.
-- Shared portal code must not assume every graphics project is an auction.
-- Continuous Puppeteer processes must not run in Vercel Functions.
-- Platform authorization must remain separate from project authorization.
-
-## Authentication and access requests
-
-Supabase email/password authentication is implemented with:
-
-- Browser and server Supabase clients in `src/lib/supabase/`
-- Server-only admin client for access-request inserts and invitations
-- Cookie-based sessions refreshed by `src/proxy.ts`
-- Server-side route protection in `src/lib/auth/`
-- Access request workflow in `src/lib/access-requests/`
-
-Public self-service signup is disabled. New users request access, are reviewed by a platform administrator, and receive an email invitation.
-
-See [authentication.md](./authentication.md) for setup and route details.
-
-## Data layer
-
-Implemented:
-
-- `profiles` and `access_requests` (migration `001`)
-- `projects` and `project_members` with RLS (migration `002`)
-- Transactional Project creation via `create_project_with_manager()`
-- Last-manager protection at application and database layers
-
-Planned:
-
-- Supabase Realtime for live updates
-- BAG-specific controllers, displays, and workers
-- Activity logging and audit events
-
-See [projects.md](./projects.md) for Projects schema, authorization, and URL structure.
+Destructive Supabase cleanup is manual only. Do not run `supabase/cleanup/desktop_only_destructive_cleanup.sql` until local migration is verified.

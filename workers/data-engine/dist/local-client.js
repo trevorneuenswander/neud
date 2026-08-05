@@ -4,6 +4,7 @@ import {
   NEUD_COOKIES_DIR,
   NEUD_LOCAL_API_URL,
 } from "./neud-env.js";
+import { logWorkerLocalApiEvent } from "./lifecycle-diagnostics.js";
 
 const baseUrl = () => {
   const url = NEUD_LOCAL_API_URL();
@@ -23,18 +24,50 @@ const workerHeaders = {
 };
 
 async function request(path, init) {
-  const response = await fetch(`${baseUrl()}${path}`, {
-    ...init,
-    headers: {
-      ...workerHeaders,
-      ...(init?.headers ?? {}),
-    },
+  logWorkerLocalApiEvent({
+    method: init?.method ?? "GET",
+    path,
+    outcome: "request",
   });
+
+  let response;
+  try {
+    response = await fetch(`${baseUrl()}${path}`, {
+      ...init,
+      headers: {
+        ...workerHeaders,
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    logWorkerLocalApiEvent({
+      method: init?.method ?? "GET",
+      path,
+      outcome: "failure",
+      error: error instanceof Error ? error.message : String(error),
+      details: { phase: "fetch" },
+    });
+    throw error;
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    logWorkerLocalApiEvent({
+      method: init?.method ?? "GET",
+      path,
+      outcome: "failure",
+      statusCode: response.status,
+      error: payload.error ?? `Local API request failed (${response.status}).`,
+    });
     throw new Error(payload.error ?? `Local API request failed (${response.status}).`);
   }
+
+  logWorkerLocalApiEvent({
+    method: init?.method ?? "GET",
+    path,
+    outcome: "response",
+    statusCode: response.status,
+  });
 
   return payload;
 }

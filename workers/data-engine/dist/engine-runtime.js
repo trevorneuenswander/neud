@@ -27,6 +27,16 @@ import {
 import { loadEngineBundle } from "./settings.js";
 import { writeSnapshot } from "./snapshots.js";
 import { getAdapter } from "./adapters/registry.js";
+import {
+  logWorkerDesiredStateObserved,
+  logWorkerPollWaitInterrupted,
+  logWorkerShutdownInitiated,
+  logWorkerSigtermReceived,
+} from "./lifecycle-diagnostics.js";
+import {
+  getLifecycleActualState,
+  setLifecycleActualState,
+} from "./lifecycle-state.js";
 
 async function recoverFromBrowserFailure(engineId, adapter, error, step) {
   const message = sanitizeError(error);
@@ -80,7 +90,7 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
   let shutdownPromise = null;
   let runOnceRequested = false;
   let pendingRunOnceCommandId = null;
-  let actualState = "offline";
+  let actualState = getLifecycleActualState();
   let activeScrapePromise = null;
   let exportPollTimer = null;
 
@@ -110,6 +120,7 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
     shuttingDown = true;
     running = false;
     exportAbortRequested = true;
+    logWorkerShutdownInitiated({ reason: "engine-runtime.initiateShutdown" });
 
     shutdownPromise = (async () => {
       await writeLog(engineId, "info", "engine.execution", "Polling timer cleared").catch(
@@ -169,9 +180,11 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
   }
 
   process.on("SIGINT", () => {
+    logWorkerSigtermReceived({ signal: "SIGINT" });
     void initiateShutdown();
   });
   process.on("SIGTERM", () => {
+    logWorkerSigtermReceived({ signal: "SIGTERM" });
     void initiateShutdown();
   });
 
@@ -186,6 +199,7 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
 
       if (command === "start" || command === "restart") {
         actualState = "starting";
+        setLifecycleActualState("starting");
         await updateEngineStatus(engineId, { actual_state: "starting" });
         if (command === "restart" && adapter.restart) {
           await adapter.restart(bundle);
@@ -432,6 +446,11 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
 
     try {
       if (shuttingDown) {
+        logWorkerPollWaitInterrupted({
+          engineId,
+          reason: "loop-shutting-down",
+          actualState,
+        });
         break;
       }
 
@@ -454,12 +473,18 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
       const bundle = await loadEngineBundle(engineId);
       const pollIntervalMs = bundle.settings?.poll_interval_ms ?? 5000;
       const desiredState = bundle.engine.desired_state;
+      logWorkerDesiredStateObserved({
+        engineId,
+        desiredState,
+        actualState,
+        source: "engine-runtime.loop",
+      });
 
       await writeHeartbeat(engineId, {
         workerId,
         workerVersion,
         pollIntervalMs,
-        actualState,
+        actualState: getLifecycleActualState(),
       });
 
       const shouldRun =
@@ -472,8 +497,11 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
 
         if (!adapter) {
           adapter = getAdapter(bundle.engine);
+          actualState = "starting";
+          setLifecycleActualState("starting");
+          await updateEngineStatus(engineId, { actual_state: "starting" });
           await adapter.start(bundle);
-          actualState = "running";
+          actualState = getLifecycleActualState();
           void processPendingExportCommand();
         }
 
@@ -485,7 +513,7 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
         });
 
         await updateEngineStatus(engineId, {
-          actual_state: "running",
+          actual_state: actualState,
           last_run_started_at: startedAt,
         });
 
@@ -568,6 +596,7 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
             await updateEngineStatus(engineId, { actual_state: "stopped" });
           } else {
             actualState = "running";
+            setLifecycleActualState("running");
           }
         } catch (error) {
           stopExportPollingDuringScrape();
@@ -635,6 +664,12 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
           runOnceRequested = false;
         }
       } else if (desiredState === "stopped" && actualState === "running") {
+        logWorkerDesiredStateObserved({
+          engineId,
+          desiredState,
+          actualState: "running",
+          source: "engine-runtime.stop-due-to-desired-state",
+        });
         if (adapter?.stop) await adapter.stop();
         adapter = null;
         actualState = "stopped";

@@ -1,6 +1,10 @@
 import { spawn, type ChildProcess } from "child_process";
 import fs from "fs";
 import path from "path";
+import {
+  logWorkerSigtermInitiated,
+  logWorkerLifecycleTimeline,
+} from "./worker-lifecycle-diagnostics";
 
 export type ManagedProcess = {
   name: string;
@@ -45,12 +49,24 @@ export class ProcessManager {
       return { exitCode: child.exitCode, forced: false };
     }
 
+    logWorkerSigtermInitiated({
+      processName: name,
+      reason: "ProcessManager.stop",
+      signal: "SIGTERM",
+      details: { gracefulMs, pid: child.pid ?? null },
+    });
     child.kill("SIGTERM");
 
     const exited = await waitForExit(child, gracefulMs);
     let forced = false;
     if (!exited) {
       forced = true;
+      logWorkerSigtermInitiated({
+        processName: name,
+        reason: "ProcessManager.stop.force-kill-tree",
+        signal: "SIGKILL",
+        details: { gracefulMs, pid: child.pid ?? null },
+      });
       await forceKillProcessTree(child);
       await waitForExit(child, FORCE_KILL_MS);
     }
@@ -60,6 +76,10 @@ export class ProcessManager {
   }
 
   async stopAll(gracefulMs = 8000) {
+    logWorkerLifecycleTimeline("process-manager.stop-all", {
+      details: { gracefulMs, processCount: this.processes.size },
+      includeStack: true,
+    });
     const names = [...this.processes.keys()];
     for (const name of names) {
       await this.stop(name, gracefulMs);
@@ -85,6 +105,11 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
 async function forceKillProcessTree(child: ChildProcess): Promise<void> {
   const pid = child.pid;
   if (!pid) {
+    logWorkerSigtermInitiated({
+      processName: "unknown",
+      reason: "forceKillProcessTree.no-pid",
+      signal: "SIGKILL",
+    });
     child.kill("SIGKILL");
     return;
   }

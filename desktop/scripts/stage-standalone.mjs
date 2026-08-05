@@ -2,6 +2,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "node:child_process";
+import { stagePackagedBrowser } from "./stage-packaged-browser.mjs";
+import { stageWorkerProductionNodeModules } from "../../workers/data-engine/scripts/worker-production-deps.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +30,7 @@ const copies = [
     to: path.join(stagingRoot, "shared", "bag"),
   },
   {
-    from: path.join(repoRoot, "desktop", "dist", "displays", "bundled"),
+    from: path.join(repoRoot, "desktop", "src", "displays", "bundled"),
     to: path.join(stagingRoot, "displays", "bundled"),
   },
 ];
@@ -38,29 +40,32 @@ const SKIP_NAMES = new Set([
   ".env.local",
   ".env.live-validation.local",
   ".env.example",
-  "cookies",
-  "browser-data",
   "supabase.js",
 ]);
 
+// Only skip scraper session directories during Next.js standalone copies (Next ships
+// compiled modules such as next/dist/compiled/@edge-runtime/cookies).
+const WORKER_SKIP_NAMES = new Set(["cookies"]);
+
 const SKIP_EXTENSIONS = new Set([".cred", ".log"]);
 
-function shouldSkipEntry(name) {
+function shouldSkipEntry(name, context = "global") {
   if (SKIP_NAMES.has(name)) return true;
+  if (context === "worker" && WORKER_SKIP_NAMES.has(name)) return true;
   for (const ext of SKIP_EXTENSIONS) {
     if (name.endsWith(ext)) return true;
   }
   return false;
 }
 
-function copyRecursive(source, destination) {
+function copyRecursive(source, destination, context = "global") {
   if (!fs.existsSync(source)) {
     throw new Error(`Missing staging source: ${source}`);
   }
 
   fs.mkdirSync(destination, { recursive: true });
   for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    if (shouldSkipEntry(entry.name)) {
+    if (shouldSkipEntry(entry.name, context)) {
       continue;
     }
 
@@ -68,33 +73,20 @@ function copyRecursive(source, destination) {
     const toPath = path.join(destination, entry.name);
 
     if (entry.isDirectory()) {
-      copyRecursive(fromPath, toPath);
+      copyRecursive(fromPath, toPath, context);
     } else {
       fs.copyFileSync(fromPath, toPath);
     }
   }
 }
 
-function copyNodeModulesWithoutSupabase(sourceRoot, destinationRoot) {
-  const sourceModules = path.join(sourceRoot, "node_modules");
-  const destinationModules = path.join(destinationRoot, "node_modules");
-  if (!fs.existsSync(sourceModules)) {
-    throw new Error(`Missing worker node_modules: ${sourceModules}`);
-  }
-
-  fs.mkdirSync(destinationModules, { recursive: true });
-  for (const entry of fs.readdirSync(sourceModules, { withFileTypes: true })) {
-    if (entry.name === "@supabase" || entry.name.startsWith(".cache")) {
-      continue;
-    }
-    const fromPath = path.join(sourceModules, entry.name);
-    const toPath = path.join(destinationModules, entry.name);
-    if (entry.isDirectory()) {
-      copyRecursive(fromPath, toPath);
-    } else {
-      fs.copyFileSync(fromPath, toPath);
-    }
-  }
+function stageProductionWorkerNodeModules(destinationRoot) {
+  const staged = stageWorkerProductionNodeModules({
+    stagingWorkerRoot: destinationRoot,
+  });
+  console.log(
+    `Staged ${staged.packageCount} production worker packages at ${staged.modulesRoot}`,
+  );
 }
 
 function removeIfExists(target) {
@@ -124,7 +116,7 @@ function stageLocalWorker() {
     throw new Error("Local worker staging must not include supabase.js");
   }
 
-  copyNodeModulesWithoutSupabase(remoteWorkerRoot, workerStageRoot);
+  stageProductionWorkerNodeModules(workerStageRoot);
   fs.writeFileSync(
     path.join(workerStageRoot, "package.json"),
     `${JSON.stringify(
@@ -151,5 +143,20 @@ for (const copy of copies) {
 }
 
 stageLocalWorker();
+
+const browserStage = stagePackagedBrowser();
+console.log(
+  `Staged Chrome for Testing ${browserStage.expectedBuildId} at ${browserStage.stagingBrowserRoot}`,
+);
+
+execSync(`node "${path.join(__dirname, "sync-runtime-assets.mjs")}"`, {
+  cwd: path.join(repoRoot, "desktop"),
+  stdio: "inherit",
+});
+
+execSync(`node "${path.join(__dirname, "generate-cloud-runtime-config.mjs")}"`, {
+  cwd: path.join(repoRoot, "desktop"),
+  stdio: "inherit",
+});
 
 console.log(`Staged desktop resources at ${stagingRoot}`);

@@ -1,19 +1,27 @@
 {
   "name": "@neud/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "NEUD — The Ultimate Data Stripper",
-  "main": "dist/main.js",
+  "author": "NEUD",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trevorneuenswander/neud.git"
+  },
+  "main": "dist/bootstrap.js",
   "scripts": {
-    "build": "npm run build --prefix ../workers/data-engine && npm run build:local --prefix ../workers/data-engine && node scripts/sync-shared-publishing.mjs && tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs",
+    "build": "npm run build --prefix ../workers/data-engine && npm run build:local --prefix ../workers/data-engine && node scripts/sync-shared-publishing.mjs && node scripts/sync-bag-runtime-config.mjs && node scripts/ensure-windows-icon.mjs && tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs",
     "test:import": "npm run build && node --test scripts/test-import-validator.mjs scripts/test-bag-local-runtime.mjs scripts/test-bag-live-state.mjs scripts/test-bag-manual-mode.mjs scripts/test-local-controller-features.mjs scripts/test-project-defaults-displays.mjs scripts/test-generic-webpage-scraper.mjs scripts/test-platform-permissions.mjs scripts/test-application-authorization.mjs scripts/test-broad-arrow-configuration.mjs scripts/test-broad-arrow-ui-runtime.mjs scripts/test-broad-arrow-phase-bootstrap.mjs scripts/test-broad-arrow-controller-ui.mjs scripts/test-portal-navigation.mjs scripts/test-desktop-project-ui.mjs scripts/test-polling-navigation-ui.mjs scripts/test-project-deletion-scraper-ux.mjs scripts/test-engine-stop-lifecycle.mjs scripts/test-bag-credential-path.mjs scripts/test-pylon-display.mjs scripts/test-shutdown-activity-data-source.mjs scripts/test-activity-local-controller.mjs scripts/test-activity-ui-ordering.mjs scripts/test-offline-auction-export.mjs scripts/test-desktop-header-and-dataset.mjs scripts/test-currency-rates.mjs scripts/test-projects-page.mjs scripts/test-project-settings-permissions.mjs scripts/test-neud-branding.mjs && node --test ../workers/data-engine/scripts/test-generic-webpage.mjs ../workers/data-engine/scripts/test-browser-paths.mjs ../workers/data-engine/scripts/test-legacy-login-parity.mjs",
     "watch": "tsc -p tsconfig.json -w",
-    "start": "electron dist/main.js",
-    "package:win": "electron-builder --win --config electron-builder.yml"
+    "start": "electron dist/bootstrap.js",
+    "package:win": "node scripts/ensure-windows-icon.mjs && electron-builder --win dir --config electron-builder.yml --publish never && node scripts/verify-win-unpacked-runtime-assets.mjs && node scripts/verify-packaged-cloud-config.mjs && node scripts/embed-windows-exe-icon.mjs && electron-builder --win nsis --prepackaged release/win-unpacked --config electron-builder.yml --publish never && node scripts/prepare-release-artifacts.mjs",
+    "publish:win": "node scripts/ensure-windows-icon.mjs && electron-builder --win --config electron-builder.yml --publish always",
+    "package:win:dir": "electron-builder --win dir --config electron-builder.yml"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.7",
     "dotenv": "^16.4.7",
+    "electron-updater": "^6.6.2",
     "sharp": "^0.34.5",
     "sql.js": "^1.14.1",
     "ws": "^8.21.1",
@@ -26,6 +34,8 @@
     "app-builder-bin": "^5.0.0-alpha.10",
     "electron": "33.4.11",
     "electron-builder": "^25.1.8",
+    "png-to-ico": "^3.0.2",
+    "rcedit": "^5.0.2",
     "typescript": "^5"
   }
 }

@@ -1,6 +1,6 @@
 # Projects
 
-Projects are the top-level production workspaces in HMG Graphics Server. A Project may later contain displays, controllers, workers, members, settings, and activity.
+Projects are the top-level production workspaces in NEUD. A Project may later contain displays, controllers, workers, members, settings, and activity.
 
 The user-facing term is **Projects** (not Graphics).
 
@@ -16,19 +16,28 @@ Each Project has three identifiers with different purposes:
 
 Project numbers come from `public.project_number_seq`. Slugs are generated server-side from the Project name at creation and do not change automatically when the name changes.
 
-## Project type enum
+## Data type enum
 
-Project types are stored as a PostgreSQL enum, not free text:
+The user-facing term is **Data Type**. Values are stored in the PostgreSQL `project_type` enum column (internal name unchanged for compatibility):
 
 ```sql
+-- Migration 002
 create type public.project_type as enum ('bag-graphics');
+
+-- Migration 003
+alter type public.project_type add value 'webpage-scraper';
+alter type public.project_type add value 'json-ingest';
+alter type public.project_type add value 'google-sheet-ingest';
 ```
 
 | Stored value | User-facing label |
 |--------------|-------------------|
-| `bag-graphics` | BAG-Graphics |
+| `webpage-scraper` | Webpage Scraper |
+| `json-ingest` | JSON Ingest |
+| `google-sheet-ingest` | Google Sheet Ingest |
+| `bag-graphics` | BAG-Graphics (legacy; retained for existing Projects) |
 
-Adding a new project type requires an explicit enum migration.
+New Project creation offers only the three data-ingestion types. Adding a new data type requires an explicit enum migration.
 
 ## Schema
 
@@ -39,7 +48,7 @@ Key columns:
 - `project_number` — sequential display number
 - `owner_id` — references `auth.users`
 - `name`, `slug`, `description`
-- `project_type` — `public.project_type` enum
+- `project_type` — `public.project_type` enum (user-facing label: **Data type**)
 - `status` — `draft`, `active`, `maintenance`, or `archived`
 - `display_token` — internal UUID for future read-only OBS display URLs (not shown in general UI)
 - Branding: `theme`, `logo_url`, `primary_color`, `secondary_color`, `icon`
@@ -63,14 +72,13 @@ The `admin` access level is a **server-side authorization sentinel** for platfor
 
 ## Branding fields
 
-Branding fields are Project metadata for future displays:
+Branding fields remain in the schema for future displays but are **not exposed** on the New Project form. Creation supplies safe defaults internally:
 
-- `theme` (default `default`)
-- `icon` (default `folder`)
-- `logo_url` (optional URL, stored only)
-- `primary_color`, `secondary_color` (optional `#RRGGBB`)
+- `theme` → `default`
+- `icon` → `folder`
+- `logo_url`, `primary_color`, `secondary_color` → `null`
 
-This phase does not upload files, create storage buckets, render remote logos, or apply branding to BAG graphics.
+Existing Projects retain any stored branding values. The overview page may display configured branding metadata.
 
 ## Authorization layers
 
@@ -174,10 +182,13 @@ Search: `?q=` or `?query=` on `/projects`.
 ## Creation flow
 
 1. Owner/admin opens `/projects/new`
-2. Submits name, description, type, and optional branding
+2. Submits Project name, description, and **Data type**
 3. Server validates input and generates a unique slug
-4. `create_project_with_manager()` creates Project and manager membership
-5. Redirect to `/projects/[slug]`
+4. Branding defaults are applied internally (`theme`, `icon`, null colors/logo)
+5. `create_project_with_manager()` creates Project and manager membership
+6. Redirect to `/projects/[slug]`
+
+No displays, workers, controllers, or ingestion records are created in this phase.
 
 ## Future: display token
 
@@ -189,10 +200,12 @@ A Project with `project_type = 'bag-graphics'` will later connect to BAG-specifi
 
 ## Migration
 
-Apply after `001_access_requests_and_profiles.sql`:
+Apply in order:
 
 ```
+supabase/migrations/001_access_requests_and_profiles.sql
 supabase/migrations/002_projects_and_members.sql
+supabase/migrations/003_project_data_types.sql
 ```
 
 See [authentication.md](./authentication.md) for Supabase setup.

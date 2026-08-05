@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import {
   BROAD_ARROW_CANONICAL_PROJECT,
   isBroadArrowCanonicalProject,
@@ -14,6 +12,7 @@ import {
   transformStreamBidHtmlForServing,
   transformStreamTickerHtmlForServing,
 } from "../displays/stream-display-v2-transform";
+import { readBundledDisplaySourceFromReference } from "../lib/bundled-display-sources";
 import type { AppSettingsRepository } from "../repositories/app-settings-repository";
 import type { DisplaysRepository } from "../repositories/displays-repository";
 import type { ProjectCodeRevisionsRepository } from "../repositories/project-code-revisions-repository";
@@ -276,27 +275,10 @@ export class BroadArrowStreamDisplaysImportService {
   }
 
   private buildRuntimeHtml(spec: BroadArrowStreamDisplaySpec): string {
-    const baseHtml = this.readBundledHtml(spec.bundledRelativePath);
+    const baseHtml = readBundledDisplaySourceFromReference(spec.bundledRelativePath);
     if (spec.graphicType === "stream-bid") {
       return transformStreamBidHtmlForServing(baseHtml);
     }
     return transformStreamTickerHtmlForServing(baseHtml);
-  }
-
-  private readBundledHtml(relativePath: string): string {
-    const filename = path.basename(relativePath);
-    const candidates = [
-      path.join(this.repoRoot, relativePath),
-      path.join(this.repoRoot, "desktop", "dist", "displays", "bundled", filename),
-      path.join(__dirname, "bundled", filename),
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, "utf8");
-      }
-    }
-
-    throw new Error(`Bundled Stream display source not found (${relativePath})`);
   }
 }

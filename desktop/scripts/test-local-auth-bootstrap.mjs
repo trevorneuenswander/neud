@@ -132,6 +132,9 @@ function createBootstrapAuthStub() {
 }
 
 test("legacy owner membership migration is idempotent", async () => {
+  const previousFlag = process.env.NEUD_ALLOW_LOCAL_DESKTOP_AUTH;
+  process.env.NEUD_ALLOW_LOCAL_DESKTOP_AUTH = "1";
+
   const paths = createTestPaths("membership");
   const db = await openLocalDatabase(paths);
 
@@ -165,6 +168,11 @@ test("legacy owner membership migration is idempotent", async () => {
     );
     assert.equal(auth.isAccessAllowed(), true);
   } finally {
+    if (previousFlag === undefined) {
+      delete process.env.NEUD_ALLOW_LOCAL_DESKTOP_AUTH;
+    } else {
+      process.env.NEUD_ALLOW_LOCAL_DESKTOP_AUTH = previousFlag;
+    }
     closeLocalDatabase(db);
   }
 });

@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import { app } from "electron";
 import { migrateLegacyDatabaseFile } from "./database-rename-migration";
+import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
 
 export type AppPaths = {
   root: string;
@@ -37,7 +38,7 @@ function ensureDir(dirPath: string) {
 }
 
 export function getRepoRoot(): string {
-  if (app.isPackaged) {
+  if (isPackagedDesktopRuntime()) {
     return path.join(process.resourcesPath, "staging");
   }
 
@@ -110,15 +111,15 @@ export function getAppPaths(): AppPaths {
 }
 
 export function getWorkerEntryPath(paths: AppPaths): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "staging", "worker", "dist", "index.js");
+  if (isPackagedDesktopRuntime()) {
+    return path.join(process.resourcesPath, "staging", "worker", "dist", "boot.js");
   }
 
-  return path.join(paths.repoRoot, "workers", "data-engine", "src", "index.js");
+  return path.join(paths.repoRoot, "workers", "data-engine", "src", "boot.js");
 }
 
 export function getWorkerCwd(paths: AppPaths): string {
-  if (app.isPackaged) {
+  if (isPackagedDesktopRuntime()) {
     return path.join(process.resourcesPath, "staging", "worker");
   }
 

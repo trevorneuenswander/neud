@@ -207,10 +207,22 @@ export class SupabaseUserDirectorySyncService {
       return result;
     }
 
-    if (!this.cloud.hasCloudSession()) {
+    if (!this.cloud.hasCloudSession() && !this.cloud.hasPersistedTokens()) {
       const result = this.buildResult("offline", {
         startedAt: new Date().toISOString(),
         errors: [{ message: "Cloud session required." }],
+      });
+      this.persistResult(result);
+      return result;
+    }
+
+    const clientResult = await this.cloud.ensureAuthenticatedClient(
+      `user-directory-sync:${reason}`,
+    );
+    if (!clientResult.client) {
+      const result = this.buildResult("offline", {
+        startedAt: new Date().toISOString(),
+        errors: [{ message: "Cloud session unavailable." }],
       });
       this.persistResult(result);
       return result;

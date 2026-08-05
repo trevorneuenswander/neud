@@ -25,6 +25,10 @@ export const NEUD_AUTH_SIGNING_SECRET = () => readNeudEnv("NEUD_AUTH_SIGNING_SEC
 export const NEUD_ALLOW_PLAINTEXT_CREDENTIALS = () =>
   readNeudEnvFlag("NEUD_ALLOW_PLAINTEXT_CREDENTIALS");
 
+/** Development-only: auto-establish the synthetic local desktop owner session. Never used in packaged builds. */
+export const NEUD_ALLOW_LOCAL_DESKTOP_AUTH = () =>
+  readNeudEnvFlag("NEUD_ALLOW_LOCAL_DESKTOP_AUTH");
+
 export const NEUD_DEV_SERVER_URL = () =>
   readNeudEnv("NEUD_DEV_SERVER_URL") ?? "http://127.0.0.1:3000";
 

@@ -9,7 +9,7 @@ import { createDesktopAccessActions } from "@/lib/access-management/desktop-acti
 import type { AccessManagementDirectory } from "@/lib/access-management/types";
 import { localGetAuthStatus } from "@/lib/local/auth-api";
 import { localFetch } from "@/lib/local/api";
-import { localGetCloudAccessDirectory } from "@/lib/local/cloud-access-api";
+import { localGetCloudAccessDirectory, localGetCloudAccessDirectoryDiagnostics } from "@/lib/local/cloud-access-api";
 import { isLocalApiError } from "@/lib/local/errors";
 import { resolveDesktopLocalApiConfig } from "@/lib/local/local-api-origin";
 
@@ -116,6 +116,7 @@ export function DesktopCloudAccessManagementClient() {
   const [stale, setStale] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [diagnosticHint, setDiagnosticHint] = useState<string | null>(null);
   const retryInFlightRef = useRef(false);
   const initialLoadCompletedRef = useRef(false);
 
@@ -171,6 +172,7 @@ export function DesktopCloudAccessManagementClient() {
       setError(null);
       setWarning(null);
       setFallbackReason(null);
+      setDiagnosticHint(null);
     }
 
     try {
@@ -178,6 +180,10 @@ export function DesktopCloudAccessManagementClient() {
       const authStatus = await localGetAuthStatus();
       setIsConnected(authStatus.connectionStatus === "connected");
       setHasCloudSession(Boolean(authStatus.hasCloudSession));
+
+      if (authStatus.connectionStatus === "connected" && !authStatus.hasCloudSession) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
 
       let sessionUserId: string | null = null;
       try {
@@ -232,6 +238,45 @@ export function DesktopCloudAccessManagementClient() {
       setError(resolvePrimaryMessage(reason, message, null));
       setStale(reason === "offline");
       setDirectory((previous) => (hasDirectoryContent(previous) ? previous : EMPTY_ACCESS_DIRECTORY));
+
+      const directoryFailureReasons: CloudAccessFallbackReason[] = [
+        "directory_request_failed",
+        "directory_rpc_missing",
+        "directory_permission_denied",
+        "directory_parse_failed",
+      ];
+      if (directoryFailureReasons.includes(reason)) {
+        try {
+          const diagnostics = await localGetCloudAccessDirectoryDiagnostics();
+          const rpcName =
+            typeof diagnostics.directoryRpcName === "string"
+              ? diagnostics.directoryRpcName
+              : null;
+          const rpcErrorCode =
+            typeof diagnostics.directoryRpcErrorCode === "string"
+              ? diagnostics.directoryRpcErrorCode
+              : null;
+          const rpcErrorMessage =
+            typeof diagnostics.directoryRpcErrorMessage === "string"
+              ? diagnostics.directoryRpcErrorMessage
+              : null;
+          const stage =
+            typeof diagnostics.firstCloudAccessFailureStage === "string"
+              ? diagnostics.firstCloudAccessFailureStage
+              : null;
+          const parts = [
+            rpcName ? `RPC: ${rpcName}` : null,
+            rpcErrorCode ? `code=${rpcErrorCode}` : null,
+            rpcErrorMessage ? rpcErrorMessage : null,
+            stage ? `stage=${stage}` : null,
+          ].filter(Boolean);
+          if (parts.length > 0) {
+            setDiagnosticHint(parts.join(" · "));
+          }
+        } catch {
+          // diagnostics are best-effort
+        }
+      }
     } finally {
       retryInFlightRef.current = false;
       initialLoadCompletedRef.current = true;
@@ -304,12 +349,17 @@ export function DesktopCloudAccessManagementClient() {
     <div className="space-y-4">
       {error && (showFailureBanner || showNoSessionBanner || showRestoringBanner) ? (
         <Alert variant={fallbackReason === "schema_missing" ? "error" : "info"}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>{error}</span>
-            {showFailureBanner ? (
-              <Button type="button" variant="secondary" size="sm" onClick={handleRetry}>
-                Retry
-              </Button>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>{error}</span>
+              {showFailureBanner ? (
+                <Button type="button" variant="secondary" size="sm" onClick={handleRetry}>
+                  Retry
+                </Button>
+              ) : null}
+            </div>
+            {diagnosticHint ? (
+              <p className="text-xs text-muted">{diagnosticHint}</p>
             ) : null}
           </div>
         </Alert>

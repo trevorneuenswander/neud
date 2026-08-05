@@ -51,6 +51,10 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
     return Boolean(this.publicConfig);
   }
 
+  isSessionRestorePending(): boolean {
+    return Boolean(this.sessionRestorePromise && !this.sessionRestoreCompleted);
+  }
+
   getPublicConfig(): SupabasePublicConfig | null {
     return this.publicConfig;
   }
@@ -126,7 +130,11 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
     if (refreshCode === "invalid_refresh_token") {
       return "invalid_refresh_token";
     }
-    if (refreshCode === "network_error" || refreshCode === "refresh_failed") {
+    if (
+      refreshCode === "network_error" ||
+      refreshCode === "refresh_failed" ||
+      refreshCode === "set_session_failed"
+    ) {
       return "session_refresh_failed_transient";
     }
     return "session_ready";
@@ -301,9 +309,14 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       };
     }
 
-    if (refreshCode === "network_error") {
+    if (
+      refreshCode === "network_error" ||
+      refreshCode === "refresh_failed" ||
+      refreshCode === "set_session_failed"
+    ) {
       logCloudAccessLifecycle("client_unavailable", {
         reasonCode: "session_refresh_failed_transient",
+        refreshCode,
       });
       return {
         client: null,
@@ -392,6 +405,29 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       }
       return { restored: false, sessionAvailable: false, errorCode };
     }
+  }
+
+  async waitForSessionRestore(timeoutMs = SESSION_RESTORE_WAIT_MS): Promise<void> {
+    if (this.sessionRestoreCompleted) {
+      return;
+    }
+    if (!this.sessionRestorePromise) {
+      return;
+    }
+    await Promise.race([
+      this.sessionRestorePromise.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  }
+
+  async ensureAuthenticatedClient(
+    reason: string,
+    options?: { forceRefresh?: boolean },
+  ): Promise<AuthenticatedClientAcquisitionResult> {
+    await this.waitForSessionRestore();
+    return this.acquireAuthenticatedClient(reason, options);
   }
 
   async ping(): Promise<boolean> {

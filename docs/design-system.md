@@ -1,6 +1,6 @@
 # Design System
 
-HMG Graphics Server uses a dark, operational interface inspired by broadcast control software. The design prioritizes clarity, status visibility, and consistency over decorative effects.
+NEUD uses a dark, operational interface inspired by broadcast control software. The design prioritizes clarity, status visibility, and consistency over decorative effects.
 
 ## Principles
 
@@ -14,20 +14,12 @@ HMG Graphics Server uses a dark, operational interface inspired by broadcast con
 
 ### Logo
 
-Canonical logo path:
-
-```
-public/branding/hmg-logo.png
-```
-
-Served at `/branding/hmg-logo.png`.
+Use the `NeudLogo` component (`src/components/branding/NeudLogo.tsx`).
 
 Requirements:
 
-- Render with `next/image` via `HmgLogo` / `HmgLogoServer`
-- Preserve original proportions — do not crop, stretch, redraw, recolor, or recreate
-- Pair with the text **HMG Graphics Server** where space allows
-- If the file is missing, `HmgLogoServer` falls back to a bordered **HMG** text mark
+- Uppercase **NEUD** with letter-spacing from design tokens
+- Optional tagline: **The Ultimate Data Stripper** (login, about, README — not every operational page)
 
 Use the logo in:
 
@@ -91,7 +83,7 @@ Used for authenticated portal pages:
 - `/activity`
 - `/settings`
 
-Includes `AppShell` with sidebar, top bar, and main content area.
+Includes `AppShell` with sidebar and main content area.
 
 `/auth/confirm` remains outside both shells at `src/app/auth/confirm/route.ts`.
 
@@ -99,10 +91,10 @@ Includes `AppShell` with sidebar, top bar, and main content area.
 
 ```
 ┌──────────────┬──────────────────────────────────────┐
-│   Sidebar    │  Top bar (title, command affordance) │
-│   (260px)    ├──────────────────────────────────────┤
+│   Sidebar    │  Main content                        │
+│   (260px)    │                                      │
 │              │                                      │
-│  Navigation  │  Main content                        │
+│  Navigation  │                                      │
 │              │                                      │
 │  User panel  │                                      │
 └──────────────┴──────────────────────────────────────┘
@@ -127,19 +119,13 @@ Active routes use `aria-current="page"` on navigation links.
 
 Below the `lg` breakpoint:
 
-- Sidebar becomes a slide-out `<dialog>` drawer (`MobileSidebar`)
-- Top bar includes a menu button
+- Sidebar becomes a slide-out `<dialog>` drawer (`MobileNav`)
+- A menu button appears at the top of the main content area, or inline to the left of Project tab navigation on Project workspace pages
 - Drawer closes after navigation, on Escape, and on backdrop click
 - Background scrolling is disabled while open
 - `role="dialog"` and `aria-modal="true"` are set
 
-### Top bar
-
-Includes:
-
-- Current page title
-- Reserved non-interactive command palette affordance: `Search or jump to… Ctrl K` (planned, not implemented)
-- Structure ready for future system status indicators
+There is no separate top bar in the authenticated portal shell. Page titles appear in main content via `PageHeader`.
 
 ## Terminology
 
@@ -153,8 +139,7 @@ A Project may later contain displays, controllers, workers, members, settings, a
 
 - `AppShell` — authenticated layout wrapper
 - `Sidebar` — desktop sidebar
-- `MobileSidebar` — mobile drawer
-- `TopBar` — page title and command affordance
+- `MobileNav` — mobile drawer provider and menu trigger button
 - `SidebarNavItem` — navigation link with active state
 - `SidebarUserPanel` — user info and logout
 - `PageHeader` — portal page heading
@@ -169,8 +154,8 @@ A Project may later contain displays, controllers, workers, members, settings, a
 
 ### Branding (`src/components/branding/`)
 
-- `HmgLogo` — client-safe logo with `hasLogo` prop
-- `HmgLogoServer` — server wrapper that checks file existence
+- `NeudLogo` — client-safe logo with `hasLogo` prop
+- `NeudLogoServer` — server wrapper that checks file existence
 
 ## Status badges
 
@@ -184,13 +169,13 @@ Used on access requests and system status displays:
 
 ## System status
 
-Dashboard and top bar reserve space for operational status. Only verified states are shown:
+Dashboard and future portal areas may show operational status in page content. Only verified states are shown:
 
 | Service | Connected | Not configured | Unavailable |
 |---------|-----------|----------------|-------------|
 | Authentication | User is authenticated | — | Not authenticated |
 | Database | Lightweight `profiles` query succeeds | — | Query fails |
-| Projects | — | Backend not implemented | — |
+| Projects | Real query succeeds | — | Query fails |
 | Workers | — | Backend not implemented | — |
 | Displays | — | Backend not implemented | — |
 
@@ -207,4 +192,4 @@ Do not show fake zeroes or claim services are online without verification.
 
 ## Command palette
 
-A command palette (`Ctrl/Command + K`) is planned but **not implemented**. The top bar may show a disabled affordance only — do not imply the feature works.
+A command palette (`Ctrl/Command + K`) is planned but **not implemented**. Do not imply the feature works.

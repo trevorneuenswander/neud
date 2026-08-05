@@ -60,6 +60,20 @@ export type CloudUpsertResult = {
   codes: string[];
 };
 
+export type CloudDisplayIdentityRow = {
+  id: string;
+  project_id: string;
+  slug: string;
+  display_type: string;
+  deleted_at: string | null;
+  active_revision_id: string | null;
+  online_published_revision_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const DISPLAY_REVISION_PAGE_SIZE = 500;
+
 export class CloudDisplayClient {
   constructor(private readonly cloud: AuthenticatedCloudCoordinator) {}
 
@@ -157,6 +171,138 @@ export class CloudDisplayClient {
       sync_version: number;
       online_publish_error: string | null;
     }>;
+  }
+
+  async fetchFullDisplaysForProject(projectId: string): Promise<CloudDisplayRow[]> {
+    const supabase = await this.client();
+    const { data, error } = await supabase
+      .from("displays")
+      .select("*")
+      .eq("project_id", projectId)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true, nullsFirst: false });
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data ?? []) as CloudDisplayRow[];
+  }
+
+  async fetchRevisionsForDisplay(displayId: string): Promise<CloudDisplayRevisionRow[]> {
+    const result = await this.fetchAllRevisionsForDisplays([displayId]);
+    return result.revisions;
+  }
+
+  async fetchDisplaysBySlugInProject(input: {
+    projectId: string;
+    slug: string;
+    displayType?: string;
+    includeDeleted?: boolean;
+  }): Promise<CloudDisplayIdentityRow[]> {
+    const supabase = await this.client();
+    let query = supabase
+      .from("displays")
+      .select(
+        "id, project_id, slug, display_type, deleted_at, active_revision_id, online_published_revision_id, created_at, updated_at",
+      )
+      .eq("project_id", input.projectId)
+      .eq("slug", input.slug);
+    if (!input.includeDeleted) {
+      query = query.is("deleted_at", null);
+    }
+    if (input.displayType) {
+      query = query.eq("display_type", input.displayType);
+    }
+    const { data, error } = await query.order("created_at", { ascending: true });
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data ?? []) as CloudDisplayIdentityRow[];
+  }
+
+  async fetchDisplaysBySlug(input: {
+    slug: string;
+    displayType?: string;
+    includeDeleted?: boolean;
+  }): Promise<CloudDisplayIdentityRow[]> {
+    const supabase = await this.client();
+    let query = supabase
+      .from("displays")
+      .select(
+        "id, project_id, slug, display_type, deleted_at, active_revision_id, online_published_revision_id, created_at, updated_at",
+      )
+      .eq("slug", input.slug);
+    if (!input.includeDeleted) {
+      query = query.is("deleted_at", null);
+    }
+    if (input.displayType) {
+      query = query.eq("display_type", input.displayType);
+    }
+    const { data, error } = await query.order("created_at", { ascending: true });
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data ?? []) as CloudDisplayIdentityRow[];
+  }
+
+  async fetchAllRevisionsForDisplays(displayIds: string[]): Promise<{
+    revisions: CloudDisplayRevisionRow[];
+    pageCount: number;
+  }> {
+    const uniqueIds = [...new Set(displayIds.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return { revisions: [], pageCount: 0 };
+    }
+
+    const supabase = await this.client();
+    const merged = new Map<string, CloudDisplayRevisionRow>();
+    let page = 0;
+    let pageCount = 0;
+
+    while (true) {
+      const from = page * DISPLAY_REVISION_PAGE_SIZE;
+      const to = from + DISPLAY_REVISION_PAGE_SIZE - 1;
+      const { data, error } = await supabase
+        .from("display_revisions")
+        .select("*")
+        .in("display_id", uniqueIds)
+        .order("version_number", { ascending: true })
+        .range(from, to);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      pageCount += 1;
+      const rows = (data ?? []) as CloudDisplayRevisionRow[];
+      for (const row of rows) {
+        merged.set(row.id, row);
+      }
+
+      if (rows.length < DISPLAY_REVISION_PAGE_SIZE) {
+        break;
+      }
+      page += 1;
+    }
+
+    const revisions = [...merged.values()].sort((left, right) => {
+      if (left.version_number !== right.version_number) {
+        return left.version_number - right.version_number;
+      }
+      return left.created_at.localeCompare(right.created_at);
+    });
+
+    return { revisions, pageCount };
+  }
+
+  async countRevisionsForDisplay(displayId: string): Promise<number> {
+    const supabase = await this.client();
+    const { count, error } = await supabase
+      .from("display_revisions")
+      .select("id", { count: "exact", head: true })
+      .eq("display_id", displayId);
+    if (error) {
+      throw new Error(error.message);
+    }
+    return count ?? 0;
   }
 
   async fetchDisplayById(displayId: string): Promise<{

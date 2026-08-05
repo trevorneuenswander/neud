@@ -17,6 +17,7 @@ import {
   type SharedCloudAuthDiagnostics,
   type SharedCloudAuthFailureStage,
 } from "./shared-cloud-auth-diagnostics";
+import { appendAuthRefreshLog } from "./runtime-diagnostics-log";
 
 export type SupabaseUserSessionTokens = {
   accessToken: string;
@@ -286,6 +287,7 @@ export class SupabaseUserSessionService {
     this.lastRefreshAttemptAt = attemptedAt;
     this.sharedDiagnostics.refreshAttemptedAt = attemptedAt;
     this.sharedDiagnostics.lastRefreshAttemptAt = attemptedAt;
+    appendAuthRefreshLog(this.paths, "auth.refresh.begin");
 
     if (!this.tokens?.accessToken || !this.tokens.refreshToken) {
       this.lastRefreshErrorCode = "no_tokens";
@@ -335,11 +337,13 @@ export class SupabaseUserSessionService {
       if (error || !data.session?.access_token || !data.session.refresh_token) {
         const code = error ? classifyRefreshFailure(error) : "refresh_response_invalid";
         if (code === "invalid_refresh_token" || code === "refresh_token_not_found") {
+          appendAuthRefreshLog(this.paths, `auth.refresh.failed code=${code}`);
           this.markReauthenticationRequired(code);
         } else {
           this.lastRefreshErrorCode = code;
           this.lastRefreshResult = "failure";
           this.recordRefreshFailure(code);
+          appendAuthRefreshLog(this.paths, `auth.refresh.retry code=${code}`);
         }
         return {
           ok: false,
@@ -385,17 +389,25 @@ export class SupabaseUserSessionService {
       this.sharedDiagnostics.refreshErrorCategory = null;
       this.sharedDiagnostics.firstSharedCloudFailureStage = "none";
       this.syncSharedDiagnostics();
+      appendAuthRefreshLog(
+        this.paths,
+        `auth.refresh.complete rotated=${rotated ? "true" : "false"}`,
+      );
+      appendAuthRefreshLog(this.paths, "session.updated reason=token-refresh");
+      this.notifySessionStored("token-refresh");
       return { ok: true, code: "refreshed" };
     } catch (error) {
       const code = classifyRefreshFailure(
         error instanceof Error ? error : { message: String(error) },
       );
       if (code === "invalid_refresh_token" || code === "refresh_token_not_found") {
+        appendAuthRefreshLog(this.paths, `auth.refresh.failed code=${code}`);
         this.markReauthenticationRequired(code);
       } else {
         this.lastRefreshErrorCode = code;
         this.lastRefreshResult = "failure";
         this.recordRefreshFailure(code);
+        appendAuthRefreshLog(this.paths, `auth.refresh.retry code=${code}`);
       }
       return {
         ok: false,

@@ -51,7 +51,6 @@ const marker = {
   neudWorkerMode: "local",
   main: "index.js",
   dependencies: {
-    dotenv: "^16.4.7",
     puppeteer: "^24.23.0",
   },
 };

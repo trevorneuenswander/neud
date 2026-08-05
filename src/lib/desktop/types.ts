@@ -129,6 +129,32 @@ export type DesktopCredentialMeta = {
   hasPersistedSession?: boolean;
 };
 
+export type NeudUpdateLifecycleState =
+  | "unavailable"
+  | "idle"
+  | "checking"
+  | "available"
+  | "not-available"
+  | "downloading"
+  | "downloaded"
+  | "error";
+
+export type NeudUpdateStatus = {
+  state: NeudUpdateLifecycleState;
+  enabled: boolean;
+  packaged: boolean;
+  currentVersion: string;
+  availableVersion: string | null;
+  downloadPercent: number | null;
+  transferredBytes: number | null;
+  totalBytes: number | null;
+  bytesPerSecond: number | null;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+  canInstall: boolean;
+  message: string | null;
+};
+
 export type NeudDesktopAPI = {
   app: {
     isDesktop(): true;
@@ -344,6 +370,12 @@ export type NeudDesktopAPI = {
       order: Array<{ displayId: string; sortIndex: number; updatedAt: string }>;
       databasePath?: string;
     }>;
+  };
+  updates: {
+    getStatus(): Promise<NeudUpdateStatus>;
+    check(reason?: "manual" | "menu" | "startup"): Promise<NeudUpdateStatus>;
+    install(): Promise<{ ok: true } | { ok: false; error: string }>;
+    onStatus(callback: (status: NeudUpdateStatus) => void): () => void;
   };
 };
 

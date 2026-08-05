@@ -10,12 +10,22 @@ import {
 } from "../auth/platform-permissions";
 import { NEUD_AUTH_SIGNING_SECRET } from "../env/neud-env";
 import { SIGN_IN_TO_NEUD_ACCOUNT_MESSAGE } from "../auth/messages";
+import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
 import { mergeOptionalProfileString } from "./resolve-authenticated-profile";
 
 const OFFLINE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const ONLINE_RECENT_MS = 2 * 60 * 1000;
 
 export { OFFLINE_WINDOW_MS };
+
+export function isSyntheticLocalDesktopAuthRecord(
+  record: AuthCacheRecord | null | undefined,
+): boolean {
+  if (!record) {
+    return false;
+  }
+  return record.entitlement?.source === "local-desktop";
+}
 
 export type AuthCacheRecord = {
   userId: string;
@@ -188,7 +198,30 @@ export class AuthLicenseManager {
   }
 
   isAccessAllowed(): boolean {
+    if (
+      isPackagedDesktopRuntime() &&
+      isSyntheticLocalDesktopAuthRecord(this.record)
+    ) {
+      return false;
+    }
     return this.getStatus().allowed;
+  }
+
+  purgeSyntheticLocalDesktopSessionIfPresent(): boolean {
+    if (!isSyntheticLocalDesktopAuthRecord(this.record)) {
+      return false;
+    }
+
+    if (isPackagedDesktopRuntime()) {
+      console.info(
+        "[auth] Ignoring synthetic local-desktop session in packaged runtime",
+      );
+    } else {
+      console.info("[auth] Clearing synthetic local-desktop session");
+    }
+
+    this.clear();
+    return true;
   }
 
   isPlatformAdmin(): boolean {

@@ -39,6 +39,39 @@ export function resolveRevisionVersionNumber(revision: {
   return null;
 }
 
+/** Published/active display revision ordinal with deterministic created_at fallback. */
+export function resolveDisplayRevisionVersionNumber(
+  revision: {
+    id: string;
+    createdAt: string;
+    versionNumber?: number | null;
+  },
+  allRevisions?: Array<{
+    id: string;
+    createdAt: string;
+    versionNumber?: number | null;
+  }>,
+): number | null {
+  const direct = resolveRevisionVersionNumber(revision);
+  if (direct !== null) {
+    return direct;
+  }
+  if (!allRevisions || allRevisions.length === 0) {
+    return null;
+  }
+
+  const sorted = [...allRevisions].sort((left, right) => {
+    const byCreated =
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+    if (byCreated !== 0) {
+      return byCreated;
+    }
+    return left.id.localeCompare(right.id);
+  });
+  const index = sorted.findIndex((entry) => entry.id === revision.id);
+  return index >= 0 ? index + 1 : null;
+}
+
 export function formatActiveRevisionLabel(
   versionNumber: number,
   createdAt: string,

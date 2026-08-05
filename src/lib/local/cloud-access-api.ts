@@ -39,6 +39,10 @@ export async function localGetCloudAccessDirectory(options?: { forceRefresh?: bo
   >(`/api/access/cloud/directory${suffix}`);
 }
 
+export async function localGetCloudAccessDirectoryDiagnostics() {
+  return localFetch<Record<string, unknown>>("/api/access/cloud/directory/diagnostics");
+}
+
 async function localMutate<T>(path: string, init: RequestInit): Promise<T> {
   return localFetch<T>(path, init);
 }

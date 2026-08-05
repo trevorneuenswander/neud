@@ -5,6 +5,7 @@ import { app } from "electron";
 import type { AppPaths } from "./app-paths";
 import { ProcessManager, spawnNodeProcess } from "./process-manager";
 import { NEUD_DESKTOP_DEV, NEUD_DEV_SERVER_URL } from "../env/neud-env";
+import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
 import {
   DEFAULT_LOCAL_API_ORIGIN,
   normalizeLocalApiOrigin,
@@ -140,5 +141,5 @@ export function getDevServerUrl(): string {
 }
 
 export function isDevMode(): boolean {
-  return !app.isPackaged || NEUD_DESKTOP_DEV();
+  return !isPackagedDesktopRuntime() || NEUD_DESKTOP_DEV();
 }

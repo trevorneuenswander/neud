@@ -208,6 +208,26 @@ export class ActivityEventsRepository {
       .run(cloudId);
   }
 
+  updateMetadataProjectId(cloudId: string, projectId: string): void {
+    this.db
+      .prepare(
+        `UPDATE activity_events
+         SET metadata_json = json_set(metadata_json, '$.projectId', ?)
+         WHERE cloud_id = ?`,
+      )
+      .run(projectId, cloudId);
+  }
+
+  repairMetadataProjectId(localProjectId: string, hostedProjectId: string): void {
+    this.db
+      .prepare(
+        `UPDATE activity_events
+         SET metadata_json = json_set(metadata_json, '$.projectId', ?)
+         WHERE json_extract(metadata_json, '$.projectId') = ?`,
+      )
+      .run(hostedProjectId, localProjectId);
+  }
+
   insert(input: {
     event: ActivityEvent;
     cloudId: string;

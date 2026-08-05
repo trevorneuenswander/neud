@@ -27,6 +27,9 @@ import {
   createDefaultDisplaySyncRuntimeStatus,
   type DisplaySyncRuntimeStatus,
 } from "./display-sync-runtime-status";
+import { pullRemoteDisplayHistory } from "./display-sync-pull";
+import type { AppPaths } from "../app-paths";
+import { appendDisplaySyncLog } from "../runtime-diagnostics-log";
 import {
   DISPLAY_SYNC_BACKOFF_MS,
   DISPLAY_SYNC_LAST_ATTEMPT_KEY,
@@ -91,6 +94,7 @@ export class DisplaySyncService {
     private readonly queue: DisplaySyncQueueRepository,
     private readonly tombstones: DisplayDeletionTombstonesRepository,
     private readonly auth: AuthLicenseManager,
+    private readonly paths: AppPaths,
     private readonly onDisplaysChanged: () => void,
     private readonly recordOnlineViewerActivity: OnlineViewerActivityRecorder | null = null,
   ) {
@@ -99,6 +103,23 @@ export class DisplaySyncService {
     this.initialized = true;
     this.publicCloudConfigAvailable = cloud.isCloudConfigured();
     this.persistRuntimeStatus();
+    this.logServiceEvent("service.init");
+  }
+
+  private logServiceEvent(message: string): void {
+    const authSnapshot = this.cloud.getAuthSnapshot();
+    appendDisplaySyncLog(
+      this.paths,
+      [
+        message,
+        `cloudConfigured=${this.cloud.isCloudConfigured()}`,
+        `sessionAvailable=${this.cloud.isAuthenticatedCloudSessionAvailable()}`,
+        `sessionRestorePending=${this.cloud.isSessionRestorePending()}`,
+        `localAuth=${Boolean(this.auth.getAuthenticatedUser())}`,
+        `hasCloudSession=${authSnapshot.hasCloudSession}`,
+        `lastUnavailableReason=${this.lastUnavailableReason ?? "none"}`,
+      ].join(" "),
+    );
   }
 
   isRunning(): boolean {
@@ -145,7 +166,13 @@ export class DisplaySyncService {
       if (snapshot.lastRefreshErrorCode === "network_error") {
         return "network_unreachable";
       }
-      if (snapshot.refreshResult === "failure") {
+      if (
+        snapshot.lastRefreshErrorCode === "refresh_failed" ||
+        snapshot.refreshResult === "failure"
+      ) {
+        return "refresh_failed";
+      }
+      if (snapshot.lastRefreshErrorCode === "set_session_failed") {
         return "refresh_failed";
       }
       return "missing_authenticated_client";
@@ -243,6 +270,7 @@ export class DisplaySyncService {
     this.running = true;
     this.lastStartAt = new Date().toISOString();
     this.lastUnavailableReason = null;
+    this.logServiceEvent("service.start");
     if (process.env.NODE_ENV !== "production") {
       console.debug("[DisplaySync] service_start", {
         reason: "started",
@@ -316,6 +344,14 @@ export class DisplaySyncService {
     entityId: string;
     payload?: Record<string, unknown>;
   }): void {
+    if (input.operationType === "display.active_revision.update") {
+      const revisionId =
+        typeof input.payload?.revisionId === "string" ? input.payload.revisionId : "unknown";
+      appendDisplaySyncLog(
+        this.paths,
+        `display.active_revision.local displayId=${input.entityId} revisionId=${revisionId}`,
+      );
+    }
     this.queue.enqueue({
       entityType: input.entityType,
       entityId: input.entityId,
@@ -384,6 +420,15 @@ export class DisplaySyncService {
 
   getState(): DisplaySyncState {
     const diagnostics = this.getDiagnostics();
+
+    if (!this.cloud.isCloudConfigured()) {
+      return {
+        status: "error",
+        message:
+          "Cloud configuration is missing. Display sync requires packaged Supabase settings.",
+      };
+    }
+
     if (!this.running) {
       return {
         status: "idle",
@@ -396,7 +441,23 @@ export class DisplaySyncService {
       return { status: "idle", message: "Sign in to synchronize displays." };
     }
     if (!this.cloud.isAuthenticatedCloudSessionAvailable()) {
-      return { status: "idle", message: "Sign in to publish online." };
+      const authSnapshot = this.cloud.getAuthSnapshot();
+      if (authSnapshot.reauthenticationRequired) {
+        return {
+          status: "error",
+          message: "Your cloud session has expired. Sign in again to sync displays.",
+        };
+      }
+      if (
+        this.cloud.isSessionRestorePending() ||
+        authSnapshot.hasRestorableCloudSession
+      ) {
+        return { status: "syncing", message: "Restoring cloud session…" };
+      }
+      return {
+        status: "error",
+        message: this.lastSyncError ?? "Cloud session is not available for display sync.",
+      };
     }
     if (this.syncInProgress) {
       return { status: "syncing", message: "Syncing displays…" };
@@ -424,6 +485,7 @@ export class DisplaySyncService {
     if (!this.running) {
       this.syncRequestedWhileUnavailable = true;
       this.persistRuntimeStatus();
+      this.logServiceEvent(`sync.skip reason=${reason} stage=service_not_running`);
       if (process.env.NODE_ENV !== "production") {
         console.debug("[DisplaySync] sync_attempt", {
           reason,
@@ -436,6 +498,12 @@ export class DisplaySyncService {
     if (this.syncInProgress) {
       this.syncFollowUpRequested = true;
       this.persistRuntimeStatus();
+      return;
+    }
+    if (!this.cloud.isCloudConfigured()) {
+      this.syncRequestedWhileUnavailable = true;
+      this.markServiceUnavailable("missing_cloud_config");
+      this.logServiceEvent(`sync.skip reason=${reason} stage=cloud_config_missing`);
       return;
     }
     if (!this.auth.getAuthenticatedUser()) {
@@ -453,17 +521,32 @@ export class DisplaySyncService {
     }
     if (!this.cloud.isAuthenticatedCloudSessionAvailable()) {
       this.syncRequestedWhileUnavailable = true;
-      const unavailableReason = this.resolveSyncUnavailableReason();
-      this.markServiceUnavailable(unavailableReason);
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("[DisplaySync] sync_attempt", {
-          reason,
-          accepted: false,
-          sessionAvailable: false,
-          errorCode: unavailableReason,
-        });
+      const clientResult = await this.cloud.ensureAuthenticatedClient(`display-sync:${reason}`);
+      if (!clientResult.client) {
+        const unavailableReason = this.resolveSyncUnavailableReason();
+        this.markServiceUnavailable(unavailableReason);
+        this.logServiceEvent(
+          `sync.skip reason=${reason} stage=no-cloud-session sessionState=${clientResult.sessionState ?? unavailableReason}`,
+        );
+        if (
+          unavailableReason === "refresh_failed" ||
+          unavailableReason === "network_unreachable" ||
+          clientResult.sessionState === "session_refresh_failed_transient" ||
+          clientResult.sessionState === "authenticated_client_initialization_failed"
+        ) {
+          this.logServiceEvent(`sync.resumed reason=${reason} stage=retry_scheduled`);
+          this.scheduleRetry();
+        }
+        if (process.env.NODE_ENV !== "production") {
+          console.debug("[DisplaySync] sync_attempt", {
+            reason,
+            accepted: false,
+            sessionAvailable: false,
+            errorCode: unavailableReason,
+          });
+        }
+        return;
       }
-      return;
     }
 
     this.syncInProgress = true;
@@ -493,6 +576,22 @@ export class DisplaySyncService {
       }
 
       await this.pushPending(reason);
+      await pullRemoteDisplayHistory(
+        {
+          cloud: this.cloud,
+          cloudClient: this.cloudClient,
+          projects: this.projects,
+          displays: this.displays,
+          displayCode: this.displayCode,
+          revisions: this.revisions,
+          storage: this.storage,
+          auth: this.auth,
+          queue: this.queue,
+          paths: this.paths,
+          onDisplaysChanged: this.onDisplaysChanged,
+        },
+        reason,
+      );
       await this.pullTombstones();
       this.lastSyncError = null;
       this.lastCloudErrorCode = null;
@@ -935,6 +1034,13 @@ export class DisplaySyncService {
         Boolean(code?.onlineViewerEnabled) && display.enabled;
       const targetRevisionId = code?.publishedRevisionId ?? null;
 
+      if (targetRevisionId) {
+        appendDisplaySyncLog(
+          this.paths,
+          `display.active_revision.push.begin displayId=${display.id} revisionId=${targetRevisionId}`,
+        );
+      }
+
       if (onlineViewerEnabled && targetRevisionId) {
         const revisionReady = await this.cloudClient.revisionExists(targetRevisionId);
         if (!revisionReady) {
@@ -1026,6 +1132,12 @@ export class DisplaySyncService {
       });
       this.confirmLocalPublishedState(display, code, cloudDisplay);
       this.logDisplayRowAttempt(display, code, "publish", [], true);
+      if (targetRevisionId) {
+        appendDisplaySyncLog(
+          this.paths,
+          `display.active_revision.push.complete displayId=${display.id} revisionId=${targetRevisionId}`,
+        );
+      }
       result.succeeded += 1;
     }
     return result;

@@ -1,0 +1,18 @@
+{
+  "source": "local-controller",
+  "arrayLocation": "auctionDisplay.photos",
+  "elementTypes": {
+    "scraperTypical": "string (https URL)",
+    "localControllerTypical": "object { localUrl?, remoteUrl?, originalUrl?, filename? }"
+  },
+  "firstEntryShape": {
+    "valueType": "object",
+    "hasLocalUrl": true,
+    "hasRemoteUrl": true,
+    "hasOriginalUrl": true,
+    "hasFilename": false,
+    "urlCategory": "https-remote"
+  },
+  "sanitizeBehavior": "objects mapped through sanitizeString → dropped (null filtered)",
+  "hostedResolverBehavior": "resolvePhotoUrlsForHostedDisplay accepts https strings or object.remoteUrl/originalUrl only"
+}

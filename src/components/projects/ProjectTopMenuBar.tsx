@@ -1,11 +1,12 @@
 "use client";
 
-import { forwardRef, useLayoutEffect } from "react";
+import { forwardRef, useLayoutEffect, useRef } from "react";
 import type { ProjectDataType } from "@/lib/projects/constants";
 import { ProjectNav } from "@/components/projects/ProjectNav";
 import { ProjectLastPollStatus } from "@/components/projects/ProjectLastPollStatus";
 import { ProjectDataSourceSelector } from "@/components/projects/ProjectDataSourceSelector";
 import type { DisplayDataSource } from "@/lib/displays/display-data-source";
+import { useProjectNavLayoutMode } from "@/hooks/useProjectNavLayoutMode";
 
 type ProjectTopMenuBarProps = {
   slug: string;
@@ -30,6 +31,16 @@ export const ProjectTopMenuBar = forwardRef<HTMLDivElement, ProjectTopMenuBarPro
     },
     ref,
   ) {
+    const rowRef = useRef<HTMLDivElement>(null);
+    const navMeasureRef = useRef<HTMLDivElement>(null);
+    const statusRef = useRef<HTMLDivElement>(null);
+
+    const layoutMode = useProjectNavLayoutMode({
+      containerRef: rowRef,
+      navMeasureRef,
+      statusRef: showStatusControls ? statusRef : { current: null },
+      reservedWidth: 56,
+    });
 
     useLayoutEffect(() => {
       const header = typeof ref === "function" ? null : ref?.current;
@@ -55,15 +66,20 @@ export const ProjectTopMenuBar = forwardRef<HTMLDivElement, ProjectTopMenuBarPro
         ref={ref}
         className="project-top-menu shrink-0 border-b border-border bg-background px-4 py-3 lg:px-6"
       >
-        <div className="flex min-h-[52px] items-center gap-4">
+        <div ref={rowRef} className="flex min-h-[52px] min-w-0 items-center gap-4">
           <ProjectNav
             slug={slug}
             projectType={projectType}
             canManageSettings={canManageSettings}
             projectRole={projectRole}
+            layoutMode={layoutMode}
+            navMeasureRef={navMeasureRef}
           />
           {showStatusControls ? (
-            <div className="ml-auto flex shrink-0 items-center gap-4">
+            <div
+              ref={statusRef}
+              className="ml-auto flex shrink-0 items-center gap-4"
+            >
               <ProjectLastPollStatus engineId={engineId} />
               <ProjectDataSourceSelector initialDataSource={initialDataSource} />
             </div>

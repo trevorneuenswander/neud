@@ -45,6 +45,7 @@ const MIGRATION_FILES = [
   "033_display_online_viewer.sql",
   "034_project_photo_uploads.sql",
   "035_cloud_access_cache.sql",
+  "036_display_revision_version_repair.sql",
 ];
 
 export function runMigrations(db: LocalDatabase, paths: AppPaths): void {

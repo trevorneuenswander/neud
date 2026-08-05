@@ -18,7 +18,7 @@ export const STREAM_BID_DISPLAY_SPEC: BroadArrowStreamDisplaySpec = {
   name: "Stream Bid Display",
   description:
     "3840×2160 Broad Arrow bid display with transparent PIP cutout for live video overlay.",
-  bundledRelativePath: "desktop/src/displays/bundled/stream-bid-display-v1.html",
+  bundledRelativePath: "stream-bid-display-v1.html",
   graphicType: "stream-bid",
   displayWidth: 3840,
   displayHeight: 2160,
@@ -30,7 +30,7 @@ export const STREAM_TICKER_DISPLAY_SPEC: BroadArrowStreamDisplaySpec = {
   name: "Stream Ticker",
   description:
     "3840×2160 transparent lower ticker overlay showing the next two upcoming lots.",
-  bundledRelativePath: "desktop/src/displays/bundled/stream-ticker-v1.html",
+  bundledRelativePath: "stream-ticker-v1.html",
   graphicType: "stream-ticker",
   displayWidth: 3840,
   displayHeight: 2160,

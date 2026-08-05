@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import {
   BROAD_ARROW_CANONICAL_PROJECT,
   isBroadArrowCanonicalProject,
@@ -7,6 +5,7 @@ import {
 import {
   BROAD_ARROW_LEGACY_DISPLAYS_IMPORT_KEY,
   LEGACY_PYLON_SPEC,
+  LEGACY_TICKER_SPEC,
   RETIRED_AUCTION_PYLON_IMPORT_KEY,
   RETIRED_AUCTION_PYLON_RENDERER_KEY,
   RETIRED_AUCTION_PYLON_SLUG,
@@ -18,6 +17,7 @@ import type { ProjectDisplayCodeRepository } from "../repositories/project-displ
 import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { ProjectCodeStorageService } from "./project-code-storage-service";
 import { createRevisionId, hashSource } from "../repositories/project-scraper-code-repository";
+import { readBundledDisplaySourceFromReference } from "../lib/bundled-display-sources";
 
 export type BroadArrowLegacyDisplayImportResult = {
   slug: string;
@@ -57,16 +57,157 @@ export class BroadArrowLegacyDisplaysImportService {
     }
 
     const retiredAuctionPylonRemoved = this.removeRetiredAuctionPylonDisplay(project.id);
+    const legacyTickerResult = this.ensureLegacyTickerImported(project.id, actorUserId);
     const legacyPylonResult = this.ensureLegacyPylonImported(project.id, actorUserId);
 
     this.settings.set(BROAD_ARROW_LEGACY_DISPLAYS_IMPORT_KEY, "complete");
 
     return {
       projectId: project.id,
-      imported: [legacyPylonResult],
+      imported: [legacyTickerResult, legacyPylonResult],
       retiredAuctionPylonRemoved,
-      createdCount: legacyPylonResult.created ? 1 : 0,
+      createdCount:
+        (legacyTickerResult.created ? 1 : 0) + (legacyPylonResult.created ? 1 : 0),
     };
+  }
+
+  private ensureLegacyTickerImported(
+    projectId: string,
+    actorUserId: string,
+  ): BroadArrowLegacyDisplayImportResult {
+    const spec = LEGACY_TICKER_SPEC;
+    const existingCode = this.displayCode.getBySlug(projectId, spec.slug);
+    if (existingCode) {
+      this.ensureLegacyTickerRuntimeAdapter(existingCode.displayId);
+      return {
+        slug: spec.slug,
+        created: false,
+        displayId: existingCode.displayId,
+        skipped: true,
+        reason: "Legacy Ticker already imported.",
+      };
+    }
+
+    const v1Html = readBundledDisplaySourceFromReference(spec.bundledV1RelativePath);
+    const sortOrder = this.displays.getNextSortOrder(projectId);
+    const display = this.displays.upsert({
+      projectId,
+      name: spec.name,
+      displayKey: spec.slug,
+      htmlPath: null,
+      enabled: true,
+      refreshRateMs: 5000,
+      displayWidth: spec.displayWidth,
+      displayHeight: spec.displayHeight,
+      sortOrder,
+      settings: {
+        sourceType: "project-html",
+        template: "uploaded-html",
+        standaloneDocument: true,
+        importKey: spec.importKey,
+        uploadedFilename: spec.uploadedFilename,
+        graphicType: "ticker",
+        description: spec.description,
+        runtimeAdapterKey: spec.runtimeAdapterKey,
+      },
+    });
+
+    const v1RevisionId = createRevisionId();
+    const v1Bundle = {
+      html: v1Html,
+      css: "",
+      javascript: "",
+      metadata: {
+        revisionId: v1RevisionId,
+        revisionName: "legacy-live-v1",
+        changeNote: "Imported bundled legacy ticker live HTML",
+        standaloneDocument: true,
+        importKey: spec.importKey,
+        uploadedFilename: spec.uploadedFilename,
+        seeded: true,
+      },
+    };
+
+    this.storage.writeDisplayRevision(projectId, display.id, v1RevisionId, v1Bundle);
+    this.storage.writeDisplayPublished(projectId, display.id, v1Bundle);
+    this.revisions.create({
+      id: v1RevisionId,
+      projectId,
+      resourceType: "display",
+      resourceId: display.id,
+      revisionName: "legacy-live-v1",
+      changeNote: "Imported bundled legacy ticker live HTML",
+      sourceHash: hashSource(`${v1Bundle.html}\n${v1Bundle.css}\n${v1Bundle.javascript}`),
+      validationStatus: "valid",
+      createdBy: actorUserId,
+      message: `Imported ${spec.name} from bundled HTML`,
+      metadata: { storageRevisionId: v1RevisionId, importKey: spec.importKey },
+    });
+
+    this.displayCode.upsert({
+      displayId: display.id,
+      projectId,
+      slug: spec.slug,
+      description: spec.description,
+      sourceType: "project-html",
+      draftHtml: v1Bundle.html,
+      draftCss: v1Bundle.css,
+      draftJavascript: v1Bundle.javascript,
+      publishedRevisionId: v1RevisionId,
+      archived: false,
+      archivedAt: null,
+      archivedByUserId: null,
+      updatedBy: actorUserId,
+    });
+
+    return {
+      slug: spec.slug,
+      created: true,
+      displayId: display.id,
+    };
+  }
+
+  private ensureLegacyTickerRuntimeAdapter(displayId: string): void {
+    const display = this.displays.getById(displayId);
+    if (!display) return;
+
+    const settings =
+      display.settings && typeof display.settings === "object" ? display.settings : {};
+    const nextSettings = { ...settings };
+    let changed = false;
+
+    if (nextSettings.runtimeAdapterKey !== LEGACY_TICKER_SPEC.runtimeAdapterKey) {
+      nextSettings.runtimeAdapterKey = LEGACY_TICKER_SPEC.runtimeAdapterKey;
+      changed = true;
+    }
+
+    if ("rendererKey" in nextSettings) {
+      delete nextSettings.rendererKey;
+      changed = true;
+    }
+    if ("activeRenderer" in nextSettings) {
+      delete nextSettings.activeRenderer;
+      changed = true;
+    }
+    if (nextSettings.importKey !== LEGACY_TICKER_SPEC.importKey) {
+      nextSettings.importKey = LEGACY_TICKER_SPEC.importKey;
+      changed = true;
+    }
+
+    if (!changed) return;
+
+    this.displays.upsert({
+      projectId: display.projectId,
+      name: display.name,
+      displayKey: display.displayKey,
+      htmlPath: display.htmlPath,
+      enabled: display.enabled,
+      refreshRateMs: display.refreshRateMs,
+      displayWidth: display.displayWidth,
+      displayHeight: display.displayHeight,
+      sortOrder: display.sortOrder ?? undefined,
+      settings: nextSettings,
+    });
   }
 
   private ensureLegacyPylonImported(
@@ -87,7 +228,7 @@ export class BroadArrowLegacyDisplaysImportService {
       };
     }
 
-    const v1Html = this.readBundledV1Html(spec.bundledV1RelativePath);
+    const v1Html = readBundledDisplaySourceFromReference(spec.bundledV1RelativePath);
     const sortOrder = this.resolveSortOrderAfterLegacyTicker(projectId);
     const display = this.displays.upsert({
       projectId,
@@ -279,23 +420,5 @@ export class BroadArrowLegacyDisplaysImportService {
     this.displayCode.deleteByDisplayId(code.displayId);
     this.displays.deleteById(code.displayId);
     return true;
-  }
-
-  private readBundledV1Html(relativePath: string): string {
-    const filename = path.basename(relativePath);
-    const candidates = [
-      path.join(this.repoRoot, relativePath),
-      path.join(this.repoRoot, "displays", "bundled", filename),
-      path.join(this.repoRoot, "desktop", "dist", "displays", "bundled", filename),
-      path.join(__dirname, "bundled", filename),
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, "utf8");
-      }
-    }
-
-    throw new Error(`Bundled display source not found (${relativePath})`);
   }
 }

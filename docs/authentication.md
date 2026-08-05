@@ -1,6 +1,6 @@
 # Authentication
 
-HMG Graphics Server uses Supabase email/password authentication with cookie-based sessions and the `@supabase/ssr` package.
+NEUD uses Supabase email/password authentication with cookie-based sessions and the `@supabase/ssr` package.
 
 Public self-service signup is disabled. New users request access, are reviewed by a platform administrator, and receive an email invitation to set a password.
 
@@ -43,9 +43,28 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
-- Public keys are used by the browser and server session client.
-- The service-role key is used only in server-only modules for access-request inserts and invitation sending.
-- Never expose the service-role key to the browser.
+- Public keys are used by the browser, desktop authenticated cloud sync, and server session client.
+- The service-role key is used **only** in trusted server environments:
+  - Next.js server-only modules (`src/lib/supabase/admin.ts` with `server-only`)
+  - Vercel API routes such as `/api/desktop/admin/invite-user`
+  - One-off developer migration scripts (`scripts/migrate-*.mjs`)
+- **Never expose the service-role key to the browser or packaged Electron apps.**
+- The NEUD desktop application requires only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for cloud features. Local operation works without them.
+
+## Desktop authenticated cloud access (Slice 2.2)
+
+The packaged desktop app uses a single encrypted user session (`SupabaseUserSessionService`) coordinated through `AuthenticatedCloudCoordinator`:
+
+| Operation | Authorization |
+|-----------|---------------|
+| Display sync | RLS on `displays` / revisions + authenticated upserts |
+| Activity sync | `upsert_activity_events_for_sync` RPC — actor forced to `auth.uid()` |
+| User directory | `get_authorized_users_directory` / `get_accessible_project_users_directory` RPCs |
+| Publishing | Authenticated RPCs from migration 018 |
+| Project registration | `register_hosted_project_for_desktop` (migration 020) — authenticated users may register **new** hosted projects for local UUIDs they control |
+| Identity admin (invite) | Trusted server route — desktop calls Vercel, not Supabase Admin API |
+
+Sign-out or session expiration pauses all cloud sync services. Local SQLite and scraper operation continue unaffected.
 
 ## Database setup
 
@@ -99,7 +118,7 @@ https://your-domain.com/**
 
 ### Email templates
 
-HMG Graphics Server supports two invitation link formats. **This project uses Format A** (custom token-hash link in the **Invite user** template). Format B is also supported if you prefer Supabase's built-in `{{ .ConfirmationURL }}`.
+NEUD supports two invitation link formats. **This project uses Format A** (custom token-hash link in the **Invite user** template). Format B is also supported if you prefer Supabase's built-in `{{ .ConfirmationURL }}`.
 
 Public self-service signup is disabled. Do not use the **Confirm signup** template for invitations.
 
@@ -152,7 +171,7 @@ Supabase verifies the token at `/auth/v1/verify`, then redirects the browser to 
 {origin}/auth/confirm?next=/accept-invitation
 ```
 
-Session tokens arrive in the URL hash fragment. `/auth/confirm` establishes the browser session client-side, sets the short-lived `hmg-invite-session` cookie, and redirects to `/accept-invitation`.
+Session tokens arrive in the URL hash fragment. `/auth/confirm` establishes the browser session client-side, sets the short-lived `neud-invite-session` cookie, and redirects to `/accept-invitation`.
 
 `inviteUserByEmail()` does not use PKCE for normal cross-browser invitation email links.
 

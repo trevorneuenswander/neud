@@ -1,14 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
-
-const sharedRuntimeBrowserDir = path.resolve(
-  __dirname,
-  "../../../shared/display-runtime/browser",
-);
-
-function readSharedRuntimeBrowserScript(filename: string): string {
-  return fs.readFileSync(path.join(sharedRuntimeBrowserDir, filename), "utf8");
-}
+import { readSharedRuntimeBrowserScript } from "../lib/runtime-assets";
 
 const NORMALIZE_DISPLAY_RUNTIME_SCRIPT = readSharedRuntimeBrowserScript(
   "normalize-display-snapshot.js",

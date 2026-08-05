@@ -1,6 +1,6 @@
 import { SidebarBranding } from "@/components/portal/SidebarBranding";
 import { SidebarNavItem } from "@/components/portal/SidebarNavItem";
-import { SidebarDownloadLink } from "@/components/portal/SidebarDownloadLink";
+import { SidebarDownloadLinkSection } from "@/components/portal/SidebarDownloadLinkSection";
 import { SidebarUserPanel } from "@/components/portal/SidebarUserPanel";
 import type { NavItem } from "@/lib/portal/navigation";
 import type { Profile } from "@/types/database";
@@ -37,9 +37,7 @@ export function Sidebar({ navItems, profile, profileHref }: SidebarProps) {
         ))}
       </nav>
 
-      <div className="shrink-0 px-3 pb-2">
-        <SidebarDownloadLink />
-      </div>
+      <SidebarDownloadLinkSection />
 
       <div className="shrink-0 border-t border-border px-3 py-3">
         <SidebarUserPanel profile={profile} profileHref={profileHref} />

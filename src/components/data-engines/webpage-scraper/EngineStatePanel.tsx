@@ -7,55 +7,22 @@ import {
   ENGINE_STATUS_CARD_ROW_CLASS,
   EngineStatusLabelPill,
 } from "@/components/data-engines/webpage-scraper/EngineStatusCard";
-import type { EngineActualState } from "@/lib/data-engines/constants";
-import { formatActualState } from "@/lib/data-engines/format";
+import {
+  getOperationalStateLabel,
+  OPERATIONAL_STATE_STYLES,
+} from "@/lib/data-engines/operational-state";
 import type { DataEngineCommand } from "@/lib/data-engines/types";
 
+export { getOperationalStateLabel, OPERATIONAL_STATE_STYLES };
+
 type EngineStatePanelProps = {
-  actualState: EngineActualState | string;
+  actualState: string;
   activeCommand?: DataEngineCommand | null;
   controls?: ReactNode;
   statusDetail?: ReactNode;
   notification?: ReactNode;
   showNotificationArea?: boolean;
 };
-
-export const OPERATIONAL_STATE_STYLES: Record<string, string> = {
-  Running: "border-success/30 bg-success/10 text-success",
-  Starting: "border-success/30 bg-success/10 text-success",
-  "Running Once": "border-success/30 bg-success/10 text-success",
-  Restarting: "border-warning/30 bg-warning/10 text-warning",
-  Stopping: "border-warning/30 bg-warning/10 text-warning",
-  Stopped: "border-border bg-surface-raised text-muted",
-  Offline: "border-border bg-surface-raised text-muted",
-  Error: "border-danger/30 bg-danger/10 text-danger",
-};
-
-export function getOperationalStateLabel(
-  actualState: string,
-  activeCommand?: DataEngineCommand | null,
-): string {
-  if (
-    activeCommand?.command === "run_once" &&
-    actualState !== "stopped" &&
-    actualState !== "offline"
-  ) {
-    return "Running Once";
-  }
-
-  if (
-    activeCommand?.command === "restart" &&
-    (actualState === "starting" || actualState === "stopping")
-  ) {
-    return "Restarting";
-  }
-
-  if (actualState === "offline") {
-    return "Stopped";
-  }
-
-  return formatActualState(actualState as EngineActualState);
-}
 
 export function EngineStatePanel({
   actualState,

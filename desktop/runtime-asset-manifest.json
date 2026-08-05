@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "extraResources": [
+    {
+      "id": "display.normalize-display-snapshot",
+      "source": "shared/display-runtime/browser/normalize-display-snapshot.js",
+      "packagedRelativePath": "display/normalize-display-snapshot.js",
+      "required": true,
+      "consumers": ["desktop/src/developer-tools/templates.ts"]
+    },
+    {
+      "id": "display.display-runtime-publisher",
+      "source": "shared/display-runtime/browser/display-runtime-publisher.js",
+      "packagedRelativePath": "display/display-runtime-publisher.js",
+      "required": true,
+      "consumers": ["desktop/src/developer-tools/templates.ts"]
+    },
+    {
+      "id": "display.hosted-bridge-inbound",
+      "source": "shared/display-runtime/browser/hosted-bridge-inbound.js",
+      "packagedRelativePath": "display/hosted-bridge-inbound.js",
+      "required": true,
+      "consumers": ["shared/display-runtime/sync-embedded-scripts.mjs"]
+    }
+  ],
+  "asar": [
+    {
+      "id": "bag.runtime-config",
+      "source": "shared/bag/bag-runtime-config.json",
+      "asarPath": "dist/bag/config/bag-runtime-config.json",
+      "required": true,
+      "consumers": ["desktop/src/bag/config/bag-runtime-config.ts"]
+    },
+    {
+      "id": "database.sql-wasm",
+      "source": "node_modules/sql.js/dist/sql-wasm.wasm",
+      "asarPath": "dist/database/assets/sql-wasm.wasm",
+      "extraResourcesPath": "database/assets/sql-wasm.wasm",
+      "required": true,
+      "consumers": ["desktop/src/database/connection.ts"]
+    },
+    {
+      "id": "database.migrations",
+      "source": "desktop/src/database/migrations/*.sql",
+      "asarPath": "dist/database/migrations/",
+      "required": true,
+      "consumers": ["desktop/src/database/migrate.ts"]
+    },
+    {
+      "id": "displays.bundled-html",
+      "source": "desktop/src/displays/bundled/*.html",
+      "asarPath": "dist/displays/bundled/",
+      "required": true,
+      "consumers": [
+        "desktop/src/lib/bundled-display-sources.ts",
+        "desktop/src/displays/legacy-display-v2-transform.ts",
+        "desktop/src/services/broad-arrow-stream-displays-import-service.ts",
+        "desktop/src/services/broad-arrow-legacy-displays-import-service.ts",
+        "desktop/src/services/broad-arrow-uploaded-displays-import-service.ts"
+      ],
+      "files": [
+        "stream-bid-display-v1.html",
+        "stream-ticker-v1.html",
+        "legacy-pylon-v1.html",
+        "auction-ticker-overlay-v1.html",
+        "auction-pylon-display-v1.html",
+        "auction-ticker-legacy-live-v1-2026-07-26-132400.html"
+      ]
+    },
+    {
+      "id": "displays.bridge-scripts",
+      "source": "desktop/src/displays/*-bridge.js",
+      "asarPath": "dist/displays/",
+      "required": true,
+      "consumers": [
+        "desktop/src/displays/legacy-display-v2-transform.ts",
+        "desktop/src/displays/stream-display-v2-transform.ts"
+      ]
+    },
+    {
+      "id": "entry.bootstrap",
+      "asarPath": "dist/bootstrap.js",
+      "required": true,
+      "consumers": ["desktop/scripts/bootstrap-main.cjs"]
+    },
+    {
+      "id": "entry.main",
+      "asarPath": "dist/main.js",
+      "required": true,
+      "consumers": ["desktop/src/main.ts"]
+    },
+    {
+      "id": "entry.preload",
+      "asarPath": "dist/preload.js",
+      "required": true,
+      "consumers": ["desktop/src/main.ts"]
+    }
+  ],
+  "externalResources": [
+    {
+      "id": "next.standalone",
+      "resourcesPath": "staging/next/server.js",
+      "required": true,
+      "consumers": ["desktop/src/services/next-server.ts"]
+    },
+    {
+      "id": "next.edge-runtime-cookies",
+      "resourcesPath": "staging/next/node_modules/next/dist/compiled/@edge-runtime/cookies",
+      "required": true,
+      "consumers": ["Next.js standalone server"]
+    },
+    {
+      "id": "puppeteer.chrome",
+      "resourcesPath": "puppeteer/chrome/chrome-win64/chrome.exe",
+      "required": true,
+      "consumers": ["workers/data-engine browser resolver"]
+    }
+  ]
+}

@@ -2,14 +2,30 @@ export const LEGACY_PYLON_IMPORT_KEY = "broad-arrow-legacy-pylon-html";
 
 export const LEGACY_PYLON_RUNTIME_ADAPTER_KEY = "broad-arrow-legacy-pylon";
 
+export const LEGACY_TICKER_IMPORT_KEY = "broad-arrow-legacy-ticker-html";
+
+export const LEGACY_TICKER_RUNTIME_ADAPTER_KEY = "broad-arrow-legacy-ticker";
+
 export const LEGACY_PYLON_SPEC = {
   importKey: LEGACY_PYLON_IMPORT_KEY,
   slug: "legacy-pylon",
   name: "Legacy Pylon",
   description: "Broad Arrow live auction pylon",
   uploadedFilename: "3b. PYLON.html",
-  bundledV1RelativePath: "desktop/src/displays/bundled/legacy-pylon-v1.html",
+  bundledV1RelativePath: "legacy-pylon-v1.html",
   runtimeAdapterKey: LEGACY_PYLON_RUNTIME_ADAPTER_KEY,
+  displayWidth: 1920,
+  displayHeight: 1080,
+} as const;
+
+export const LEGACY_TICKER_SPEC = {
+  importKey: LEGACY_TICKER_IMPORT_KEY,
+  slug: "legacy-ticker",
+  name: "Legacy Ticker",
+  description: "Broad Arrow live auction ticker",
+  uploadedFilename: "auction-ticker-legacy-live-v1-2026-07-26-132400.html",
+  bundledV1RelativePath: "auction-ticker-legacy-live-v1-2026-07-26-132400.html",
+  runtimeAdapterKey: LEGACY_TICKER_RUNTIME_ADAPTER_KEY,
   displayWidth: 1920,
   displayHeight: 1080,
 } as const;
