@@ -121,10 +121,13 @@ test("release workflow uses Node 22 and current action versions", () => {
 
 test("release workflow validates signing and update logout tests", () => {
   const workflow = read(".github/workflows/release-windows.yml");
-  assert.match(workflow, /NEUD_REQUIRE_CODE_SIGNING/);
+  assert.match(workflow, /require_code_signing:/);
+  assert.match(workflow, /default: false/);
+  assert.match(workflow, /NEUD_REQUIRE_CODE_SIGNING: \$\{\{ inputs\.require_code_signing/);
+  assert.match(workflow, /Building unsigned Alpha release/);
   assert.match(workflow, /test:neud-update-session-logout/);
   assert.match(workflow, /test:neud-code-signing/);
-  assert.match(workflow, /verify-authenticode-signatures\.ps1/);
+  assert.match(workflow, /if: inputs\.require_code_signing == true/);
   assert.match(workflow, /app-update\.yml/);
 });
 

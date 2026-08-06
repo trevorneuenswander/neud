@@ -7,41 +7,39 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const desktopRoot = path.join(repoRoot, "desktop");
 
 function read(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-test("release workflow requires signing credentials when NEUD_REQUIRE_CODE_SIGNING=1", () => {
+test("release workflow defaults Authenticode signing to disabled", () => {
   const workflow = read(".github/workflows/release-windows.yml");
-  assert.match(workflow, /NEUD_REQUIRE_CODE_SIGNING/);
+  assert.match(workflow, /require_code_signing:/);
+  assert.match(workflow, /default: false/);
+  assert.match(workflow, /NEUD_REQUIRE_CODE_SIGNING: \$\{\{ inputs\.require_code_signing/);
+  assert.doesNotMatch(workflow, /NEUD_REQUIRE_CODE_SIGNING: "1"/);
+});
+
+test("unsigned Alpha release workflow can proceed without CSC secrets", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
+  assert.match(workflow, /Building unsigned Alpha release/);
+  assert.match(workflow, /if: inputs\.require_code_signing == true/);
+  assert.match(workflow, /verify-code-signing-config\.mjs/);
+  assert.match(workflow, /npm run release:win/);
+  assert.match(workflow, /verify-packaged-auto-update-config\.mjs --require-latest-yml/);
+  assert.match(workflow, /app-update\.yml/);
+});
+
+test("signed release mode requires CSC secrets before npm ci", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
   assert.match(workflow, /CSC_LINK/);
   assert.match(workflow, /CSC_KEY_PASSWORD/);
-  assert.match(workflow, /verify-code-signing-config\.mjs/);
-  assert.match(workflow, /verify-authenticode-signatures\.ps1/);
-  assert.match(workflow, /Guard against overwriting an existing published release/);
-});
+  assert.match(workflow, /Building signed release \(Authenticode signing required\)\./);
 
-test("electron-builder configures SHA-256 Authenticode timestamping", () => {
-  const config = read("desktop/electron-builder.yml");
-  assert.match(config, /signAndEditExecutable: false/);
-  assert.match(config, /digestAlgorithm: sha256/);
-  assert.match(config, /timestampDigestAlgorithm: sha256/);
-  assert.match(config, /rfc3161TimeStampServer:/);
-});
+  const validateIndex = workflow.indexOf("Validate Windows code signing configuration");
+  const npmCiIndex = workflow.indexOf("npm ci");
+  assert.ok(validateIndex >= 0 && validateIndex < npmCiIndex);
 
-test("package:win verifies Authenticode signatures after NSIS packaging", () => {
-  const desktopPkg = JSON.parse(read("desktop/package.json"));
-  assert.match(desktopPkg.scripts["package:win"], /verify-code-signing-config\.mjs/);
-  assert.match(desktopPkg.scripts["package:win"], /verify-authenticode-signatures\.ps1/);
-  assert.match(desktopPkg.scripts["package:win"], /embed-windows-exe-icon\.mjs/);
-  const embedIndex = desktopPkg.scripts["package:win"].indexOf("embed-windows-exe-icon");
-  const nsisIndex = desktopPkg.scripts["package:win"].indexOf("--prepackaged");
-  assert.ok(embedIndex >= 0 && embedIndex < nsisIndex);
-});
-
-test("unsigned release build fails when NEUD_REQUIRE_CODE_SIGNING=1 without CSC secrets", () => {
   assert.throws(
     () => {
       execSync("node desktop/scripts/verify-code-signing-config.mjs", {
@@ -57,6 +55,39 @@ test("unsigned release build fails when NEUD_REQUIRE_CODE_SIGNING=1 without CSC 
     },
     (error) => error.status === 1,
   );
+});
+
+test("Authenticode verification runs only when signing is required", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
+  const verifyStep = workflow.match(
+    /- name: Verify Authenticode signatures[\s\S]*?run: pwsh -NoProfile -File desktop\/scripts\/verify-authenticode-signatures\.ps1/,
+  );
+  assert.ok(verifyStep, "Expected Authenticode verification step");
+  assert.match(verifyStep[0], /if: inputs\.require_code_signing == true/);
+});
+
+test("non-signing release gates remain in workflow", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
+  assert.match(workflow, /Validate public Supabase configuration/);
+  assert.match(workflow, /test:neud-release-version/);
+  assert.match(workflow, /test:neud-auto-update/);
+  assert.match(workflow, /test:neud-update-session-logout/);
+  assert.match(workflow, /Guard against overwriting an existing published release/);
+  assert.match(workflow, /workflow_dispatch/);
+});
+
+test("electron-builder configures SHA-256 Authenticode timestamping", () => {
+  const config = read("desktop/electron-builder.yml");
+  assert.match(config, /signAndEditExecutable: false/);
+  assert.match(config, /digestAlgorithm: sha256/);
+  assert.match(config, /timestampDigestAlgorithm: sha256/);
+  assert.match(config, /rfc3161TimeStampServer:/);
+});
+
+test("package:win retains signing hooks for future signed releases", () => {
+  const desktopPkg = JSON.parse(read("desktop/package.json"));
+  assert.match(desktopPkg.scripts["package:win"], /verify-code-signing-config\.mjs/);
+  assert.match(desktopPkg.scripts["package:win"], /verify-authenticode-signatures\.ps1/);
 });
 
 test("local development remains possible without signing credentials", () => {

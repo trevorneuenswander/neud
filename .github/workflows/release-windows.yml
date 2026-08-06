@@ -20,6 +20,11 @@ on:
         required: false
         default: true
         type: boolean
+      require_code_signing:
+        description: Require Authenticode signing
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -30,7 +35,7 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-      NEUD_REQUIRE_CODE_SIGNING: "1"
+      NEUD_REQUIRE_CODE_SIGNING: ${{ inputs.require_code_signing && '1' || '' }}
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
     steps:
@@ -65,6 +70,15 @@ jobs:
             exit 1
           }
           Write-Host "Public Supabase publishable key is configured (value not logged)."
+
+      - name: Configure release signing mode
+        shell: pwsh
+        run: |
+          if ("${{ inputs.require_code_signing }}" -eq "true") {
+            Write-Host "Building signed release (Authenticode signing required)."
+          } else {
+            Write-Host "Building unsigned Alpha release"
+          }
 
       - name: Validate Windows code signing configuration
         run: node desktop/scripts/verify-code-signing-config.mjs
@@ -107,6 +121,7 @@ jobs:
         run: npm run release:win
 
       - name: Verify Authenticode signatures
+        if: inputs.require_code_signing == true
         shell: pwsh
         run: pwsh -NoProfile -File desktop/scripts/verify-authenticode-signatures.ps1
 
