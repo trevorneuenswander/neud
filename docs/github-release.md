@@ -95,7 +95,44 @@ NEXT_PUBLIC_NEUD_WINDOWS_DOWNLOAD_URL=https://github.com/trevorneuenswander/neud
 - Fix forward with a higher version (e.g. bad 0.1.2 → ship 0.1.3).
 - Users can reinstall a saved older installer manually; `%APPDATA%\NEUD\` data is preserved by default uninstall settings.
 
-## Auto-update notes (unsigned Alpha)
+## Windows Authenticode signing (v0.1.2+)
+
+GitHub Actions release builds require Authenticode signing:
+
+| Secret | Purpose |
+|--------|---------|
+| `CSC_LINK` | Base64-encoded PFX or secure URL to the code-signing certificate |
+| `CSC_KEY_PASSWORD` | PFX password |
+
+The workflow sets `NEUD_REQUIRE_CODE_SIGNING=1` and fails if signing credentials are absent or signatures do not verify.
+
+Signing method: **traditional OV/EV PFX certificate** via electron-builder (`CSC_LINK` / `CSC_KEY_PASSWORD`). Azure Artifact Signing can be adopted later with the same release gate pattern.
+
+Timestamping: SHA-256 digest with RFC 3161 timestamp (`http://timestamp.digicert.com`).
+
+Optional verification override:
+
+```bash
+NEUD_CODE_SIGNING_SUBJECT="Your Legal Entity Name"
+```
+
+The Windows **Publisher** shown in file properties comes from the certificate subject (legal entity), not the NEUD product branding.
+
+### One-time external setup
+
+1. Obtain a publicly trusted code-signing certificate (OV recommended if EV is unavailable).
+2. Export as password-protected PFX (never commit to the repository).
+3. Base64-encode the PFX for GitHub Actions `CSC_LINK`, or host at a secure URL electron-builder supports.
+4. Add `CSC_LINK` and `CSC_KEY_PASSWORD` as repository secrets.
+5. Run **Release Windows** as draft `0.1.2`, verify signatures in Windows Properties → Digital Signatures, then publish.
+
+## Update logout (v0.1.2+)
+
+After **Restart and Install** completes a real version change, NEUD clears authentication and shows the login page. **Later**, failed downloads, and normal restarts do not sign the user out.
+
+Users on published **0.1.1** (missing packaged `app-update.yml`) must manually install signed **0.1.2** once. After that, auto-update works for 0.1.2 and later.
+
+## Auto-update notes
 
 - `electron-updater` reads `latest.yml`, installer, and blockmap from the **published** GitHub Release.
 - Draft releases are invisible to the updater and to `/releases/latest/download/`.

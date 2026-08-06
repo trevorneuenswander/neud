@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/LoginForm";
+import { PostUpdateSignInNotice } from "@/components/auth/PostUpdateSignInNotice";
 import { AppVersion } from "@/components/branding/AppVersion";
 import { NeudLogo } from "@/components/branding/NeudLogo";
 import { getDefaultAuthenticatedPath } from "@/lib/projects/default-project";
@@ -20,6 +22,9 @@ export function DesktopLoginPage() {
         </div>
 
         <div className="rounded-lg border border-border bg-surface-raised p-6 shadow-sm">
+          <Suspense fallback={null}>
+            <PostUpdateSignInNotice />
+          </Suspense>
           <LoginForm nextPath={nextPath} />
         </div>
       </div>

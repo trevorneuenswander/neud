@@ -2,6 +2,17 @@ import { app, BrowserWindow } from "electron";
 import { autoUpdater, type ProgressInfo, type UpdateInfo } from "electron-updater";
 import { broadcastToAllRenderers } from "../ipc/channels";
 import { getCanonicalReleaseVersion } from "../app/release-version";
+import { getAppPaths } from "./app-paths";
+import {
+  ensureUpdatesDirectory,
+  writePendingInstalledUpdateMarker,
+} from "./pending-installed-update";
+import {
+  formatMissingUpdateConfigMessage,
+  logPackagedUpdateConfigDiagnostics,
+  readPackagedUpdateConfigDiagnostics,
+} from "./packaged-update-config";
+import { appendUpdateSessionLog } from "./update-session-log";
 
 export type UpdateLifecycleState =
   | "unavailable"
@@ -95,12 +106,36 @@ function publishStatus(next: Partial<NeudUpdateStatus>): NeudUpdateStatus {
 
 function userFacingError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
+    if (/ENOENT[\s\S]*app-update\.yml/i.test(error.message)) {
+      return formatMissingUpdateConfigMessage();
+    }
     if (/net::|ENOTFOUND|ECONNREFUSED|ETIMEDOUT/i.test(error.message)) {
       return "Unable to reach the update service. NEUD will continue working locally.";
+    }
+    if (/app-update\.yml/i.test(error.message)) {
+      return formatMissingUpdateConfigMessage();
     }
     return error.message;
   }
   return "Unable to check for updates right now.";
+}
+
+function assertPackagedUpdateConfigAvailable():
+  | { ok: true }
+  | { ok: false; message: string } {
+  const diagnostics = readPackagedUpdateConfigDiagnostics();
+  logPackagedUpdateConfigDiagnostics(logUpdaterEvent);
+  if (!diagnostics.fileExists) {
+    return { ok: false, message: formatMissingUpdateConfigMessage() };
+  }
+  if (
+    diagnostics.provider !== "github" ||
+    !diagnostics.owner ||
+    !diagnostics.repo
+  ) {
+    return { ok: false, message: formatMissingUpdateConfigMessage() };
+  }
+  return { ok: true };
 }
 
 function logUpdaterEvent(type: string, message: string, metadata: Record<string, unknown> = {}) {
@@ -166,6 +201,8 @@ export function initializeAutoUpdateService(options: {
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowDowngrade = false;
   autoUpdater.disableWebInstaller = true;
+
+  logPackagedUpdateConfigDiagnostics(logUpdaterEvent);
 
   autoUpdater.on("checking-for-update", () => {
     publishStatus({
@@ -288,6 +325,18 @@ export async function checkForUpdates(
   checkInFlight = true;
   logUpdaterEvent("update.check_requested", "Update check requested.", { reason });
 
+  const configCheck = assertPackagedUpdateConfigAvailable();
+  if (!configCheck.ok) {
+    checkInFlight = false;
+    return publishStatus({
+      state: "error",
+      lastCheckedAt: new Date().toISOString(),
+      lastError: configCheck.message,
+      canInstall: false,
+      message: configCheck.message,
+    });
+  }
+
   try {
     await autoUpdater.checkForUpdates();
   } catch (error) {
@@ -314,7 +363,31 @@ export function installDownloadedUpdate(): { ok: true } | { ok: false; error: st
     return { ok: false, error: "No downloaded update is ready to install." };
   }
 
-  logUpdaterEvent("update.install_requested", "Restart and install requested.");
+  const targetVersion = status.availableVersion?.trim();
+  if (!targetVersion) {
+    return { ok: false, error: "The downloaded update version is unavailable." };
+  }
+
+  const sourceVersion = safeCurrentVersion();
+  const paths = getAppPaths();
+  ensureUpdatesDirectory(paths);
+  const marker = writePendingInstalledUpdateMarker(paths, {
+    sourceVersion,
+    targetVersion,
+  });
+  appendUpdateSessionLog(paths, {
+    event: "install.requested",
+    sourceVersion: marker.sourceVersion,
+    targetVersion: marker.targetVersion,
+    installedVersion: sourceVersion,
+    operationId: marker.operationId,
+  });
+  logUpdaterEvent("update.install_requested", "Restart and install requested.", {
+    sourceVersion: marker.sourceVersion,
+    targetVersion: marker.targetVersion,
+    operationId: marker.operationId,
+  });
+
   setImmediate(() => {
     autoUpdater.quitAndInstall(false, true);
   });

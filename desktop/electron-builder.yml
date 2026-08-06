@@ -43,6 +43,10 @@ win:
         - x64
   artifactName: NEUD-Setup-${version}-x64.${ext}
   signAndEditExecutable: false
+  signtoolOptions:
+    digestAlgorithm: sha256
+    timestampDigestAlgorithm: sha256
+    rfc3161TimeStampServer: http://timestamp.digicert.com
 nsis:
   oneClick: false
   perMachine: false

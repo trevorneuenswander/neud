@@ -74,6 +74,14 @@ export class CloudAccessCacheRepository {
     });
   }
 
+  clearCachedDirectory(): void {
+    if (!this.isTableAvailable()) {
+      return;
+    }
+
+    this.db.prepare(`DELETE FROM cloud_access_cache WHERE id = ?`).run(CACHE_ROW_ID);
+  }
+
   getCacheMetadata(): { rowCount: number; syncedAt: string | null } {
     if (!this.isTableAvailable()) {
       return { rowCount: 0, syncedAt: null };

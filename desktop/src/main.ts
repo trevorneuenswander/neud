@@ -30,6 +30,9 @@ import {
   scheduleStartupUpdateCheck,
   setHelpMenuCheckForUpdatesHandler,
 } from "./services/auto-update-service";
+import { getCanonicalReleaseVersion } from "./app/release-version";
+import { clearAuthenticationForInstalledUpdate } from "./services/clear-authentication-for-installed-update";
+import { evaluatePendingInstalledUpdateOnStartup } from "./services/update-session-handler";
 import { registerCredentialsIpc } from "./ipc/credentials";
 import { registerEnginesIpc } from "./ipc/engines";
 import { registerLocalDataIpc } from "./ipc/local-data";
@@ -575,6 +578,25 @@ async function createMainWindow() {
     appSettingsRepository.set(SHARED_CLOUD_AUTH_DIAGNOSTICS_KEY, diagnostics);
   });
 
+  const installedReleaseVersion = getCanonicalReleaseVersion();
+  const pendingInstalledUpdateEvaluation = evaluatePendingInstalledUpdateOnStartup(
+    paths,
+    installedReleaseVersion,
+  );
+  let postUpdateSignInRequired =
+    pendingInstalledUpdateEvaluation.showPostUpdateSignInMessage;
+
+  if (pendingInstalledUpdateEvaluation.logoutRequired) {
+    await clearAuthenticationForInstalledUpdate({
+      paths,
+      authLicenseManager,
+      supabaseUserSessionService,
+      authenticatedCloud,
+      appSettingsRepository,
+    });
+    postUpdateSignInRequired = true;
+  }
+
   let reconcileIdentityOnSession: (() => void) | null = null;
   let clearIdentityOnSession: (() => void) | null = null;
   let startUserDirectorySync: (() => void) | null = null;
@@ -800,7 +822,8 @@ async function createMainWindow() {
 
   const cloudAccessBridge = new CloudAccessBridge(authenticatedCloud);
   localDataService.setCloudAccessBridge(cloudAccessBridge);
-  localDataService.setCloudAccessCache(new CloudAccessCacheRepository(localDatabase));
+  const cloudAccessCacheRepository = new CloudAccessCacheRepository(localDatabase);
+  localDataService.setCloudAccessCache(cloudAccessCacheRepository);
 
   if (!supabasePublicConfig) {
     console.warn(
@@ -835,6 +858,9 @@ async function createMainWindow() {
   });
 
   const restorePersistedCloudSessionEarly = async () => {
+    if (pendingInstalledUpdateEvaluation.logoutRequired) {
+      return;
+    }
     if (!authLicenseManager.isAccessAllowed()) {
       return;
     }
@@ -1442,16 +1468,18 @@ async function createMainWindow() {
     savedPath = null;
   }
 
-  const startupPath = resolveDesktopStartupPath({
-    savedPath,
-    preferredPath: authAllowed
-      ? resolveVerifiedProjectStartupPath({
-          defaultProjectSlug: localDataService.getDefaultProjectSlug(),
-          projectExists: (slug) =>
-            Boolean(projectsRepository.getBySlug(slug)),
-        })
-      : undefined,
-  });
+  const startupPath = postUpdateSignInRequired
+    ? "/?updated=1"
+    : resolveDesktopStartupPath({
+        savedPath,
+        preferredPath: authAllowed
+          ? resolveVerifiedProjectStartupPath({
+              defaultProjectSlug: localDataService.getDefaultProjectSlug(),
+              projectExists: (slug) =>
+                Boolean(projectsRepository.getBySlug(slug)),
+            })
+          : undefined,
+      });
   const rendererUrl = joinRendererUrl(appUrl, startupPath);
   console.info(`[NEUD Desktop] Loading renderer URL: ${rendererUrl}`);
 
@@ -1539,6 +1567,22 @@ async function createMainWindow() {
   setClearLocalSessionHandler(() => {
     void forceSignOutFromMain?.();
   });
+
+  if (postUpdateSignInRequired) {
+    await clearAuthenticationForInstalledUpdate({
+      paths,
+      authLicenseManager,
+      supabaseUserSessionService,
+      authenticatedCloud,
+      appSettingsRepository,
+      localAuthBootstrap,
+      cloudAccessCacheRepository,
+      stopCloudSyncServices: () => stopCloudSyncServices("installed-update"),
+      clearIdentityOnSession: () => clearIdentityOnSession?.(),
+      appUrl,
+      electronSession: appSession,
+    });
+  }
 
   await loadRendererUrl(mainWindow, rendererUrl);
   attachMainWindowCloseHandler();

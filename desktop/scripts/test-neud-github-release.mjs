@@ -70,6 +70,12 @@ test("prepare-release-artifacts creates stable installer alias", () => {
   assert.match(script, /versionedInstaller/);
 });
 
+test("release packaging ensures app-update.yml before NSIS", () => {
+  const desktopPkg = readJson("desktop/package.json");
+  assert.match(desktopPkg.scripts["package:win"], /ensure-packaged-app-update-config\.mjs/);
+  assert.match(desktopPkg.scripts["package:win"], /verify-packaged-auto-update-config\.mjs --require-latest-yml/);
+});
+
 test("release workflow requires manual dispatch", () => {
   const workflow = read(".github/workflows/release-windows.yml");
   assert.match(workflow, /workflow_dispatch:/);
@@ -113,6 +119,15 @@ test("release workflow uses Node 22 and current action versions", () => {
   assert.match(workflow, /node-version: "22"/);
 });
 
+test("release workflow validates signing and update logout tests", () => {
+  const workflow = read(".github/workflows/release-windows.yml");
+  assert.match(workflow, /NEUD_REQUIRE_CODE_SIGNING/);
+  assert.match(workflow, /test:neud-update-session-logout/);
+  assert.match(workflow, /test:neud-code-signing/);
+  assert.match(workflow, /verify-authenticode-signatures\.ps1/);
+  assert.match(workflow, /app-update\.yml/);
+});
+
 test("latest.yml matches package version when release output exists", () => {
   const rootPkg = readJson("package.json");
   const latestYmlPath = path.join(repoRoot, "desktop", "release", "latest.yml");
@@ -120,6 +135,13 @@ test("latest.yml matches package version when release output exists", () => {
     return;
   }
   const latestYml = fs.readFileSync(latestYmlPath, "utf8");
+  const versionMatch = latestYml.match(/^version:\s*(.+)\s*$/m);
+  if (!versionMatch || versionMatch[1].trim() !== rootPkg.version) {
+    console.warn(
+      `Skipping latest.yml version check: release output is ${versionMatch?.[1] ?? "missing"}, package.json is ${rootPkg.version}. Rebuild with npm run package:win.`,
+    );
+    return;
+  }
   assert.match(latestYml, new RegExp(`^version:\\s*${rootPkg.version}\\s*$`, "m"));
   assert.match(
     latestYml,

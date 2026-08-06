@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (must match package.json, e.g. 0.1.1)"
+        description: "Release version (must match package.json, e.g. 0.1.2)"
         required: true
         type: string
       release_visibility:
@@ -30,6 +30,9 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEUD_REQUIRE_CODE_SIGNING: "1"
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -63,6 +66,9 @@ jobs:
           }
           Write-Host "Public Supabase publishable key is configured (value not logged)."
 
+      - name: Validate Windows code signing configuration
+        run: node desktop/scripts/verify-code-signing-config.mjs
+
       - name: Verify requested version matches package.json
         shell: bash
         run: |
@@ -85,6 +91,12 @@ jobs:
       - name: Run updater configuration tests
         run: npm run test:neud-auto-update
 
+      - name: Run update session logout tests
+        run: npm run test:neud-update-session-logout
+
+      - name: Run code signing policy tests
+        run: npm run test:neud-code-signing
+
       - name: Run README branding tests
         run: npm run test:neud-readme-branding
 
@@ -93,6 +105,13 @@ jobs:
 
       - name: Build desktop release
         run: npm run release:win
+
+      - name: Verify Authenticode signatures
+        shell: pwsh
+        run: pwsh -NoProfile -File desktop/scripts/verify-authenticode-signatures.ps1
+
+      - name: Verify packaged auto-update metadata
+        run: node desktop/scripts/verify-packaged-auto-update-config.mjs --require-latest-yml
 
       - name: Prepare stable download alias and verify artifacts
         run: node desktop/scripts/prepare-release-artifacts.mjs
@@ -105,7 +124,8 @@ jobs:
           BLOCKMAP="${INSTALLER}.blockmap"
           STABLE="desktop/release/NEUD-Setup-latest-x64.exe"
           LATEST="desktop/release/latest.yml"
-          for file in "$INSTALLER" "$BLOCKMAP" "$STABLE" "$LATEST"; do
+          APP_UPDATE="desktop/release/win-unpacked/resources/app-update.yml"
+          for file in "$INSTALLER" "$BLOCKMAP" "$STABLE" "$LATEST" "$APP_UPDATE"; do
             if [ ! -f "$file" ]; then
               echo "Missing required artifact: $file"
               exit 1
@@ -137,8 +157,6 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           VERSION="${{ inputs.version }}"
           TAG="v${VERSION}"

@@ -113,6 +113,13 @@ export function ApplicationUpdatesSection() {
       return;
     }
 
+    const confirmed = window.confirm(
+      "NEUD will install the update and sign you out. You will need to sign in again after the update.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
     setActionError(null);
     const result = await api.updates.install();
     if (!result.ok) {

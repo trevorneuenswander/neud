@@ -1,6 +1,6 @@
 {
   "name": "@neud/desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "NEUD — The Ultimate Data Stripper",
   "author": "NEUD",
@@ -14,7 +14,7 @@
     "test:import": "npm run build && node --test scripts/test-import-validator.mjs scripts/test-bag-local-runtime.mjs scripts/test-bag-live-state.mjs scripts/test-bag-manual-mode.mjs scripts/test-local-controller-features.mjs scripts/test-project-defaults-displays.mjs scripts/test-generic-webpage-scraper.mjs scripts/test-platform-permissions.mjs scripts/test-application-authorization.mjs scripts/test-broad-arrow-configuration.mjs scripts/test-broad-arrow-ui-runtime.mjs scripts/test-broad-arrow-phase-bootstrap.mjs scripts/test-broad-arrow-controller-ui.mjs scripts/test-portal-navigation.mjs scripts/test-desktop-project-ui.mjs scripts/test-polling-navigation-ui.mjs scripts/test-project-deletion-scraper-ux.mjs scripts/test-engine-stop-lifecycle.mjs scripts/test-bag-credential-path.mjs scripts/test-pylon-display.mjs scripts/test-shutdown-activity-data-source.mjs scripts/test-activity-local-controller.mjs scripts/test-activity-ui-ordering.mjs scripts/test-offline-auction-export.mjs scripts/test-desktop-header-and-dataset.mjs scripts/test-currency-rates.mjs scripts/test-projects-page.mjs scripts/test-project-settings-permissions.mjs scripts/test-neud-branding.mjs && node --test ../workers/data-engine/scripts/test-generic-webpage.mjs ../workers/data-engine/scripts/test-browser-paths.mjs ../workers/data-engine/scripts/test-legacy-login-parity.mjs",
     "watch": "tsc -p tsconfig.json -w",
     "start": "electron dist/bootstrap.js",
-    "package:win": "node scripts/ensure-windows-icon.mjs && electron-builder --win dir --config electron-builder.yml --publish never && node scripts/verify-win-unpacked-runtime-assets.mjs && node scripts/verify-packaged-cloud-config.mjs && node scripts/embed-windows-exe-icon.mjs && electron-builder --win nsis --prepackaged release/win-unpacked --config electron-builder.yml --publish never && node scripts/prepare-release-artifacts.mjs",
+    "package:win": "node scripts/verify-code-signing-config.mjs && node scripts/ensure-windows-icon.mjs && electron-builder --win dir --config electron-builder.yml --publish never && node scripts/ensure-packaged-app-update-config.mjs && node scripts/verify-packaged-auto-update-config.mjs && node scripts/verify-win-unpacked-runtime-assets.mjs && node scripts/verify-packaged-cloud-config.mjs && node scripts/embed-windows-exe-icon.mjs && electron-builder --win nsis --prepackaged release/win-unpacked --config electron-builder.yml --publish never && node scripts/verify-packaged-auto-update-config.mjs --require-latest-yml && node scripts/prepare-release-artifacts.mjs && pwsh -NoProfile -File scripts/verify-authenticode-signatures.ps1",
     "publish:win": "node scripts/ensure-windows-icon.mjs && electron-builder --win --config electron-builder.yml --publish always",
     "package:win:dir": "electron-builder --win dir --config electron-builder.yml"
   },

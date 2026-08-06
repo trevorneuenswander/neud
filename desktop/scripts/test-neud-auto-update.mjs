@@ -45,6 +45,7 @@ test("Help menu and Settings page share the centralized updater service", () => 
   assert.match(settings, /Check for Updates/);
   assert.match(settings, /api\.updates\.check\("manual"\)/);
   assert.match(settings, /Restart and Install/);
+  assert.match(settings, /sign you out/);
 });
 
 test("electron-builder publishes draft GitHub releases without embedding tokens", () => {
@@ -58,4 +59,48 @@ test("electron-builder publishes draft GitHub releases without embedding tokens"
 test("desktop package includes electron-updater dependency", () => {
   const desktopPkg = JSON.parse(read("desktop/package.json"));
   assert.equal(typeof desktopPkg.dependencies["electron-updater"], "string");
+});
+
+test("packaging injects app-update.yml before NSIS prepackaged step", () => {
+  const desktopPkg = JSON.parse(read("desktop/package.json"));
+  assert.match(desktopPkg.scripts["package:win"], /ensure-packaged-app-update-config\.mjs/);
+  assert.match(desktopPkg.scripts["package:win"], /verify-packaged-auto-update-config\.mjs/);
+  assert.match(desktopPkg.scripts["package:win"], /--prepackaged release\/win-unpacked/);
+  const ensureIndex = desktopPkg.scripts["package:win"].indexOf("ensure-packaged-app-update-config");
+  const nsisIndex = desktopPkg.scripts["package:win"].indexOf("--prepackaged");
+  assert.ok(ensureIndex >= 0 && ensureIndex < nsisIndex);
+});
+
+test("ensure script writes github provider metadata without tokens", () => {
+  const ensure = read("desktop/scripts/ensure-packaged-app-update-config.mjs");
+  const lib = read("desktop/scripts/lib/electron-builder-publish-config.mjs");
+  const builder = read("desktop/electron-builder.yml");
+  assert.match(builder, /owner: trevorneuenswander/);
+  assert.match(builder, /repo: neud/);
+  assert.match(builder, /provider: github/);
+  assert.match(lib, /updaterCacheDirName/);
+  assert.match(lib, /FORBIDDEN_KEY_PATTERN/);
+  assert.doesNotMatch(builder, /token:/i);
+  assert.match(ensure, /app-update\.yml/);
+});
+
+test("auto-update service reports friendly missing-config errors", () => {
+  const updater = read("desktop/src/services/auto-update-service.ts");
+  const config = read("desktop/src/services/packaged-update-config.ts");
+  assert.match(config, /app-update\.yml/);
+  assert.match(config, /Update configuration is missing from this installation\./);
+  assert.match(updater, /assertPackagedUpdateConfigAvailable/);
+  assert.match(updater, /formatMissingUpdateConfigMessage/);
+  assert.match(updater, /logPackagedUpdateConfigDiagnostics/);
+  assert.match(updater, /ENOENT/);
+});
+
+test("verify script gates packaged update metadata", () => {
+  const verify = read("desktop/scripts/verify-packaged-auto-update-config.mjs");
+  assert.match(verify, /app-update\.yml/);
+  assert.match(verify, /latest\.yml/);
+  assert.match(verify, /provider/);
+  assert.match(verify, /owner/);
+  assert.match(verify, /repo/);
+  assert.match(verify, /must not embed credentials/);
 });
