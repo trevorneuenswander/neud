@@ -76,12 +76,13 @@ test("non-signing release gates remain in workflow", () => {
   assert.match(workflow, /workflow_dispatch/);
 });
 
-test("electron-builder configures SHA-256 Authenticode timestamping", () => {
+test("electron-builder configures RFC 3161 timestamping for future signing", () => {
   const config = read("desktop/electron-builder.yml");
   assert.match(config, /signAndEditExecutable: false/);
-  assert.match(config, /digestAlgorithm: sha256/);
-  assert.match(config, /timestampDigestAlgorithm: sha256/);
-  assert.match(config, /rfc3161TimeStampServer:/);
+  assert.match(config, /signtoolOptions:/);
+  assert.match(config, /rfc3161TimeStampServer: http:\/\/timestamp\.digicert\.com/);
+  assert.doesNotMatch(config, /digestAlgorithm:/);
+  assert.doesNotMatch(config, /timestampDigestAlgorithm:/);
 });
 
 test("package:win retains signing hooks for future signed releases", () => {
