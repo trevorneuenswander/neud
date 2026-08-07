@@ -37,9 +37,9 @@ The renderer cannot supply update URLs or arbitrary updater commands.
 
 When an update is available: `downloading` → `downloaded` (shows **Restart and Install**)
 
-## Publishing version 0.1.2 (example)
+## Publishing version 0.1.3 (example)
 
-1. Update root and `@neud/desktop` `package.json` to `0.1.2`.
+1. Update root and `@neud/desktop` `package.json` to `0.1.3`.
 2. Run the release gate:
 
 ```bash
@@ -47,13 +47,13 @@ npm run release:win
 ```
 
 3. Upload artifacts from `desktop/release/` to a GitHub Release:
-   - `NEUD-Setup-0.1.2-x64.exe`
+   - `NEUD-Setup-0.1.3-x64.exe`
    - `NEUD-Setup-latest-x64.exe` (stable portal download alias)
    - `latest.yml`
-   - `NEUD-Setup-0.1.2-x64.exe.blockmap`
+   - `NEUD-Setup-0.1.3-x64.exe.blockmap`
 
 4. Publish the draft release when ready (installed clients ignore drafts).
-5. On a machine with 0.1.1 installed, use **Check for Updates** and validate download, **Later**, and **Restart and Install**.
+5. On a machine with 0.1.2 installed, use **Check for Updates** and validate download, **Later**, and **Restart and Install**.
 
 ## Provider configuration
 

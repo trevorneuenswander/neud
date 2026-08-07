@@ -70,6 +70,24 @@ NEXT_PUBLIC_NEUD_WINDOWS_DOWNLOAD_URL=https://github.com/trevorneuenswander/neud
 
 12. On an installed copy: **Settings → About NEUD → Check for Updates** should report **Up to date** when running 0.1.1 against the published release.
 
+## Future update v0.1.3 (auto-update validation)
+
+1. Bump root and `desktop/package.json` to `0.1.3` (no automatic version scripts).
+2. Run `npm run test:neud-release-version`.
+3. Commit, push, and run **Release Windows** workflow with `version: 0.1.3`.
+4. Review draft release assets:
+   - `NEUD-Setup-0.1.3-x64.exe`
+   - `latest.yml` says `0.1.3` and `path: NEUD-Setup-0.1.3-x64.exe`
+   - blockmap present
+   - `NEUD-Setup-latest-x64.exe` updated
+5. Publish the GitHub Release.
+6. On a machine with **published 0.1.2** installed:
+   - **Check for Updates** detects 0.1.3 (draft releases are invisible to the updater)
+   - **Later** keeps the user signed in
+   - **Restart and Install** upgrades to 0.1.3 and requires sign-in again
+   - **About NEUD** shows Alpha 0.1.3
+7. Verify Vercel download serves the new stable alias (same URL, new binary).
+
 ## Future update v0.1.2
 
 1. Bump root and `desktop/package.json` to `0.1.2` (no automatic version scripts).
@@ -97,14 +115,14 @@ NEXT_PUBLIC_NEUD_WINDOWS_DOWNLOAD_URL=https://github.com/trevorneuenswander/neud
 
 ## Windows Authenticode signing (v0.1.2+)
 
-GitHub Actions release builds require Authenticode signing:
+GitHub Actions release builds support optional Authenticode signing via workflow input **Require Authenticode signing** (default: **false** for Alpha).
 
 | Secret | Purpose |
 |--------|---------|
 | `CSC_LINK` | Base64-encoded PFX or secure URL to the code-signing certificate |
 | `CSC_KEY_PASSWORD` | PFX password |
 
-The workflow sets `NEUD_REQUIRE_CODE_SIGNING=1` and fails if signing credentials are absent or signatures do not verify.
+The workflow sets `NEUD_REQUIRE_CODE_SIGNING=1` only when that input is enabled, and fails if signing credentials are absent or signatures do not verify.
 
 Signing method: **traditional OV/EV PFX certificate** via electron-builder (`CSC_LINK` / `CSC_KEY_PASSWORD`). Azure Artifact Signing can be adopted later with the same release gate pattern.
 
