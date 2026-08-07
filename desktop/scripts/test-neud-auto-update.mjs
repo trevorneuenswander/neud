@@ -95,6 +95,45 @@ test("auto-update service reports friendly missing-config errors", () => {
   assert.match(updater, /ENOENT/);
 });
 
+test("auto-update service disables autoDownload and schedules one startup check", () => {
+  const updater = read("desktop/src/services/auto-update-service.ts");
+  assert.match(updater, /autoUpdater\.autoDownload = false/);
+  assert.match(updater, /startupCheckPerformed/);
+  assert.match(updater, /scheduleStartupUpdateCheck\(delayMs = 3_000\)/);
+  assert.match(updater, /startup-check\.scheduled/);
+  assert.match(updater, /startup-check\.begin/);
+  assert.match(updater, /startup-check\.up-to-date/);
+  assert.match(updater, /startup-check\.available/);
+  assert.match(updater, /startup-check\.failed/);
+  assert.match(updater, /downloadAvailableUpdate/);
+  assert.match(updater, /dismissUpdatePrompt/);
+  assert.match(updater, /promptVisible/);
+});
+
+test("update IPC exposes download and dismiss actions", () => {
+  const ipc = read("desktop/src/ipc/updates.ts");
+  const preload = read("desktop/src/preload.ts");
+  assert.match(ipc, /neud:updates:download/);
+  assert.match(ipc, /neud:updates:dismiss/);
+  assert.match(preload, /neud:updates:download/);
+  assert.match(preload, /neud:updates:dismiss/);
+});
+
+test("shared update modal is mounted in desktop shell", () => {
+  const shell = read("src/components/portal/DesktopAppShell.tsx");
+  const modal = read("src/components/settings/UpdateAvailableModal.tsx");
+  assert.match(shell, /UpdateAvailableModalHost/);
+  assert.match(modal, /Download Update/);
+  assert.match(modal, /Restart and Install/);
+  assert.match(modal, /sign you out/);
+  assert.match(modal, /normalizeReleaseNotes/);
+});
+
+test("release notes are normalized without rendering raw HTML", () => {
+  const notes = read("src/lib/desktop/normalize-release-notes.ts");
+  assert.match(notes, /replace\(\/<\[\^>\]\+>\/g/);
+});
+
 test("verify script gates packaged update metadata", () => {
   const verify = read("desktop/scripts/verify-packaged-auto-update-config.mjs");
   assert.match(verify, /app-update\.yml/);

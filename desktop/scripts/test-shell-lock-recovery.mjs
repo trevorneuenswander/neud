@@ -20,7 +20,7 @@ test("sign out logs immediately and uses forceLocalSignOut", () => {
   assert.match(forceSignOut, /Sign Out clicked/);
   assert.match(forceSignOut, /Logout handler entered/);
   assert.match(forceSignOut, /forceSignOut/);
-  assert.match(forceSignOut, /Redirecting to login/);
+  assert.match(forceSignOut, /Redirecting to public landing page/);
 });
 
 test("auth principal no longer treats local API session config as login", () => {

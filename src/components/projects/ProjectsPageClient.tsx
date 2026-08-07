@@ -164,6 +164,52 @@ export function ProjectsPageClient({
     };
   }, [initialQuery, isLocalMode, loadProjects]);
 
+  useEffect(() => {
+    if (!isLocalMode || identityStatus !== "loading") {
+      return;
+    }
+
+    let cancelled = false;
+    const startedAt = Date.now();
+    const timeoutMs = 30_000;
+
+    const pollIdentity = async () => {
+      while (!cancelled && Date.now() - startedAt <= timeoutMs) {
+        try {
+          const nextMeta = await localGetProjectsMeta({ wait: false });
+          if (cancelled) {
+            return;
+          }
+
+          const nextIdentityStatus = resolveIdentityUiStatus(nextMeta);
+          if (nextIdentityStatus === "loading") {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            continue;
+          }
+
+          setMeta(nextMeta);
+          setIdentityStatus(nextIdentityStatus);
+
+          if (nextIdentityStatus === "ready") {
+            await loadProjects(nextMeta);
+          } else if (nextIdentityStatus === "error") {
+            setProjects([]);
+            setProjectsStatus("identity-error");
+          }
+          return;
+        } catch {
+          return;
+        }
+      }
+    };
+
+    void pollIdentity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [identityStatus, isLocalMode, loadProjects]);
+
   async function handleRetry() {
     setRetryPending(true);
     try {

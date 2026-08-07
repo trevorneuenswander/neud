@@ -1291,7 +1291,9 @@ export class LocalDataService {
     projectAssignments?: Array<{ projectId: string; role: string }>;
   }) {
     if (!this.trustedAccessApi) {
-      throw new Error("Access management requires an internet connection.");
+      throw new Error(
+        "Cloud access invitations are not configured for this installation.",
+      );
     }
     const result = await this.trustedAccessApi.createInvitation(input);
     await this.getCloudAccessDirectory();
@@ -1300,7 +1302,9 @@ export class LocalDataService {
 
   async resendCloudAccessInvitation(invitationId: string) {
     if (!this.trustedAccessApi) {
-      throw new Error("Access management requires an internet connection.");
+      throw new Error(
+        "Cloud access invitations are not configured for this installation.",
+      );
     }
     const result = await this.trustedAccessApi.resendInvitation(invitationId);
     await this.getCloudAccessDirectory();
@@ -1309,7 +1313,9 @@ export class LocalDataService {
 
   async revokeCloudAccessInvitation(invitationId: string) {
     if (!this.trustedAccessApi) {
-      throw new Error("Access management requires an internet connection.");
+      throw new Error(
+        "Cloud access invitations are not configured for this installation.",
+      );
     }
     const result = await this.trustedAccessApi.revokeInvitation(invitationId);
     await this.getCloudAccessDirectory();

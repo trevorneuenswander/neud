@@ -7,6 +7,8 @@ import {
   invitationExpiresAt,
 } from "@/lib/access-management/invitation-server";
 import { verifyAuthenticatedAccessRequest } from "@/lib/access-management/verify-access-request";
+import { logHostedRouteSessionDiagnostics } from "@/lib/auth/hosted-route-session";
+import { requestHasSupabaseAuthCookies } from "@/lib/supabase/route-handler";
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -26,6 +28,15 @@ const inviteSchema = z.object({
 export async function POST(request: Request) {
   const verified = await verifyAuthenticatedAccessRequest(request);
   if (!verified.ok) {
+    logHostedRouteSessionDiagnostics({
+      runtime: "hosted-web",
+      authMethod: request.headers.get("authorization") ? "bearer" : "cookie",
+      hasAuthCookies: requestHasSupabaseAuthCookies(request),
+      authenticatedUserResolved: false,
+      userId: null,
+      claimsError: verified.code,
+      stage: "invite.authentication_required",
+    });
     return Response.json({ ok: false, code: verified.code }, { status: verified.status });
   }
 
@@ -49,8 +60,21 @@ export async function POST(request: Request) {
   });
 
   if (error || !data || typeof data !== "object" || !(data as { ok?: boolean }).ok) {
+    const code = (data as { code?: string } | null)?.code ?? "forbidden";
+    logHostedRouteSessionDiagnostics({
+      runtime: "hosted-web",
+      authMethod: request.headers.get("authorization") ? "bearer" : "cookie",
+      hasAuthCookies: requestHasSupabaseAuthCookies(request),
+      authenticatedUserResolved: true,
+      userId: verified.userId,
+      claimsError: error?.message ?? null,
+      stage: "invite.authorization_or_rpc_failed",
+    }, {
+      rpcCode: code,
+      teamId: body.teamId ?? null,
+    });
     return Response.json(
-      { ok: false, code: (data as { code?: string } | null)?.code ?? "forbidden" },
+      { ok: false, code },
       { status: 400 },
     );
   }

@@ -1,9 +1,11 @@
 "use client";
 
 import { SessionRecoveryActions } from "@/components/auth/SessionRecoveryActions";
-import { localRetryIdentitySync } from "@/lib/local/displays-api";
+import { localGetProjectsMeta } from "@/lib/local/displays-api";
+import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { CHECKING_PROJECT_ACCESS_MESSAGE } from "@/lib/projects/project-access-copy";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 type ProjectAccessStatePanelProps = {
   slug: string;
@@ -11,16 +13,64 @@ type ProjectAccessStatePanelProps = {
   message?: string;
 };
 
+const IDENTITY_POLL_INTERVAL_MS = 500;
+const IDENTITY_POLL_TIMEOUT_MS = 30_000;
+
+function isIdentityStillLoading(
+  status: string | undefined,
+): boolean {
+  return status === "loading-session" || status === "loading-profile";
+}
+
 export function ProjectAccessStatePanel({
   slug: _slug,
   state,
   message,
 }: ProjectAccessStatePanelProps) {
+  const router = useRouter();
   const [retryPending, setRetryPending] = useState(false);
+  const refreshRequestedRef = useRef(false);
+
+  useEffect(() => {
+    if (state !== "loading" || !shouldUseLocalDataClient()) {
+      return;
+    }
+
+    let cancelled = false;
+    const startedAt = Date.now();
+
+    const pollIdentity = async () => {
+      while (!cancelled && !refreshRequestedRef.current) {
+        if (Date.now() - startedAt > IDENTITY_POLL_TIMEOUT_MS) {
+          return;
+        }
+
+        try {
+          const meta = await localGetProjectsMeta({ wait: false });
+          if (!isIdentityStillLoading(meta.identityStatus)) {
+            refreshRequestedRef.current = true;
+            router.refresh();
+            return;
+          }
+        } catch {
+          return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, IDENTITY_POLL_INTERVAL_MS));
+      }
+    };
+
+    void pollIdentity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router, state]);
 
   async function handleRetry() {
     setRetryPending(true);
     try {
+      const { localRetryIdentitySync } = await import("@/lib/local/displays-api");
       await localRetryIdentitySync();
       window.location.reload();
     } finally {

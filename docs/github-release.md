@@ -70,22 +70,22 @@ NEXT_PUBLIC_NEUD_WINDOWS_DOWNLOAD_URL=https://github.com/trevorneuenswander/neud
 
 12. On an installed copy: **Settings → About NEUD → Check for Updates** should report **Up to date** when running 0.1.1 against the published release.
 
-## Future update v0.1.3 (auto-update validation)
+## Future update v0.1.4 (auto-update validation)
 
-1. Bump root and `desktop/package.json` to `0.1.3` (no automatic version scripts).
+1. Bump root and `desktop/package.json` to `0.1.4` (no automatic version scripts).
 2. Run `npm run test:neud-release-version`.
-3. Commit, push, and run **Release Windows** workflow with `version: 0.1.3`.
+3. Commit, push, and run **Release Windows** workflow with `version: 0.1.4`.
 4. Review draft release assets:
-   - `NEUD-Setup-0.1.3-x64.exe`
-   - `latest.yml` says `0.1.3` and `path: NEUD-Setup-0.1.3-x64.exe`
+   - `NEUD-Setup-0.1.4-x64.exe`
+   - `latest.yml` says `0.1.4` and `path: NEUD-Setup-0.1.4-x64.exe`
    - blockmap present
    - `NEUD-Setup-latest-x64.exe` updated
 5. Publish the GitHub Release.
-6. On a machine with **published 0.1.2** installed:
-   - **Check for Updates** detects 0.1.3 (draft releases are invisible to the updater)
+6. On a machine with **published 0.1.3** installed:
+   - Startup update check detects 0.1.4 automatically
    - **Later** keeps the user signed in
-   - **Restart and Install** upgrades to 0.1.3 and requires sign-in again
-   - **About NEUD** shows Alpha 0.1.3
+   - **Download Update** → **Restart and Install** upgrades to 0.1.4 and requires sign-in again
+   - **About NEUD** shows Alpha 0.1.4
 7. Verify Vercel download serves the new stable alias (same URL, new binary).
 
 ## Future update v0.1.2

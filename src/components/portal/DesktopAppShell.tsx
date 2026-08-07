@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { AppTitleBar } from "@/components/portal/AppTitleBar";
 import { EmergencySessionRecovery } from "@/components/auth/EmergencySessionRecovery";
 import { NeudAppDialogHost } from "@/components/portal/NeudAppDialogHost";
+import { UpdateAvailableModalHost } from "@/components/settings/UpdateAvailableModal";
 import { isDesktopEnvironment } from "@/lib/desktop/client";
 import { resolveDisplayViewMode } from "@/lib/displays/display-view-mode";
 import { isHostedFullscreenViewerPath } from "@/lib/routing/hosted-routes";
@@ -71,6 +72,7 @@ export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellPro
         {children}
       </div>
       <NeudAppDialogHost />
+      <UpdateAvailableModalHost />
       <div
         id="neud-overlay-root"
         className="overlay-root data-[desktop-shell=false]:top-0"

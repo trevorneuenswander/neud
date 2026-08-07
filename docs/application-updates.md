@@ -7,7 +7,8 @@ Packaged NEUD Windows builds use **electron-updater** with **GitHub Releases** a
 | Rule | Detail |
 |------|--------|
 | Enabled only when | `app.isPackaged === true` and `NEUD_DESKTOP_DEV !== "1"` |
-| Startup check | 15 seconds after main window is ready; non-blocking |
+| Startup check | 3 seconds after main window is ready; one-shot; non-blocking; silent when up to date |
+| Auto download | Never — user must choose **Download Update** |
 | Auto restart | Never — user must choose **Restart and Install** |
 | Auto install on quit | Disabled (`autoInstallOnAppQuit = false`) |
 | Duplicate checks | Prevented while a check is in flight |
@@ -26,6 +27,8 @@ Renderer access is limited to typed preload APIs:
 
 - `neud:updates:getStatus`
 - `neud:updates:check`
+- `neud:updates:download`
+- `neud:updates:dismiss`
 - `neud:updates:install`
 - `neud:updates:status` (broadcast)
 
@@ -35,11 +38,11 @@ The renderer cannot supply update URLs or arbitrary updater commands.
 
 `idle` → `checking` → `available` / `not-available` / `error`
 
-When an update is available: `downloading` → `downloaded` (shows **Restart and Install**)
+When an update is available: user chooses **Download Update** → `downloading` → `downloaded` (shows **Restart and Install**). Startup and manual checks share the update-available modal.
 
-## Publishing version 0.1.3 (example)
+## Publishing version 0.1.4 (example)
 
-1. Update root and `@neud/desktop` `package.json` to `0.1.3`.
+1. Update root and `@neud/desktop` `package.json` to `0.1.4`.
 2. Run the release gate:
 
 ```bash
@@ -47,13 +50,13 @@ npm run release:win
 ```
 
 3. Upload artifacts from `desktop/release/` to a GitHub Release:
-   - `NEUD-Setup-0.1.3-x64.exe`
+   - `NEUD-Setup-0.1.4-x64.exe`
    - `NEUD-Setup-latest-x64.exe` (stable portal download alias)
    - `latest.yml`
-   - `NEUD-Setup-0.1.3-x64.exe.blockmap`
+   - `NEUD-Setup-0.1.4-x64.exe.blockmap`
 
 4. Publish the draft release when ready (installed clients ignore drafts).
-5. On a machine with 0.1.2 installed, use **Check for Updates** and validate download, **Later**, and **Restart and Install**.
+5. On a machine with 0.1.3 installed, confirm startup update prompt and manual **Check for Updates** both surface v0.1.4.
 
 ## Provider configuration
 

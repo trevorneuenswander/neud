@@ -1,10 +1,14 @@
 import "server-only";
 
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  logHostedRouteSessionDiagnostics,
+  resolveHostedRouteSession,
+} from "@/lib/auth/hosted-route-session";
+import { requestHasSupabaseAuthCookies } from "@/lib/supabase/route-handler";
 
 export type VerifiedAccessRequest =
-  | { ok: true; userId: string; supabase: Awaited<ReturnType<typeof createClient>> }
+  | { ok: true; userId: string; supabase: SupabaseClient }
   | { ok: false; status: number; code: string };
 
 export async function verifyAuthenticatedAccessRequest(
@@ -15,43 +19,26 @@ export async function verifyAuthenticatedAccessRequest(
     ? authHeader.slice("Bearer ".length).trim()
     : null;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const session = await resolveHostedRouteSession(request, { bearerToken });
+  const hasAuthCookies = requestHasSupabaseAuthCookies(request);
 
-  if (bearerToken && supabaseUrl && publishableKey) {
-    const tokenClient = createSupabaseClient(supabaseUrl, publishableKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
-    const { data, error } = await tokenClient.auth.getUser(bearerToken);
-    if (error || !data.user) {
-      return { ok: false, status: 401, code: "authentication_required" };
-    }
+  logHostedRouteSessionDiagnostics({
+    runtime: "hosted-web",
+    authMethod: session.ok ? session.authMethod : session.authMethod,
+    hasAuthCookies,
+    authenticatedUserResolved: session.ok,
+    userId: session.ok ? session.userId : null,
+    claimsError: session.ok ? null : session.claimsError,
+    stage: session.ok ? "session.resolved" : "session.missing",
+  });
 
-    const authedClient = createSupabaseClient(supabaseUrl, publishableKey, {
-      global: { headers: { Authorization: `Bearer ${bearerToken}` } },
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
-
-    return { ok: true, userId: data.user.id, supabase: authedClient as never };
+  if (!session.ok) {
+    return { ok: false, status: 401, code: session.code };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return { ok: false, status: 401, code: "authentication_required" };
-  }
-
-  return { ok: true, userId: user.id, supabase };
+  return {
+    ok: true,
+    userId: session.userId,
+    supabase: session.supabase,
+  };
 }

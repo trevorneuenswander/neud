@@ -145,6 +145,10 @@ export type NeudUpdateStatus = {
   packaged: boolean;
   currentVersion: string;
   availableVersion: string | null;
+  releaseName: string | null;
+  releaseNotes: string | null;
+  releaseDate: string | null;
+  downloadSizeLabel: string | null;
   downloadPercent: number | null;
   transferredBytes: number | null;
   totalBytes: number | null;
@@ -152,6 +156,9 @@ export type NeudUpdateStatus = {
   lastCheckedAt: string | null;
   lastError: string | null;
   canInstall: boolean;
+  canDownload: boolean;
+  promptVisible: boolean;
+  lastCheckReason: "startup" | "manual" | "menu" | null;
   message: string | null;
 };
 
@@ -374,6 +381,8 @@ export type NeudDesktopAPI = {
   updates: {
     getStatus(): Promise<NeudUpdateStatus>;
     check(reason?: "manual" | "menu" | "startup"): Promise<NeudUpdateStatus>;
+    download(): Promise<{ ok: true } | { ok: false; error: string }>;
+    dismiss(): Promise<NeudUpdateStatus>;
     install(): Promise<{ ok: true } | { ok: false; error: string }>;
     onStatus(callback: (status: NeudUpdateStatus) => void): () => void;
   };

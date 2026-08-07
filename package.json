@@ -1,6 +1,6 @@
 {
   "name": "neud",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "NEUD — The Ultimate Data Stripper",
   "workspaces": [
@@ -182,6 +182,9 @@
     "test:activity-sync-packaged-config": "node --test desktop/scripts/test-activity-sync-packaged-config.mjs",
     "release:win": "npm run package:win && npm run verify:win-package && npm run verify:bundled-browser && npm run verify:packaged-runtime-assets && npm run test:runtime-assets && npm run test:bundled-display-sources && npm run test:sidebar-download-visibility && npm run test:neud-github-release && npm run test:neud-auto-update && npm run test:neud-update-session-logout && npm run test:neud-code-signing && npm run test:neud-packaged-startup && npm run test:packaged-auth-startup && npm run test:account-status-colors && npm run test:broad-arrow-display-imports && npm run test:packaged-scraper-controls && npm run test:packaged-worker-smoke && npm run test:packaged-worker-deps && npm run test:worker-package-integrity && npm run test:installed-worker-smoke && npm run test:installed-browser-diagnostic && npm run test:packaged-scraper-real-spawn && npm run test:packaged-scraper-end-to-end && npm run test:responsive-top-navigation && npm run test:responsive-project-nav-collision && npm run test:display-version-labels && npm run test:users-access-management && npm run test:cloud-project-identity-mapping && npm run test:activity-sync && npm run test:activity-sync-rpc-contract && npm run test:activity-sync-live-contract && npm run test:activity-sync-project-mapping && npm run test:activity-sync-packaged-config && npm run test:supabase-migration-contract",
     "test:neud-auto-update": "node --test desktop/scripts/test-neud-auto-update.mjs",
+    "test:neud-web-sign-out": "node --test desktop/scripts/test-neud-web-sign-out.mjs",
+    "test:neud-web-invite-access": "node --test desktop/scripts/test-neud-web-invite-access.mjs",
+    "test:neud-project-access-auto-refresh": "node --test desktop/scripts/test-neud-project-access-auto-refresh.mjs",
     "test:neud-update-session-logout": "node --test desktop/scripts/test-neud-update-session-logout.mjs",
     "test:neud-code-signing": "node --test desktop/scripts/test-neud-code-signing.mjs",
     "test:neud-github-release": "node --test desktop/scripts/test-neud-github-release.mjs",

@@ -458,6 +458,11 @@ const neudDesktop = {
     getStatus: () => ipcRenderer.invoke("neud:updates:getStatus"),
     check: (reason?: "manual" | "menu" | "startup") =>
       ipcRenderer.invoke("neud:updates:check", reason ?? "manual"),
+    download: () =>
+      ipcRenderer.invoke("neud:updates:download") as Promise<
+        { ok: true } | { ok: false; error: string }
+      >,
+    dismiss: () => ipcRenderer.invoke("neud:updates:dismiss"),
     install: () => ipcRenderer.invoke("neud:updates:install") as Promise<
       { ok: true } | { ok: false; error: string }
     >,

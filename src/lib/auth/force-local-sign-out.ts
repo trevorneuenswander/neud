@@ -12,54 +12,56 @@ function logLogoutStep(message: string) {
 }
 
 async function resetNextSessionCache(): Promise<void> {
-  try {
-    await fetch("/api/local/reset-session-cache", {
-      method: "POST",
-      cache: "no-store",
-    });
-    logLogoutStep("Next.js session cache reset");
-  } catch (error) {
-    console.warn("[logout] Next.js session cache reset failed", error);
-  }
+  await fetch("/api/local/reset-session-cache", {
+    method: "POST",
+    cache: "no-store",
+  });
+  logLogoutStep("Next.js session cache reset");
 }
 
-function redirectToLoginHard() {
-  logLogoutStep("Redirecting to login");
+function redirectToPublicLanding() {
+  logLogoutStep("Redirecting to public landing page");
   window.location.replace("/");
 }
 
-function fireAndForgetRemoteSignOut() {
+async function clearRemoteSupabaseSession(): Promise<void> {
   logLogoutStep("Supabase signOut started");
   const supabase = createClient();
-  void withTimeout(
-    supabase.auth.signOut(),
-    REMOTE_SIGN_OUT_TIMEOUT_MS,
-    "Remote sign-out timed out",
-  )
-    .then(() => {
-      logLogoutStep("Supabase signOut completed");
-    })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : "Remote sign-out failed";
-      if (message.includes("timed out")) {
-        logLogoutStep("Supabase signOut timed out");
-      } else {
-        logLogoutStep("Supabase signOut failed");
-      }
-      console.warn("[logout] Remote Supabase sign-out failed", { message });
-    });
+  try {
+    await withTimeout(
+      supabase.auth.signOut(),
+      REMOTE_SIGN_OUT_TIMEOUT_MS,
+      "Remote sign-out timed out",
+    );
+    logLogoutStep("Supabase signOut completed");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Remote sign-out failed";
+    if (message.includes("timed out")) {
+      logLogoutStep("Supabase signOut timed out");
+    } else {
+      logLogoutStep("Supabase signOut failed");
+    }
+    console.warn("[logout] Remote Supabase sign-out failed", { message });
+  }
 }
 
 export async function forceLocalSignOut(reason = "sign-out"): Promise<void> {
   logLogoutStep("Sign Out clicked");
   logLogoutStep(`Logout handler entered (${reason})`);
 
-  void resetNextSessionCache();
-  fireAndForgetRemoteSignOut();
-
   const api = getDesktopAPI();
-  if (isDesktopEnvironment() && api?.auth?.forceSignOut) {
+  const desktopForceSignOut =
+    isDesktopEnvironment() && typeof api?.auth?.forceSignOut === "function";
+
+  if (desktopForceSignOut) {
     try {
+      await clearRemoteSupabaseSession();
+      try {
+        await resetNextSessionCache();
+      } catch (error) {
+        console.warn("[logout] Next.js session cache reset failed", error);
+      }
+
       logLogoutStep("Invoking main process forceSignOut");
       await withTimeout(
         api.auth.forceSignOut(),
@@ -73,6 +75,14 @@ export async function forceLocalSignOut(reason = "sign-out"): Promise<void> {
     }
   }
 
+  await clearRemoteSupabaseSession();
+
+  try {
+    await resetNextSessionCache();
+  } catch (error) {
+    console.warn("[logout] Next.js session cache reset failed", error);
+  }
+
   try {
     if (api?.auth?.clear) {
       await withTimeout(api.auth.clear(), IPC_FORCE_SIGN_OUT_TIMEOUT_MS, "Auth clear timed out");
@@ -83,7 +93,7 @@ export async function forceLocalSignOut(reason = "sign-out"): Promise<void> {
   }
 
   logLogoutStep("Identity reset requested via auth cache clear");
-  redirectToLoginHard();
+  redirectToPublicLanding();
 }
 
 export async function clearLocalSessionOnly(reason = "clear-local-session"): Promise<void> {
