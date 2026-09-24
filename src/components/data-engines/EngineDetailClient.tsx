@@ -15,6 +15,7 @@ import { ControlDiagnostics } from "@/components/data-engines/webpage-scraper/Co
 import { DesktopExecutionPanel } from "@/components/data-engines/webpage-scraper/DesktopEnginePanel";
 import { EngineControls } from "@/components/data-engines/webpage-scraper/EngineControls";
 import { EngineSettingsForm } from "@/components/data-engines/webpage-scraper/EngineSettingsForm";
+import { BagLiveFeedPanel } from "@/components/data-engines/webpage-scraper/BagLiveFeedPanel";
 import { JsonViewer } from "@/components/data-engines/webpage-scraper/JsonViewer";
 import { RuntimeDiagnostics } from "@/components/data-engines/webpage-scraper/RuntimeDiagnostics";
 import { Alert } from "@/components/ui/Alert";
@@ -120,9 +121,27 @@ export function EngineDetailClient({
     useEngineExecutionLogSession(engine.id);
   const [realtimeCommand, setRealtimeCommand] = useState<DataEngineCommand | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(true);
+  const [liveFeedRuntime, setLiveFeedRuntime] = useState<Record<string, unknown> | null>(
+    null,
+  );
+  const [configuredLiveFeedMode, setConfiguredLiveFeedMode] = useState<
+    "faye" | "dom" | "legacy"
+  >((initialSettings?.live_feed_mode as "faye" | "dom" | "legacy") ?? "faye");
 
   useEffect(() => {
     setScraperSettings(initialSettings);
+    if (initialSettings?.live_feed_mode) {
+      const raw = String(initialSettings.live_feed_mode).toLowerCase();
+      setConfiguredLiveFeedMode(
+        raw === "automatic" || raw === "faye"
+          ? "faye"
+          : raw === "dom"
+            ? "dom"
+            : raw === "legacy"
+              ? "legacy"
+              : "faye",
+      );
+    }
   }, [initialSettings]);
 
   const handlePollIntervalChange = useCallback((pollIntervalMs: number) => {
@@ -142,6 +161,13 @@ export function EngineDetailClient({
         (bundle.latestSnapshot as DataEngineSnapshot | null | undefined) ?? null,
       );
       setLogs((bundle.logs as DataEngineLog[] | undefined) ?? []);
+      setLiveFeedRuntime(
+        (bundle.liveFeedRuntime as Record<string, unknown> | null | undefined) ?? null,
+      );
+      const nextSettings = bundle.settings as WebpageScraperSettings | null | undefined;
+      if (nextSettings?.live_feed_mode) {
+        setConfiguredLiveFeedMode(nextSettings.live_feed_mode);
+      }
       const nextEngine = bundle.engine as DataEngine | undefined;
       if (nextEngine?.desired_state) {
         setDesiredState(nextEngine.desired_state);
@@ -169,6 +195,9 @@ export function EngineDetailClient({
             (bundle.latestSnapshot as DataEngineSnapshot | null | undefined) ?? null,
           );
           setLogs((bundle.logs as DataEngineLog[] | undefined) ?? []);
+          setLiveFeedRuntime(
+            (bundle.liveFeedRuntime as Record<string, unknown> | null | undefined) ?? null,
+          );
           const nextEngine = bundle.engine as DataEngine | undefined;
           if (nextEngine?.desired_state) {
             setDesiredState(nextEngine.desired_state);
@@ -378,15 +407,29 @@ export function EngineDetailClient({
                   realtimeDisconnected={!realtimeConnected}
                 />
 
+                {projectType === "bag-graphics" && settings ? (
+                  <BagLiveFeedPanel
+                    projectSlug={projectSlug}
+                    projectId={projectId}
+                    engineId={engine.id}
+                    scraperSettings={settings}
+                    liveFeed={liveFeedRuntime as Parameters<typeof BagLiveFeedPanel>[0]["liveFeed"]}
+                    configuredMode={configuredLiveFeedMode}
+                    pollIntervalMs={pollIntervalMs}
+                    onModeChanged={setConfiguredLiveFeedMode}
+                    onPollIntervalChange={handlePollIntervalChange}
+                    onSettingsPersisted={refreshDetail}
+                  />
+                ) : null}
+
                 {settings ? (
                   <EngineSettingsForm
                     projectSlug={projectSlug}
+                    projectId={projectId}
                     engineId={engine.id}
                     settings={settings}
                     canConfigure={canConfigure}
                     embedded
-                    onPollIntervalChange={handlePollIntervalChange}
-                    onSettingsPersisted={refreshDetail}
                   />
                 ) : (
                   <p className="text-sm text-muted">Polling settings are unavailable.</p>
@@ -407,6 +450,10 @@ export function EngineDetailClient({
                   health={health}
                   embedded
                   engineId={engine.id}
+                  snapshotData={
+                    (snapshot?.data as Record<string, unknown> | undefined) ?? null
+                  }
+                  liveFeedRuntime={liveFeedRuntime}
                 />
               </div>
             </Card>
@@ -523,12 +570,11 @@ export function EngineDetailClient({
             <div className="mt-4">
               <EngineSettingsForm
                 projectSlug={projectSlug}
+                projectId={projectId}
                 engineId={engine.id}
                 settings={settings}
                 canConfigure={canConfigure}
                 embedded
-                onPollIntervalChange={handlePollIntervalChange}
-                onSettingsPersisted={refreshDetail}
               />
             </div>
           </Card>

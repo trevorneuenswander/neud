@@ -3,7 +3,46 @@
 
   const CHANNEL_NAME = "neud-display-connection";
   const STATUS_HEARTBEAT_MS = 30000;
+  const RECOVERY_POLL_MS = 60000;
   const CONNECTION_EVENT_TYPE = "neud-display-connection-changed";
+  const DISPLAY_DATA_CHANGED = "neud-display-data-changed";
+  const DISPLAY_BRIDGE_SYNC = "neud-display-bridge.sync";
+
+  function deriveDisplayBridgeEventsUrl(options) {
+    if (options && options.displayBridgeEventsUrl) {
+      return options.displayBridgeEventsUrl;
+    }
+    var projectId = options && options.projectId;
+    var localApiBase =
+      (options && options.localApiBase) || "http://127.0.0.1:8070";
+    if (!projectId) {
+      try {
+        var config = global.__NEUD_DISPLAY_CONFIG__ || {};
+        if (typeof config.displayBridgeEventsUrl === "string") {
+          return config.displayBridgeEventsUrl;
+        }
+        var info =
+          config.displayInfo && typeof config.displayInfo === "object"
+            ? config.displayInfo
+            : {};
+        projectId = info.projectId;
+        if (config.localApiBase) {
+          localApiBase = config.localApiBase;
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    if (projectId && typeof projectId === "string") {
+      return (
+        String(localApiBase).replace(/\/$/, "") +
+        "/api/projects/" +
+        encodeURIComponent(projectId) +
+        "/display-bridge/events"
+      );
+    }
+    return null;
+  }
 
   function deriveEnabledEndpoint(dataUrl) {
     if (!dataUrl) return null;
@@ -74,6 +113,23 @@
     let disconnectNotified = false;
     let reconnectBlocked = false;
     let lastPayload = null;
+    let pendingDataRefresh = false;
+    let recoveryTimer = null;
+    let displayBridgeEventSource = null;
+    let lastAppliedRevision = null;
+    let lastAppliedContentHash = null;
+    const diagnostics = {
+      displayUpdateMode: "event-driven",
+      initialFetchCount: 0,
+      changeEventsReceived: 0,
+      dataFetchesTriggeredByEvent: 0,
+      coalescedEvents: 0,
+      pollTimerActive: false,
+      recoveryTimerActive: false,
+      lastChangeEventAt: null,
+      lastAppliedAt: null,
+      displayBridgeEventsConnected: false,
+    };
 
     const clientHeaders = {
       "X-NEUD-Display-Client": "display-runtime",
@@ -96,13 +152,41 @@
     function stopPolling() {
       isPolling = false;
       dataInFlight = false;
+      pendingDataRefresh = false;
 
       if (pollTimer !== null) {
         global.clearInterval(pollTimer);
         pollTimer = null;
       }
+      if (recoveryTimer !== null) {
+        global.clearInterval(recoveryTimer);
+        recoveryTimer = null;
+      }
+      diagnostics.pollTimerActive = false;
+      diagnostics.recoveryTimerActive = false;
 
       abortDataRequest();
+    }
+
+    function scheduleDataRefresh(fromEvent) {
+      if (!dataUrl) {
+        return;
+      }
+      if (!isPolling) {
+        isPolling = true;
+        dataConnected = true;
+      }
+      if (fromEvent) {
+        diagnostics.changeEventsReceived += 1;
+        diagnostics.dataFetchesTriggeredByEvent += 1;
+        diagnostics.lastChangeEventAt = new Date().toISOString();
+      }
+      if (dataInFlight) {
+        pendingDataRefresh = true;
+        diagnostics.coalescedEvents += 1;
+        return;
+      }
+      void pollOnce();
     }
 
     function stopStatusHeartbeat() {
@@ -114,9 +198,110 @@
       abortStatusRequest();
     }
 
+    function stopDisplayBridgeEvents() {
+      if (displayBridgeEventSource) {
+        displayBridgeEventSource.close();
+        displayBridgeEventSource = null;
+      }
+      diagnostics.displayBridgeEventsConnected = false;
+    }
+
+    function shouldSkipBridgeNotification(payload) {
+      if (!payload || payload.revision == null) {
+        return false;
+      }
+      if (lastAppliedRevision == null) {
+        return false;
+      }
+      if (payload.revision > lastAppliedRevision) {
+        return false;
+      }
+      if (payload.revision < lastAppliedRevision) {
+        return true;
+      }
+      if (
+        payload.contentHash &&
+        lastAppliedContentHash &&
+        payload.contentHash !== lastAppliedContentHash
+      ) {
+        return false;
+      }
+      return payload.revision === lastAppliedRevision;
+    }
+
+    function bridgeNotificationProjectMatches(payload) {
+      if (!payload || !payload.projectId) {
+        return true;
+      }
+      var expectedProjectId = options.projectId;
+      if (!expectedProjectId) {
+        try {
+          var config = global.__NEUD_DISPLAY_CONFIG__ || {};
+          var info =
+            config.displayInfo && typeof config.displayInfo === "object"
+              ? config.displayInfo
+              : {};
+          expectedProjectId = info.projectId;
+        } catch (_) {
+          expectedProjectId = null;
+        }
+      }
+      if (expectedProjectId && payload.projectId !== expectedProjectId) {
+        return false;
+      }
+      return true;
+    }
+
+    function handleBridgeNotification(payload) {
+      if (!bridgeNotificationProjectMatches(payload)) {
+        return;
+      }
+      if (shouldSkipBridgeNotification(payload)) {
+        diagnostics.coalescedEvents += 1;
+        return;
+      }
+      scheduleDataRefresh(
+        payload && payload.type === DISPLAY_DATA_CHANGED,
+      );
+    }
+
+    function startDisplayBridgeEvents() {
+      var eventsUrl = deriveDisplayBridgeEventsUrl(options);
+      if (!eventsUrl || typeof EventSource === "undefined") {
+        return;
+      }
+      stopDisplayBridgeEvents();
+      try {
+        displayBridgeEventSource = new EventSource(eventsUrl);
+        displayBridgeEventSource.addEventListener(DISPLAY_DATA_CHANGED, function (event) {
+          try {
+            handleBridgeNotification(JSON.parse(event.data));
+          } catch (_) {
+            scheduleDataRefresh(true);
+          }
+        });
+        displayBridgeEventSource.addEventListener(DISPLAY_BRIDGE_SYNC, function (event) {
+          try {
+            handleBridgeNotification(JSON.parse(event.data));
+          } catch (_) {
+            scheduleDataRefresh(false);
+          }
+        });
+        displayBridgeEventSource.onopen = function () {
+          diagnostics.displayBridgeEventsConnected = true;
+        };
+        displayBridgeEventSource.onerror = function () {
+          diagnostics.displayBridgeEventsConnected = false;
+        };
+      } catch (_) {
+        stopDisplayBridgeEvents();
+      }
+    }
+
     function stopAll() {
       stopPolling();
       stopStatusHeartbeat();
+      stopDisplayBridgeEvents();
     }
 
     function setDisconnectedState() {
@@ -164,6 +349,18 @@
 
       if (payload.type === "neud-display-reload-request") {
         global.location.reload();
+        return;
+      }
+
+      if (payload.type === "neud-display-data-changed") {
+        if (
+          payload.displayId &&
+          displayId &&
+          payload.displayId !== displayId
+        ) {
+          return;
+        }
+        scheduleDataRefresh(true);
         return;
       }
 
@@ -232,7 +429,21 @@
           return;
         }
 
+        if (
+          json.revision != null &&
+          lastAppliedRevision != null &&
+          json.revision < lastAppliedRevision
+        ) {
+          return;
+        }
         lastPayload = normalizeDisplayPayload(json);
+        if (json.revision != null) {
+          lastAppliedRevision = json.revision;
+        }
+        if (json.contentHash && typeof json.contentHash === "string") {
+          lastAppliedContentHash = json.contentHash;
+        }
+        diagnostics.lastAppliedAt = new Date().toISOString();
         if (typeof onPayload === "function") {
           onPayload(lastPayload, json.revision ?? 0);
         }
@@ -250,6 +461,10 @@
         dataInFlight = false;
         if (dataRequest === controller) {
           dataRequest = null;
+        }
+        if (pendingDataRefresh) {
+          pendingDataRefresh = false;
+          void pollOnce();
         }
       }
     }
@@ -289,11 +504,17 @@
       isPolling = true;
       dataConnected = true;
       disconnectNotified = false;
-
+      diagnostics.initialFetchCount += 1;
       void pollOnce();
-      pollTimer = global.setInterval(function () {
-        void pollOnce();
-      }, intervalMs);
+      if (recoveryTimer === null) {
+        recoveryTimer = global.setInterval(function () {
+          if (isPolling && dataConnected && !dataInFlight) {
+            void pollOnce();
+          }
+        }, RECOVERY_POLL_MS);
+        diagnostics.recoveryTimerActive = true;
+      }
+      diagnostics.pollTimerActive = false;
     }
 
     function startStatusHeartbeat() {
@@ -306,6 +527,7 @@
 
     function start() {
       startPolling(pollMs);
+      startDisplayBridgeEvents();
     }
 
     function stop() {
@@ -323,7 +545,8 @@
       if (!payload || typeof payload !== "object") return;
       if (
         payload.type !== CONNECTION_EVENT_TYPE &&
-        payload.type !== "neud-display-reload-request"
+        payload.type !== "neud-display-reload-request" &&
+        payload.type !== "neud-display-data-changed"
       ) {
         return;
       }
@@ -372,6 +595,9 @@
       },
       isPolling: function () {
         return isPolling;
+      },
+      getDiagnostics: function () {
+        return Object.assign({}, diagnostics);
       },
     };
 

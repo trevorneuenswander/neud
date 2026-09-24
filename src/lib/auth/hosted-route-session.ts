@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { categorizeGetUserError } from "@/lib/access-management/access-invitation-probe";
 import { createClient } from "@/lib/supabase/server";
 import {
   createClientFromRequest,
@@ -117,4 +118,47 @@ export async function resolveHostedRouteSession(
     supabase,
     authMethod: "cookie",
   };
+}
+
+export type HostedRouteBearerProbeDiagnostics = {
+  hostedRouteAuthorizationHeaderPresent: boolean;
+  hostedRouteBearerParsed: boolean;
+  hostedRouteGetUserAttempted: boolean;
+  hostedRouteGetUserSucceeded: boolean;
+  getUserErrorCode: string | null;
+  getUserSafeCategory: string | null;
+};
+
+export async function resolveHostedRouteSessionForProbe(
+  request: Request,
+): Promise<HostedRouteSessionResult & { bearerProbe: HostedRouteBearerProbeDiagnostics }> {
+  const authHeader = request.headers.get("authorization");
+  const hostedRouteAuthorizationHeaderPresent = Boolean(authHeader?.trim());
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : null;
+  const hostedRouteBearerParsed = Boolean(bearerToken);
+  const bearerProbe: HostedRouteBearerProbeDiagnostics = {
+    hostedRouteAuthorizationHeaderPresent,
+    hostedRouteBearerParsed,
+    hostedRouteGetUserAttempted: false,
+    hostedRouteGetUserSucceeded: false,
+    getUserErrorCode: null,
+    getUserSafeCategory: null,
+  };
+
+  if (bearerToken) {
+    bearerProbe.hostedRouteGetUserAttempted = true;
+    const session = await resolveHostedRouteSession(request, { bearerToken });
+    if (!session.ok) {
+      bearerProbe.getUserErrorCode = session.claimsError ?? "authentication_required";
+      bearerProbe.getUserSafeCategory = categorizeGetUserError(session.claimsError);
+      return { ...session, bearerProbe };
+    }
+    bearerProbe.hostedRouteGetUserSucceeded = true;
+    return { ...session, bearerProbe };
+  }
+
+  const session = await resolveHostedRouteSession(request);
+  return { ...session, bearerProbe };
 }

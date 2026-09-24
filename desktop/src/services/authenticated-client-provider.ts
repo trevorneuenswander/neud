@@ -42,10 +42,45 @@ export type AuthenticatedClientProvider = {
   ): Promise<AuthenticatedClientAcquisitionResult>;
 };
 
+const cloudAccessMetrics = {
+  clientRequestCount: 0,
+  sessionRefreshAttempts: 0,
+  clientCacheHits: 0,
+};
+
+export function getCloudAccessStartupMetrics(): typeof cloudAccessMetrics {
+  return { ...cloudAccessMetrics };
+}
+
+export function resetCloudAccessStartupMetrics(): void {
+  cloudAccessMetrics.clientRequestCount = 0;
+  cloudAccessMetrics.sessionRefreshAttempts = 0;
+  cloudAccessMetrics.clientCacheHits = 0;
+}
+
+export function recordCloudAccessSessionRefreshAttempt(): void {
+  cloudAccessMetrics.sessionRefreshAttempts += 1;
+}
+
+export function isCloudAccessDebugEnabled(): boolean {
+  return process.env.NEUD_DEBUG_CLOUD_ACCESS === "1";
+}
+
 export function logCloudAccessLifecycle(
   event: string,
   payload: Record<string, string | boolean | number | null>,
 ): void {
+  if (event === "client_request") {
+    cloudAccessMetrics.clientRequestCount += 1;
+  }
+  if (event === "client_available" && payload.sessionRefreshResult === "cache_hit") {
+    cloudAccessMetrics.clientCacheHits += 1;
+  }
+
+  if (!isCloudAccessDebugEnabled()) {
+    return;
+  }
+
   console.info(`[CloudAccess] ${event}`, {
     at: new Date().toISOString(),
     ...payload,

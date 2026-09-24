@@ -9,6 +9,11 @@ import {
   type BroadArrowStreamDisplaySpec,
 } from "../displays/broad-arrow-stream-display-specs";
 import {
+  hashBundledDisplayContentIdentity,
+  hashRuntimeDisplayBundle,
+  type DisplayRevisionImportDiagnostics,
+} from "../displays/display-source-content-hash";
+import {
   transformStreamBidHtmlForServing,
   transformStreamTickerHtmlForServing,
 } from "../displays/stream-display-v2-transform";
@@ -19,7 +24,7 @@ import type { ProjectCodeRevisionsRepository } from "../repositories/project-cod
 import type { ProjectDisplayCodeRepository } from "../repositories/project-display-code-repository";
 import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { ProjectCodeStorageService } from "./project-code-storage-service";
-import { createRevisionId, hashSource } from "../repositories/project-scraper-code-repository";
+import { createRevisionId } from "../repositories/project-scraper-code-repository";
 
 export type BroadArrowStreamDisplayImportResult = {
   slug: string;
@@ -28,6 +33,7 @@ export type BroadArrowStreamDisplayImportResult = {
   displayId?: string;
   skipped?: boolean;
   reason?: string;
+  diagnostics?: DisplayRevisionImportDiagnostics;
 };
 
 export type BroadArrowStreamDisplaysImportSummary = {
@@ -78,17 +84,64 @@ export class BroadArrowStreamDisplaysImportService {
     spec: BroadArrowStreamDisplaySpec,
     actorUserId: string,
   ): BroadArrowStreamDisplayImportResult {
-    const runtimeHtml = this.buildRuntimeHtml(spec);
-    const sourceHash = hashSource(`${runtimeHtml}\n\n`);
+    const bundledHtml = readBundledDisplaySourceFromReference(spec.bundledRelativePath);
+    const bundledSourceHash = hashBundledDisplayContentIdentity({
+      importKey: spec.importKey,
+      bundledHtml,
+    });
+    const runtimeHtml = this.buildRuntimeHtml(spec, bundledHtml);
+    const runtimeSourceHash = hashRuntimeDisplayBundle({
+      html: runtimeHtml,
+      css: "",
+      javascript: "",
+    });
     const existingCode = this.displayCode.getBySlug(projectId, spec.slug);
 
     if (existingCode) {
       const published = this.storage.readDisplayPublished(projectId, existingCode.displayId);
       const publishedHash = published
-        ? hashSource(`${published.html}\n${published.css ?? ""}\n${published.javascript ?? ""}`)
+        ? hashRuntimeDisplayBundle({
+            html: published.html,
+            css: published.css ?? "",
+            javascript: published.javascript ?? "",
+          })
         : null;
 
-      if (publishedHash === sourceHash) {
+      const matchingRevision =
+        this.revisions.findByResourceAndSourceHash({
+          projectId,
+          resourceType: "display",
+          resourceId: existingCode.displayId,
+          sourceHash: bundledSourceHash,
+        }) ??
+        this.revisions.findByResourceAndSourceHash({
+          projectId,
+          resourceType: "display",
+          resourceId: existingCode.displayId,
+          sourceHash: runtimeSourceHash,
+        });
+
+      const activeRevision = existingCode.publishedRevisionId
+        ? this.revisions.getById(existingCode.publishedRevisionId)
+        : null;
+      const versionBefore = activeRevision?.versionNumber ?? null;
+
+      const diagnostics: DisplayRevisionImportDiagnostics = {
+        bundledSourceHash,
+        currentRevisionHash: publishedHash,
+        matchingRevisionFound: Boolean(matchingRevision),
+        duplicateRevisionDetected: Boolean(matchingRevision),
+        duplicateRevisionPrevented: Boolean(matchingRevision),
+        newRevisionCreated: false,
+        versionBefore,
+        versionAfter: activeRevision?.versionNumber ?? versionBefore,
+        revisionCreationReason: null,
+      };
+
+      if (
+        matchingRevision &&
+        (publishedHash === runtimeSourceHash || publishedHash === bundledSourceHash)
+      ) {
         this.ensureDisplaySettings(existingCode.displayId, spec);
         return {
           slug: spec.slug,
@@ -97,6 +150,59 @@ export class BroadArrowStreamDisplaysImportService {
           displayId: existingCode.displayId,
           skipped: true,
           reason: "Display already published with current HTML source.",
+          diagnostics,
+        };
+      }
+
+      if (matchingRevision) {
+        const storedRevision = this.storage.readDisplayRevision(
+          projectId,
+          existingCode.displayId,
+          matchingRevision.id,
+        );
+        if (storedRevision) {
+          this.storage.writeDisplayPublished(projectId, existingCode.displayId, storedRevision);
+          this.displayCode.upsert({
+            displayId: existingCode.displayId,
+            projectId,
+            slug: spec.slug,
+            description: spec.description,
+            sourceType: "project-html",
+            draftHtml: storedRevision.html,
+            draftCss: storedRevision.css,
+            draftJavascript: storedRevision.javascript,
+            publishedRevisionId: matchingRevision.id,
+            archived: false,
+            archivedAt: null,
+            archivedByUserId: null,
+            updatedBy: actorUserId,
+          });
+        }
+        this.ensureDisplaySettings(existingCode.displayId, spec);
+        diagnostics.versionAfter = matchingRevision.versionNumber ?? versionBefore;
+        diagnostics.revisionCreationReason = "reused_matching_revision";
+        return {
+          slug: spec.slug,
+          created: false,
+          revisionPublished: false,
+          displayId: existingCode.displayId,
+          skipped: true,
+          reason: "Reused existing display revision with identical content.",
+          diagnostics,
+        };
+      }
+
+      if (publishedHash === runtimeSourceHash) {
+        this.ensureDisplaySettings(existingCode.displayId, spec);
+        diagnostics.revisionCreationReason = "published_runtime_hash_match";
+        return {
+          slug: spec.slug,
+          created: false,
+          revisionPublished: false,
+          displayId: existingCode.displayId,
+          skipped: true,
+          reason: "Display already published with current HTML source.",
+          diagnostics,
         };
       }
 
@@ -114,23 +220,29 @@ export class BroadArrowStreamDisplaysImportService {
           changeNote: "Updated Stream display HTML with NEUD runtime bridge.",
           standaloneDocument: true,
           importKey: spec.importKey,
+          bundledSourceHash,
         },
       };
 
       this.storage.writeDisplayRevision(projectId, existingCode.displayId, revisionId, bundle);
       this.storage.writeDisplayPublished(projectId, existingCode.displayId, bundle);
-      this.revisions.create({
+      const createdRevision = this.revisions.create({
         id: revisionId,
         projectId,
         resourceType: "display",
         resourceId: existingCode.displayId,
         revisionName,
         changeNote: bundle.metadata.changeNote,
-        sourceHash,
+        sourceHash: bundledSourceHash,
         validationStatus: "valid",
         createdBy: actorUserId,
         message: `Published ${spec.name} ${revisionName}`,
-        metadata: { storageRevisionId: revisionId, importKey: spec.importKey },
+        metadata: {
+          storageRevisionId: revisionId,
+          importKey: spec.importKey,
+          bundledSourceHash,
+          runtimeSourceHash,
+        },
       });
       this.displayCode.upsert({
         displayId: existingCode.displayId,
@@ -149,6 +261,10 @@ export class BroadArrowStreamDisplaysImportService {
       });
       this.ensureDisplaySettings(existingCode.displayId, spec);
 
+      diagnostics.newRevisionCreated = true;
+      diagnostics.versionAfter = createdRevision.versionNumber ?? null;
+      diagnostics.revisionCreationReason = "bundled_content_changed";
+
       return {
         slug: spec.slug,
         created: false,
@@ -156,6 +272,7 @@ export class BroadArrowStreamDisplaysImportService {
         displayId: existingCode.displayId,
         skipped: true,
         reason: "Published updated HTML revision.",
+        diagnostics,
       };
     }
 
@@ -188,23 +305,29 @@ export class BroadArrowStreamDisplaysImportService {
         standaloneDocument: true,
         importKey: spec.importKey,
         seeded: true,
+        bundledSourceHash,
       },
     };
 
     this.storage.writeDisplayRevision(projectId, display.id, revisionId, bundle);
     this.storage.writeDisplayPublished(projectId, display.id, bundle);
-    this.revisions.create({
+    const createdRevision = this.revisions.create({
       id: revisionId,
       projectId,
       resourceType: "display",
       resourceId: display.id,
       revisionName,
       changeNote: bundle.metadata.changeNote,
-      sourceHash,
+      sourceHash: bundledSourceHash,
       validationStatus: "valid",
       createdBy: actorUserId,
       message: `Imported ${spec.name} ${revisionName}`,
-      metadata: { storageRevisionId: revisionId, importKey: spec.importKey },
+      metadata: {
+        storageRevisionId: revisionId,
+        importKey: spec.importKey,
+        bundledSourceHash,
+        runtimeSourceHash,
+      },
     });
     this.displayCode.upsert({
       displayId: display.id,
@@ -227,6 +350,17 @@ export class BroadArrowStreamDisplaysImportService {
       created: true,
       revisionPublished: true,
       displayId: display.id,
+      diagnostics: {
+        bundledSourceHash,
+        currentRevisionHash: null,
+        matchingRevisionFound: false,
+        duplicateRevisionDetected: false,
+        duplicateRevisionPrevented: false,
+        newRevisionCreated: true,
+        versionBefore: null,
+        versionAfter: createdRevision.versionNumber ?? 1,
+        revisionCreationReason: "initial_import",
+      },
     };
   }
 
@@ -274,11 +408,14 @@ export class BroadArrowStreamDisplaysImportService {
     });
   }
 
-  private buildRuntimeHtml(spec: BroadArrowStreamDisplaySpec): string {
-    const baseHtml = readBundledDisplaySourceFromReference(spec.bundledRelativePath);
+  private buildRuntimeHtml(
+    spec: BroadArrowStreamDisplaySpec,
+    baseHtml?: string,
+  ): string {
+    const html = baseHtml ?? readBundledDisplaySourceFromReference(spec.bundledRelativePath);
     if (spec.graphicType === "stream-bid") {
-      return transformStreamBidHtmlForServing(baseHtml);
+      return transformStreamBidHtmlForServing(html);
     }
-    return transformStreamTickerHtmlForServing(baseHtml);
+    return transformStreamTickerHtmlForServing(html);
   }
 }

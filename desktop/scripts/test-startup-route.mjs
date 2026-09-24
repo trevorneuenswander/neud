@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  isShellStartupPath,
   migrateStartupPath,
   normalizeStartupPath,
   resolveDesktopStartupPath,
@@ -48,6 +49,29 @@ test("resolveDesktopStartupPath uses verified preferred route on first launch", 
   assert.equal(
     resolveDesktopStartupPath({
       savedPath: null,
+      preferredPath: "/projects/broad-arrow-auctions/data-engines",
+    }),
+    "/projects/broad-arrow-auctions/data-engines",
+  );
+});
+
+test("normalizeStartupPath rejects display output routes without portal shell", () => {
+  assert.equal(
+    isShellStartupPath(
+      "/display/8526be86-4f8a-4522-8506-efa8a25fe903/stream-bid-display",
+    ),
+    false,
+  );
+  assert.equal(
+    normalizeStartupPath(
+      "/display/8526be86-4f8a-4522-8506-efa8a25fe903/stream-bid-display",
+    ),
+    "/",
+  );
+  assert.equal(
+    resolveDesktopStartupPath({
+      savedPath:
+        "/display/8526be86-4f8a-4522-8506-efa8a25fe903/stream-bid-display",
       preferredPath: "/projects/broad-arrow-auctions/data-engines",
     }),
     "/projects/broad-arrow-auctions/data-engines",

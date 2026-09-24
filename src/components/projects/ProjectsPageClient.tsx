@@ -7,8 +7,8 @@ import { ProjectList } from "@/components/projects/ProjectList";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { localGetProjectsMeta, localRetryIdentitySync } from "@/lib/local/displays-api";
 import { localListProjects } from "@/lib/local/api";
-import type { AuthorizationContext } from "@/lib/access/types";
 import type { LocalProjectsListMeta } from "@/lib/displays/types";
+import { resolveProjectsViewerMode } from "@/lib/projects/project-landing-route";
 import type { ProjectListItem } from "@/lib/projects/types";
 
 type ProjectsPageClientProps = {
@@ -80,23 +80,7 @@ export function ProjectsPageClient({
           : "";
         const list = await localListProjects(suffix);
 
-        const context = nextMeta.authorizationContext as AuthorizationContext | undefined;
-        const nextViewerMode = Boolean(
-          context &&
-            !context.isPlatformOwner &&
-            !context.teamMemberships.some(
-              (membership) =>
-                membership.role === "admin" &&
-                membership.isActive &&
-                membership.teamIsActive,
-            ) &&
-            !context.teamMemberships.some(
-              (membership) =>
-                membership.role === "operator" &&
-                membership.isActive &&
-                membership.teamIsActive,
-            ),
-        );
+        const nextViewerMode = resolveProjectsViewerMode(nextMeta);
 
         const nextProjects = list.projects as ProjectListItem[];
         setProjects(nextProjects);

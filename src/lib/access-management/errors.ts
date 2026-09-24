@@ -20,6 +20,7 @@ const ERROR_MESSAGES: Record<AccessManagementErrorCode, string> = {
   owner_role_not_assignable: "Owner is reserved for the sole NEUD owner account.",
   sole_owner_protected: "The sole NEUD owner account cannot be changed or removed.",
   owner_team_protected: "The NEUD team cannot be archived or removed.",
+  neud_team_protected: "The NEUD team cannot be deleted.",
   invalid_team_role: "Team role must be Admin or Member.",
   last_owner: "At least one NEUD owner must remain.",
   invitation_expired: "This invitation has expired.",
@@ -28,6 +29,9 @@ const ERROR_MESSAGES: Record<AccessManagementErrorCode, string> = {
   offline_required: "Access management requires an internet connection.",
   conflict: "This change conflicted with newer access data. Refresh and try again.",
   invalid_request: "The request was invalid. Check the form and try again.",
+  invitation_service_unavailable:
+    "Invitation service is temporarily unavailable.",
+  auth_admin_invite_failed: "Auth invite email could not be sent.",
 };
 
 export function parseAccessManagementError(

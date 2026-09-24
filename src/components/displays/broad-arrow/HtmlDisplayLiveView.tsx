@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { DisplayViewerScaledCanvas } from "@/components/displays/DisplayViewerScaledCanvas";
+import { useDisplayOutputDocumentStyles } from "@/components/displays/useDisplayOutputDocumentStyles";
+import { DISPLAY_GRAPHIC_OUTPUT_BACKGROUND } from "@/lib/displays/display-graphic-output-shell";
 import {
   DEFAULT_DISPLAY_HEIGHT,
   DEFAULT_DISPLAY_WIDTH,
@@ -67,22 +69,22 @@ export function HtmlDisplayLiveView({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
 
-  const resolvedRefreshRateMs = meta?.refreshRateMs ?? refreshRateMs;
   const resolvedRevisionId = meta?.publishedRevisionId ?? publishedRevisionId;
   const resolvedName = meta?.name ?? displayName ?? slug;
   const displayWidth = meta?.displayWidth ?? initialDisplayWidth;
   const displayHeight = meta?.displayHeight ?? initialDisplayHeight;
+
+  useDisplayOutputDocumentStyles(displayWidth, displayHeight);
 
   const iframeUrl = useMemo(
     () =>
       buildHtmlDisplayDocumentPath({
         projectId,
         slug,
-        refreshRateMs: resolvedRefreshRateMs,
         previewMode,
         publishedRevisionId: resolvedRevisionId,
       }),
-    [previewMode, projectId, resolvedRefreshRateMs, resolvedRevisionId, slug],
+    [previewMode, projectId, resolvedRevisionId, slug],
   );
 
   const resolveDisplay = useCallback(async () => {
@@ -142,7 +144,7 @@ export function HtmlDisplayLiveView({
     return (
       <div
         className="flex h-screen w-screen items-center justify-center text-sm text-muted"
-        style={{ backgroundColor: "#ffffff" }}
+        style={{ backgroundColor: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND }}
       >
         Resolving display…
       </div>
@@ -153,7 +155,7 @@ export function HtmlDisplayLiveView({
     return (
       <div
         className="flex h-screen w-screen items-center justify-center p-6 text-sm text-muted"
-        style={{ backgroundColor: "#ffffff" }}
+        style={{ backgroundColor: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND }}
       >
         <div className="max-w-xl space-y-3 rounded-md border border-border bg-background/90 p-4 text-left">
           <p className="font-medium text-foreground">Unable to load display</p>
@@ -185,20 +187,19 @@ export function HtmlDisplayLiveView({
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div
+      className="relative h-screen w-screen overflow-hidden"
+      style={{ background: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND }}
+    >
       {status === "loading" ? (
         <div
           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-sm text-muted"
-          style={{ backgroundColor: "#ffffff" }}
+          style={{ backgroundColor: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND }}
         >
           Loading display…
         </div>
       ) : null}
-      <DisplayViewerScaledCanvas
-        displayWidth={displayWidth}
-        displayHeight={displayHeight}
-        backgroundColor="#ffffff"
-      >
+      <DisplayViewerScaledCanvas displayWidth={displayWidth} displayHeight={displayHeight}>
         <iframe
           key={`${iframeUrl}:${retryToken}`}
           title={resolvedName}

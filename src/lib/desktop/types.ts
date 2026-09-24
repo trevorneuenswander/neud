@@ -377,6 +377,19 @@ export type NeudDesktopAPI = {
       order: Array<{ displayId: string; sortIndex: number; updatedAt: string }>;
       databasePath?: string;
     }>;
+    getPinnedViewer(projectId: string): Promise<import("@/lib/local/pinned-viewer-api").PinnedViewerState>;
+    togglePin(payload: {
+      projectId: string;
+      displayId: string;
+    }): Promise<import("@/lib/local/pinned-viewer-api").PinnedViewerState>;
+    unpinIfPinned(payload: {
+      projectId: string;
+      displayId: string;
+    }): Promise<import("@/lib/local/pinned-viewer-api").PinnedViewerState>;
+    setPinnedViewerHeight(payload: {
+      projectId: string;
+      viewerHeightPx: number;
+    }): Promise<import("@/lib/local/pinned-viewer-api").PinnedViewerState>;
   };
   updates: {
     getStatus(): Promise<NeudUpdateStatus>;

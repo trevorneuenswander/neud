@@ -29,6 +29,8 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   "project.marked-active": "Project marked active",
   "display.url-copied": "Display local URL copied",
   "data-source.changed": "Data source changed",
+  "user.deleted": "User deleted",
+  "team.deleted": "Team deleted",
 };
 
 export function humanizeActivityType(type: string): string {
@@ -86,6 +88,16 @@ export function normalizeActivityEvent(
     projectId = resolvedProject.id;
   }
 
+  const eventType =
+    "type" in event && typeof event.type === "string" ? event.type.trim() : "";
+
+  if (
+    !projectId &&
+    (eventType === "user.deleted" || eventType === "team.deleted")
+  ) {
+    projectId = "access-management";
+  }
+
   if (!projectId) {
     return null;
   }
@@ -129,8 +141,7 @@ export function normalizeActivityEvent(
     readMetadataString(metadata, "action") ||
     "";
 
-  const type =
-    "type" in event && typeof event.type === "string" ? event.type : undefined;
+  const type = eventType || undefined;
 
   const message = getCleanActivityDescription(
     rawMessage.trim() || humanizeActivityType(type ?? ""),
@@ -155,7 +166,7 @@ export function normalizeActivityEvent(
       : null) ??
     metadataName ??
     resolvedProject?.name ??
-    undefined;
+    (projectId === "access-management" ? "Access management" : undefined);
 
   const projectDescription =
     resolvedProject?.description !== undefined

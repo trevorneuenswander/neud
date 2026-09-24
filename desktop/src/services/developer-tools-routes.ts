@@ -9,6 +9,8 @@ type RouteContext = {
   developerTools: DeveloperToolsService;
   sendJson: (response: http.ServerResponse, status: number, payload: unknown) => void;
   readJsonBody: (request: http.IncomingMessage) => Promise<Record<string, unknown>>;
+  resolveProjectId?: (projectSlug: string) => string | null;
+  unpinDisplayIfPinned?: (projectId: string, displayId: string) => void;
 };
 
 export async function handleDeveloperToolsRoute(
@@ -189,13 +191,15 @@ export async function handleDeveloperToolsRoute(
 
       if (action === "enabled" && ctx.request.method === "PATCH") {
         const body = await ctx.readJsonBody(ctx.request);
-        ctx.sendJson(ctx.response, 200, {
-          display: ctx.developerTools.setDisplayEnabled(
-            slug,
-            displayId,
-            body.enabled === true,
-          ),
-        });
+        const enabled = body.enabled === true;
+        const display = ctx.developerTools.setDisplayEnabled(slug, displayId, enabled);
+        if (!enabled && ctx.unpinDisplayIfPinned && ctx.resolveProjectId) {
+          const projectId = ctx.resolveProjectId(slug);
+          if (projectId) {
+            ctx.unpinDisplayIfPinned(projectId, displayId);
+          }
+        }
+        ctx.sendJson(ctx.response, 200, { display });
         return true;
       }
 

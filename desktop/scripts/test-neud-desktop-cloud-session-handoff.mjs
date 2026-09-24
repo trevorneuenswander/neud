@@ -103,7 +103,9 @@ test("desktop cloud session diagnose script reports safe booleans only", () => {
   assert.match(diagnose, /rendererSignInSucceeded/);
   assert.match(diagnose, /accessTokenReceived/);
   assert.match(diagnose, /refreshTokenReceived/);
-  assert.doesNotMatch(diagnose, /access_token/);
+  assert.match(diagnose, /access_token_expired/);
+  assert.doesNotMatch(diagnose, /"access_token"/);
+  assert.doesNotMatch(diagnose, /"refresh_token"/);
   assert.match(pkg, /diagnose:desktop-cloud-session/);
 });
 

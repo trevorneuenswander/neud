@@ -17,6 +17,7 @@ export type PublishingRpcResult = {
   max_payload_bytes?: number;
   online_publishing_enabled?: boolean;
   project_id?: string;
+  publisher_instance_id?: string;
 };
 
 export class CloudPublishingClient {
@@ -69,6 +70,27 @@ export class CloudPublishingClient {
       throw new Error(error.message);
     }
     return data;
+  }
+
+  async fetchPublisherLease(projectId: string) {
+    const { data, error } = await this.supabase
+      .from("project_publisher_leases")
+      .select(
+        "project_id, publisher_instance_id, acquired_at, last_heartbeat_at, lease_expires_at, released_at",
+      )
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return data as {
+      project_id: string;
+      publisher_instance_id: string;
+      acquired_at: string | null;
+      last_heartbeat_at: string | null;
+      lease_expires_at: string | null;
+      released_at: string | null;
+    } | null;
   }
 
   async acquireLease(

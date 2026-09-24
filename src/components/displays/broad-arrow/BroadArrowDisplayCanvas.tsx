@@ -5,11 +5,14 @@ import {
   DEFAULT_DISPLAY_HEIGHT,
   DEFAULT_DISPLAY_WIDTH,
 } from "@/lib/displays/display-size";
+import { MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE } from "@/lib/displays/display-preview-checkerboard-style";
 
 export type BroadArrowDisplayCanvasProps = {
   displayWidth?: number;
   displayHeight?: number;
   label?: string;
+  showSizeLabel?: boolean;
+  graphicOnly?: boolean;
   children: ReactNode;
 };
 
@@ -17,6 +20,8 @@ export function BroadArrowDisplayCanvas({
   displayWidth = DEFAULT_DISPLAY_WIDTH,
   displayHeight = DEFAULT_DISPLAY_HEIGHT,
   label,
+  showSizeLabel = true,
+  graphicOnly = false,
   children,
 }: BroadArrowDisplayCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -41,20 +46,24 @@ export function BroadArrowDisplayCanvas({
   const scaledWidth = displayWidth * scale;
   const scaledHeight = displayHeight * scale;
   const sizeLabel = label ?? `Preview · ${displayWidth}×${displayHeight}`;
+  const pinnedNativeStage = graphicOnly;
 
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">{sizeLabel}</p>
+    <div className={showSizeLabel ? "space-y-2" : "min-w-0 max-w-full"}>
+      {showSizeLabel ? (
+        <p className="text-xs font-medium uppercase tracking-wide text-muted">{sizeLabel}</p>
+      ) : null}
       <div
         ref={containerRef}
-        className="relative overflow-hidden rounded-md border border-border"
+        data-pinned-display-window={graphicOnly ? "" : undefined}
+        className={
+          graphicOnly
+            ? "relative max-h-full max-w-full overflow-hidden"
+            : "relative max-h-full max-w-full overflow-hidden rounded-md border border-border"
+        }
         style={{
           aspectRatio: `${displayWidth} / ${displayHeight}`,
-          backgroundColor: "#d9d9d9",
-          backgroundImage:
-            "linear-gradient(45deg, #cfcfcf 25%, transparent 25%), linear-gradient(-45deg, #cfcfcf 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #cfcfcf 75%), linear-gradient(-45deg, transparent 75%, #cfcfcf 75%)",
-          backgroundSize: "20px 20px",
-          backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+          ...MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE,
         }}
       >
         <div
@@ -63,6 +72,8 @@ export function BroadArrowDisplayCanvas({
             width: scaledWidth,
             height: scaledHeight,
             transform: "translate(-50%, -50%)",
+            background: "transparent",
+            backgroundColor: "transparent",
           }}
         >
           <div
@@ -71,6 +82,8 @@ export function BroadArrowDisplayCanvas({
               height: `${displayHeight}px`,
               transform: `scale(${scale})`,
               transformOrigin: "top left",
+              background: graphicOnly ? "transparent" : undefined,
+              ...(pinnedNativeStage ? { willChange: "transform" } : {}),
             }}
           >
             {children}

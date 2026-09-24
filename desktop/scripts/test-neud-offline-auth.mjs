@@ -38,6 +38,12 @@ test("network failures return offline verification without clearing auth", () =>
   assert.match(verify, /isNetworkError/);
 });
 
+test("identity resolution falls back to offline-ready cache when Supabase is unreachable", () => {
+  const identity = read("desktop/src/services/supabase-identity-service.ts");
+  assert.match(identity, /loadFromLocalCache/);
+  assert.match(identity, /offline-ready/);
+});
+
 test("dashboard authentication status module displays offline remaining time", () => {
   const dashboard = read("src/components/dashboard/DashboardAuthenticationStatus.tsx");
   const page = read("src/app/(portal)/dashboard/page.tsx");

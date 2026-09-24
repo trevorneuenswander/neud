@@ -87,6 +87,8 @@ export type DataEngineLog = {
   created_at: string;
 };
 
+export type LiveFeedModePreference = "faye" | "dom" | "legacy";
+
 export type WebpageScraperSettings = {
   engine_id: string;
   poll_interval_ms: number;
@@ -96,6 +98,8 @@ export type WebpageScraperSettings = {
   updated_by: string | null;
   created_at: string;
   updated_at: string;
+  live_feed_mode?: LiveFeedModePreference;
+  auction_day_selection?: "all" | number;
 };
 
 export type WebpageScraperSource = {

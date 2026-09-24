@@ -37,6 +37,7 @@ import {
   PUBLISHING_RUNTIME_STATUS_KEY,
   type PublishingRuntimeStatus,
 } from "./publishing-runtime-status";
+import { validateLeaseRpcResponse, type ValidatedLeaseRpcResult } from "./publishing-lease-rpc";
 
 type ProjectRuntimeState = {
   publishingEnabled: boolean;
@@ -644,14 +645,20 @@ export class PublishingManager {
         const settings = await cloudClient.fetchPublishingSettings(project.id);
         const enabled = settings?.online_publishing_enabled === true;
         const state = this.ensureProjectState(project.id);
+        const eligible = this.data.hasEligibleOnlineViewerDisplay(project.id);
+        if (eligible && !enabled) {
+          await this.ensureProjectPublishingEnabled(project.id);
+          continue;
+        }
         if (state.publishingEnabled !== enabled) {
           state.publishingEnabled = enabled;
           this.settings.set(publishingProjectEnabledCacheKey(project.id), enabled);
           if (!enabled) {
             state.status = "disabled";
             state.pending = null;
+            state.ownsLease = false;
           } else {
-            void this.syncProject(project.id, "settings-refresh");
+            await this.syncProject(project.id, "settings-refresh");
           }
         }
       } catch (error) {
@@ -735,6 +742,7 @@ export class PublishingManager {
 
     await this.reconcileEffectivePublishing();
 
+    let leaseHeartbeatSucceeded = false;
     for (const project of this.projects.list()) {
       const state = this.ensureProjectState(project.id);
       if (!state.publishingEnabled) {
@@ -743,7 +751,21 @@ export class PublishingManager {
       if (state.nextRetryAt && Date.parse(state.nextRetryAt) > Date.now()) {
         continue;
       }
-      void this.syncProject(project.id, "heartbeat");
+      const heartbeatOk = await this.syncProject(project.id, "heartbeat");
+      if (heartbeatOk) {
+        leaseHeartbeatSucceeded = true;
+      }
+    }
+
+    if (!leaseHeartbeatSucceeded) {
+      this.persistRuntimeStatus({
+        lastHeartbeatSuccessAt: null,
+        heartbeatRpcSucceeded: false,
+        heartbeatVerifiedInCloud: false,
+        lastHeartbeatErrorCode:
+          this.getRuntimeStatus().lastHeartbeatErrorCode ?? "lease_heartbeat_failed",
+        firstHeartbeatResult: "lease_heartbeat_failed",
+      });
     }
   }
 
@@ -813,7 +835,7 @@ export class PublishingManager {
       state.publishingEnabled = true;
       this.settings.set(publishingProjectEnabledCacheKey(projectId), true);
       state.status = "waiting_for_data";
-      void this.syncProject(projectId, "online-viewer");
+      await this.syncProject(projectId, "online-viewer");
     } catch (error) {
       console.debug(
         `[PublishingManager] auto-enable publishing failed for ${projectId}:`,
@@ -842,88 +864,79 @@ export class PublishingManager {
     }
   }
 
-  private async ensurePublisherLease(
+  private persistLeaseRpcDiagnostics(
+    validated: ValidatedLeaseRpcResult,
+    verifiedInCloud: boolean,
+  ): void {
+    this.persistRuntimeStatus({
+      heartbeatRpcAttempted: validated.attempted,
+      heartbeatRpcName: validated.rpcName,
+      heartbeatRpcSucceeded: validated.succeeded && verifiedInCloud,
+      heartbeatRpcErrorCode: validated.succeeded && !verifiedInCloud ? "cloud_verify_failed" : validated.errorCode,
+      heartbeatRpcSafeMessage:
+        validated.succeeded && !verifiedInCloud
+          ? "Publisher lease RPC succeeded but cloud row did not match this desktop instance."
+          : validated.safeMessage,
+      heartbeatResponseValid: validated.responseValid,
+      heartbeatVerifiedInCloud: verifiedInCloud,
+      lastLeaseRpcAt: new Date().toISOString(),
+    });
+  }
+
+  private async verifyPublisherLeaseInCloud(
+    cloudClient: CloudPublishingClient,
+    projectId: string,
+    expectedExpiresAt: string | null,
+  ): Promise<boolean> {
+    try {
+      const row = await cloudClient.fetchPublisherLease(projectId);
+      if (!row || row.released_at != null) {
+        return false;
+      }
+      if (row.publisher_instance_id !== this.instanceId) {
+        return false;
+      }
+      const expiresMs = row.lease_expires_at ? Date.parse(row.lease_expires_at) : Number.NaN;
+      if (!Number.isFinite(expiresMs) || expiresMs <= Date.now()) {
+        return false;
+      }
+      if (expectedExpiresAt && row.lease_expires_at !== expectedExpiresAt) {
+        // Allow minor clock skew; expiry must still be in the future.
+        return Number.isFinite(expiresMs) && expiresMs > Date.now();
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async finalizeSuccessfulLeaseHeartbeat(
     projectId: string,
     state: ProjectRuntimeState,
+    validated: ValidatedLeaseRpcResult,
     cloudClient: CloudPublishingClient,
+    action: "renew" | "acquire",
   ): Promise<boolean> {
-    if (state.ownsLease) {
-      const renewed = await cloudClient.renewLease(projectId, this.instanceId);
-      if (renewed.ok) {
-        state.leaseExpiresAt = renewed.lease_expires_at ?? state.leaseExpiresAt;
-        state.leaseOwnerInstanceId = this.instanceId;
-        state.lastLeaseHeartbeatAt = new Date().toISOString();
-        const heartbeatAgeSeconds = state.lastLeaseHeartbeatAt
-          ? 0
-          : null;
-        this.logPublisherLeaseEvent("renew", {
-          projectId,
-          ok: true,
-          leaseExpiresAt: state.leaseExpiresAt,
-          heartbeatAgeSeconds,
-        });
-        this.persistRuntimeStatus({
-          lastHeartbeatSuccessAt: state.lastLeaseHeartbeatAt,
-          lastHeartbeatErrorCode: null,
-        });
-        return true;
-      }
-
-      this.logPublisherLeaseEvent("renew", {
-        projectId,
-        ok: false,
-        reason: renewed.code ?? renewed.message ?? "renew_failed",
-        leaseExpiresAt: renewed.lease_expires_at ?? state.leaseExpiresAt,
-      });
-
+    const verified = await this.verifyPublisherLeaseInCloud(
+      cloudClient,
+      projectId,
+      validated.leaseExpiresAt,
+    );
+    this.persistLeaseRpcDiagnostics(validated, verified);
+    if (!verified) {
       state.ownsLease = false;
-      if (renewed.code === "lease_not_owned") {
-        // Fall through to acquire.
-      } else if (renewed.code === "forbidden" || renewed.code === "authentication_required") {
-        state.status = "error";
-        state.lastErrorSummary = renewed.message ?? "Cloud publishing permission denied.";
-        return false;
-      } else {
-        throw new Error(renewed.message ?? "Unable to renew publisher lease.");
-      }
-    }
-
-    state.status = "acquiring_lease";
-    const lease = await cloudClient.acquireLease(projectId, this.instanceId);
-    if (!lease.ok) {
-      this.logPublisherLeaseEvent("acquire", {
-        projectId,
-        ok: false,
-        reason: lease.code ?? lease.message ?? "acquire_failed",
-        leaseExpiresAt: lease.lease_expires_at ?? null,
+      this.persistRuntimeStatus({
+        lastHeartbeatSuccessAt: null,
+        lastHeartbeatErrorCode: "cloud_verify_failed",
       });
-      if (lease.code === "lease_conflict") {
-        state.status = "publisher_conflict";
-        state.leaseOwnerInstanceId = lease.owner_instance_id ?? null;
-        state.leaseExpiresAt = lease.lease_expires_at ?? null;
-        state.lastErrorSummary = lease.message ?? "Another publisher owns this project.";
-        this.scheduleRetry(projectId, state, lease.code);
-        return false;
-      }
-      if (lease.code === "publishing_disabled") {
-        state.publishingEnabled = false;
-        state.status = "disabled";
-        this.settings.set(publishingProjectEnabledCacheKey(projectId), false);
-        return false;
-      }
-      if (lease.code === "forbidden" || lease.code === "authentication_required") {
-        state.status = "error";
-        state.lastErrorSummary = lease.message ?? "Cloud publishing permission denied.";
-        return false;
-      }
-      throw new Error(lease.message ?? "Unable to acquire publisher lease.");
+      return false;
     }
 
     state.ownsLease = true;
     state.leaseOwnerInstanceId = this.instanceId;
-    state.leaseExpiresAt = lease.lease_expires_at ?? null;
+    state.leaseExpiresAt = validated.leaseExpiresAt;
     state.lastLeaseHeartbeatAt = new Date().toISOString();
-    this.logPublisherLeaseEvent("acquire", {
+    this.logPublisherLeaseEvent(action, {
       projectId,
       ok: true,
       leaseExpiresAt: state.leaseExpiresAt,
@@ -932,8 +945,113 @@ export class PublishingManager {
     this.persistRuntimeStatus({
       lastHeartbeatSuccessAt: state.lastLeaseHeartbeatAt,
       lastHeartbeatErrorCode: null,
+      heartbeatRpcSucceeded: true,
+      heartbeatVerifiedInCloud: true,
     });
     return true;
+  }
+
+  private async ensurePublisherLease(
+    projectId: string,
+    state: ProjectRuntimeState,
+    cloudClient: CloudPublishingClient,
+  ): Promise<boolean> {
+    if (state.ownsLease) {
+      const renewedRaw = await cloudClient.renewLease(projectId, this.instanceId);
+      const validated = validateLeaseRpcResponse("renew", renewedRaw);
+      if (validated.succeeded) {
+        return this.finalizeSuccessfulLeaseHeartbeat(
+          projectId,
+          state,
+          validated,
+          cloudClient,
+          "renew",
+        );
+      }
+
+      this.persistLeaseRpcDiagnostics(validated, false);
+      this.logPublisherLeaseEvent("renew", {
+        projectId,
+        ok: false,
+        reason: validated.errorCode ?? "renew_failed",
+        leaseExpiresAt: validated.leaseExpiresAt ?? state.leaseExpiresAt,
+      });
+
+      state.ownsLease = false;
+      this.persistRuntimeStatus({
+        lastHeartbeatSuccessAt: null,
+        lastHeartbeatErrorCode: validated.errorCode ?? "renew_failed",
+      });
+      if (validated.errorCode === "lease_not_owned") {
+        // Fall through to acquire.
+      } else if (
+        validated.errorCode === "forbidden" ||
+        validated.errorCode === "authentication_required"
+      ) {
+        state.status = "error";
+        state.lastErrorSummary = validated.safeMessage ?? "Cloud publishing permission denied.";
+        return false;
+      } else if (validated.errorCode === "response_invalid") {
+        state.status = "error";
+        state.lastErrorSummary = validated.safeMessage ?? "Invalid publisher lease RPC response.";
+        return false;
+      } else {
+        throw new Error(validated.safeMessage ?? "Unable to renew publisher lease.");
+      }
+    }
+
+    state.status = "acquiring_lease";
+    const leaseRaw = await cloudClient.acquireLease(projectId, this.instanceId);
+    const validated = validateLeaseRpcResponse("acquire", leaseRaw);
+    if (!validated.succeeded) {
+      this.persistLeaseRpcDiagnostics(validated, false);
+      this.logPublisherLeaseEvent("acquire", {
+        projectId,
+        ok: false,
+        reason: validated.errorCode ?? "acquire_failed",
+        leaseExpiresAt: validated.leaseExpiresAt,
+      });
+      this.persistRuntimeStatus({
+        lastHeartbeatSuccessAt: null,
+        lastHeartbeatErrorCode: validated.errorCode ?? "acquire_failed",
+      });
+      if (validated.errorCode === "lease_conflict") {
+        state.status = "publisher_conflict";
+        state.leaseOwnerInstanceId = validated.leasePublisherInstanceId;
+        state.leaseExpiresAt = validated.leaseExpiresAt;
+        state.lastErrorSummary =
+          validated.safeMessage ?? "Another publisher owns this project.";
+        this.scheduleRetry(projectId, state, "lease_conflict");
+        return false;
+      }
+      if (validated.errorCode === "publishing_disabled") {
+        if (this.data.hasEligibleOnlineViewerDisplay(projectId)) {
+          await this.ensureProjectPublishingEnabled(projectId);
+        } else {
+          state.publishingEnabled = false;
+          state.status = "disabled";
+          this.settings.set(publishingProjectEnabledCacheKey(projectId), false);
+        }
+        return false;
+      }
+      if (
+        validated.errorCode === "forbidden" ||
+        validated.errorCode === "authentication_required"
+      ) {
+        state.status = "error";
+        state.lastErrorSummary = validated.safeMessage ?? "Cloud publishing permission denied.";
+        return false;
+      }
+      throw new Error(validated.safeMessage ?? "Unable to acquire publisher lease.");
+    }
+
+    return this.finalizeSuccessfulLeaseHeartbeat(
+      projectId,
+      state,
+      validated,
+      cloudClient,
+      "acquire",
+    );
   }
 
   private shouldMaintainPublisherLease(reason: string, unchanged: boolean): boolean {
@@ -951,61 +1069,64 @@ export class PublishingManager {
     ].includes(reason);
   }
 
-  private async syncProject(projectId: string, reason: string): Promise<void> {
+  private async syncProject(projectId: string, reason: string): Promise<boolean> {
+    const heartbeatSync = reason === "heartbeat";
+    let heartbeatLeaseMaintained = false;
+
     if (this.stopping) {
-      return;
+      return heartbeatSync ? false : true;
     }
 
     const state = this.ensureProjectState(projectId);
     if (!state.publishingEnabled) {
       state.status = "disabled";
-      return;
+      return heartbeatSync ? false : true;
     }
 
     if (!this.auth.getAuthenticatedUser()) {
       state.status = "authentication_required";
-      return;
+      return heartbeatSync ? false : true;
     }
 
     if (!this.cloud.isAuthenticatedCloudSessionAvailable()) {
       state.status = "cloud_session_required";
-      return;
+      return heartbeatSync ? false : true;
     }
 
     const userId = this.auth.getAuthenticatedUser()?.userId;
     if (!userId) {
       state.status = "authentication_required";
-      return;
+      return heartbeatSync ? false : true;
     }
 
     const capabilities = this.access.getProjectCapabilities(userId, projectId);
     if (!capabilities.canOperateEngines && !capabilities.canEditProjectSettings) {
       state.status = "error";
       state.lastErrorSummary = "You do not have permission to publish this project.";
-      return;
+      return heartbeatSync ? false : true;
     }
 
     if (!this.online) {
       state.status = "paused_offline";
-      return;
+      return heartbeatSync ? false : true;
     }
 
     const cloudClient = await this.getCloudClient();
     if (!cloudClient) {
       state.status = "cloud_session_required";
-      return;
+      return heartbeatSync ? false : true;
     }
 
     const registration = await this.ensureHostedProjectRegistered(cloudClient, projectId);
     if (!registration.ok) {
       state.status = registration.code === "forbidden" ? "error" : "cloud_session_required";
       state.lastErrorSummary = registration.message;
-      return;
+      return heartbeatSync ? false : true;
     }
 
     if (state.inFlight) {
       state.resyncAfterInFlight = true;
-      return;
+      return heartbeatSync ? false : true;
     }
 
     state.inFlight = true;
@@ -1025,24 +1146,25 @@ export class PublishingManager {
         state.status = "waiting_for_data";
         if (this.shouldMaintainPublisherLease(reason, true)) {
           const leased = await this.ensurePublisherLease(projectId, state, cloudClient);
-          if (leased && state.ownsLease) {
+          heartbeatLeaseMaintained = leased && state.ownsLease;
+          if (heartbeatLeaseMaintained) {
             state.status = "waiting_for_data";
           }
         }
-        return;
+        return heartbeatSync ? heartbeatLeaseMaintained : true;
       }
 
       const validation = validatePublishedProjectPayload(canonical.payload);
       if (!validation.ok) {
         state.status = "error";
         state.lastErrorSummary = validation.issues.join(" ");
-        return;
+        return heartbeatSync ? false : true;
       }
 
       if (validation.payload.projectId !== projectId) {
         state.status = "error";
         state.lastErrorSummary = "Published payload project identity mismatch.";
-        return;
+        return heartbeatSync ? false : true;
       }
 
       const payload = validation.payload;
@@ -1056,7 +1178,7 @@ export class PublishingManager {
       if (payloadSizeBytes > PUBLISHING_MAX_PAYLOAD_BYTES) {
         state.status = "error";
         state.lastErrorSummary = "Canonical payload exceeds the maximum publish size.";
-        return;
+        return heartbeatSync ? false : true;
       }
 
       const sourceUnchanged =
@@ -1070,8 +1192,9 @@ export class PublishingManager {
 
       if (this.shouldMaintainPublisherLease(reason, unchanged)) {
         const leased = await this.ensurePublisherLease(projectId, state, cloudClient);
+        heartbeatLeaseMaintained = leased && state.ownsLease;
         if (!leased) {
-          return;
+          return heartbeatSync ? false : true;
         }
       }
 
@@ -1085,7 +1208,7 @@ export class PublishingManager {
         if (reason === "heartbeat") {
           state.pending = null;
         }
-        return;
+        return heartbeatSync ? heartbeatLeaseMaintained && state.ownsLease : true;
       }
 
       state.pending = {
@@ -1098,7 +1221,7 @@ export class PublishingManager {
       if (!state.ownsLease) {
         const leased = await this.ensurePublisherLease(projectId, state, cloudClient);
         if (!leased) {
-          return;
+          return heartbeatSync ? false : true;
         }
       }
 
@@ -1106,7 +1229,7 @@ export class PublishingManager {
       const pending = state.pending;
       if (!pending) {
         state.status = "active";
-        return;
+        return heartbeatSync ? heartbeatLeaseMaintained && state.ownsLease : true;
       }
 
       const publishResult = await cloudClient.publishSnapshot({
@@ -1133,7 +1256,8 @@ export class PublishingManager {
           state.retryAttempt = 0;
           state.nextRetryAt = null;
           state.lastErrorSummary = null;
-          return;
+          heartbeatLeaseMaintained = state.ownsLease;
+          return heartbeatSync ? heartbeatLeaseMaintained : true;
         }
         if (publishResult.code === "stale_revision") {
           const latestRevision =
@@ -1162,7 +1286,7 @@ export class PublishingManager {
               };
               state.lastCanonicalPublicationResult = "stale_revision_realigned";
               void this.syncProject(projectId, "stale-revision-realign");
-              return;
+              return heartbeatSync ? heartbeatLeaseMaintained : true;
             }
           }
         }
@@ -1170,22 +1294,22 @@ export class PublishingManager {
           state.ownsLease = false;
           state.status = "acquiring_lease";
           this.scheduleRetry(projectId, state, publishResult.code);
-          return;
+          return heartbeatSync ? false : true;
         }
         if (publishResult.code === "forbidden" || publishResult.code === "authentication_required") {
           state.status = "error";
           state.lastErrorSummary = publishResult.message ?? "Cloud publishing permission denied.";
-          return;
+          return heartbeatSync ? false : true;
         }
         state.status = "error";
         state.lastErrorSummary = publishResult.message ?? "Publish failed.";
         if (!isRecoverablePublishingError(publishResult.code)) {
           state.retryAttempt = 0;
           state.nextRetryAt = null;
-          return;
+          return heartbeatSync ? false : true;
         }
         this.scheduleRetry(projectId, state, publishResult.code);
-        return;
+        return heartbeatSync ? false : true;
       }
 
       this.markPublished(
@@ -1206,12 +1330,15 @@ export class PublishingManager {
       state.nextRetryAt = null;
       state.lastErrorSummary = null;
       console.debug(`[PublishingManager] published project=${projectId} reason=${reason}`);
+      heartbeatLeaseMaintained = state.ownsLease;
+      return heartbeatSync ? heartbeatLeaseMaintained : true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       state.status = this.online ? "reconnecting" : "paused_offline";
       state.lastErrorSummary = message;
       this.scheduleRetry(projectId, state, "network");
       console.warn(`[PublishingManager] sync failed project=${projectId}:`, message);
+      return heartbeatSync ? false : true;
     } finally {
       state.inFlight = false;
       if (state.resyncAfterInFlight && state.publishingEnabled && !this.stopping) {

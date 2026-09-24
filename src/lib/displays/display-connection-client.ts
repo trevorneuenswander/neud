@@ -4,6 +4,7 @@ const CHANNEL_NAME = "neud-display-connection";
 const CONNECTION_EVENT_TYPE = "neud-display-connection-changed";
 const REFRESH_RATE_EVENT_TYPE = "neud-display-refresh-rate-changed";
 const RELOAD_EVENT_TYPE = "neud-display-reload-request";
+const DATA_CHANGED_EVENT_TYPE = "neud-display-data-changed";
 
 function postDisplayConnectionPayload(payload: Record<string, unknown>): void {
   if (typeof window === "undefined") return;
@@ -54,6 +55,20 @@ export function requestDisplayViewerReload(displayId: string): void {
   postDisplayConnectionPayload({
     type: RELOAD_EVENT_TYPE,
     displayId,
+    timestamp: Date.now(),
+  });
+}
+
+export function notifyDisplayBridgeDataChanged(
+  displayId: string,
+  revision?: number | null,
+  projectId?: string | null,
+): void {
+  postDisplayConnectionPayload({
+    type: DATA_CHANGED_EVENT_TYPE,
+    displayId,
+    projectId: projectId ?? null,
+    revision: revision ?? null,
     timestamp: Date.now(),
   });
 }

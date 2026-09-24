@@ -24,6 +24,55 @@ import { createClient } from "@/lib/supabase/server";
 const PROJECT_COLUMNS =
   "id, project_number, owner_id, name, slug, description, project_type, status, is_active, display_token, theme, logo_url, primary_color, secondary_color, icon, settings, metadata, archived_at, created_at, updated_at";
 
+async function attachProjectTeamNames(
+  projects: ProjectListItem[],
+): Promise<ProjectListItem[]> {
+  if (projects.length === 0) {
+    return projects;
+  }
+
+  const supabase = await createClient();
+  const projectIds = projects.map((project) => project.id);
+  const { data: assignments, error: assignmentError } = await supabase
+    .from("project_team_assignments")
+    .select("project_id, team_id")
+    .in("project_id", projectIds);
+
+  if (assignmentError || !assignments?.length) {
+    return projects.map((project) => ({ ...project, teams: project.teams ?? [] }));
+  }
+
+  const teamIds = [...new Set(assignments.map((row) => row.team_id))];
+  const { data: teams, error: teamError } = await supabase
+    .from("teams")
+    .select("id, name")
+    .in("id", teamIds);
+
+  if (teamError || !teams) {
+    return projects.map((project) => ({ ...project, teams: project.teams ?? [] }));
+  }
+
+  const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
+  const teamsByProjectId = new Map<string, Array<{ id: string; name: string }>>();
+
+  for (const assignment of assignments) {
+    const teamName = teamNameById.get(assignment.team_id);
+    if (!teamName) {
+      continue;
+    }
+    const current = teamsByProjectId.get(assignment.project_id) ?? [];
+    current.push({ id: assignment.team_id, name: teamName });
+    teamsByProjectId.set(assignment.project_id, current);
+  }
+
+  return projects.map((project) => ({
+    ...project,
+    teams: (teamsByProjectId.get(project.id) ?? []).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    ),
+  }));
+}
+
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
   if (shouldUseLocalData()) {
     try {
@@ -139,11 +188,12 @@ export async function getVisibleProjects(
       return [];
     }
 
-    return (data as Project[]).map((project) => ({
+    const items = (data as Project[]).map((project) => ({
       ...project,
       is_active: normalizeProjectIsActive(project),
       accessLevel: "admin" as const,
     }));
+    return attachProjectTeamNames(items);
   }
 
   const { data: memberships, error: membershipError } = await supabase
@@ -196,7 +246,7 @@ export async function getVisibleProjects(
         new Date(left.updated_at).getTime(),
     );
 
-  return projects;
+  return attachProjectTeamNames(projects);
 }
 
 export async function getVisibleProjectCount(): Promise<number | null> {

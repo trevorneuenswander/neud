@@ -22,6 +22,8 @@ import {
 import {
   buildSharedCloudAuthSnapshot,
 } from "./lib/shared-cloud-auth-snapshot.mjs";
+import { callViewerBundleRpc } from "./lib/viewer-bundle-rpc-diagnostic.mjs";
+import { signInClient } from "./lib/supabase-test-helpers.mjs";
 import {
   inlineStreamTickerLogoForHosted,
   isStreamTickerLogoReference,
@@ -107,14 +109,60 @@ function summarizeLeaseFromBundle(bundle) {
   };
 }
 
+function buildViewerProbeSummary(probe, bundleCodeOverride = null) {
+  const bundle = probe?.bundle ?? null;
+  const code =
+    bundleCodeOverride ??
+    (probe?.viewerRpcSupabaseCode
+      ? "viewer_rpc_query_failed"
+      : bundle && typeof bundle.code === "string"
+        ? bundle.code
+        : bundle?.ok
+          ? "viewer_ready"
+          : probe?.viewerRpcBundleCode ?? null);
+  return {
+    code,
+    expectedResult: null,
+    resultMatchesExpectation: null,
+    attempted: probe?.viewerRpcAttempted ?? false,
+    responseValid: probe?.viewerRpcResponseValid ?? false,
+    authorized:
+      probe?.viewerRpcAuthorizationResult === "authorized"
+        ? true
+        : probe?.viewerRpcAuthorizationResult === "not_found"
+          ? false
+          : null,
+    publisherOnline: probe?.viewerRpcPublisherOnline ?? null,
+    viewerReady: code === "viewer_ready" || bundle?.ok === true,
+    publishedRevisionPresent: Boolean(
+      probe?.viewerRpcPublishedRevisionId ?? bundle?.display?.published_revision_id,
+    ),
+    publishedRevisionId:
+      probe?.viewerRpcPublishedRevisionId ??
+      (typeof bundle?.display?.published_revision_id === "string"
+        ? bundle.display.published_revision_id
+        : null),
+    canonicalPayloadPresent:
+      bundle &&
+      typeof bundle.canonical_payload === "object" &&
+      bundle.canonical_payload != null &&
+      Object.keys(bundle.canonical_payload).length > 0,
+  };
+}
+
 async function buildOnlineViewerDiagnosticRow({
   admin,
+  anonViewerClient,
+  authenticatedViewerClient,
   projectSlug,
   displaySlug,
   local,
   cloud,
   revisionIds,
   statusResolver,
+  effectiveViewerStatusResolver,
+  publisherLeaseValid,
+  heartbeatVerifiedInCloud,
 }) {
   const cloudRow = cloud ?? null;
   const htmlRevisionId = cloudRow?.online_published_revision_id ?? null;
@@ -137,40 +185,94 @@ async function buildOnlineViewerDiagnosticRow({
   let leasePresent = null;
   let heartbeatFresh = null;
   let lastHeartbeatAgeSeconds = null;
+  let viewerBundleOnlineViewerEnabled = null;
+  const visibility = cloudRow?.online_visibility ?? local?.localVisibility ?? "private";
 
-  if (admin) {
-    const { data, error } = await admin.rpc("get_online_display_viewer_bundle", {
-      p_project_slug: projectSlug,
-      p_display_slug: displaySlug,
-    });
-    if (error) {
-      viewerRpcCode = "rpc_error";
-    } else if (isRecord(data)) {
-      viewerRpcCode =
-        typeof data.code === "string" ? data.code : data.ok ? "viewer_ready" : "unknown";
-      publisherOnline =
-        typeof data.publisher_online === "boolean" ? data.publisher_online : null;
-      htmlPresent = Boolean(data.html_content && String(data.html_content).trim().length > 0);
-      canonicalPayloadPresent =
-        isRecord(data.canonical_payload) && Object.keys(data.canonical_payload).length > 0;
-      if (viewerRpcCode === "viewer_ready") {
-        const leaseSummary = summarizeLeaseFromBundle(data);
-        leasePresent = leaseSummary.publisherLeaseExists;
-        heartbeatFresh = leaseSummary.heartbeatFresh;
-        lastHeartbeatAgeSeconds = leaseSummary.lastHeartbeatAgeSeconds;
-      }
-    }
+  const anonViewerRpcDiagnostic = anonViewerClient
+    ? await callViewerBundleRpc(anonViewerClient, projectSlug, displaySlug)
+    : null;
+  const anonViewerProbe = buildViewerProbeSummary(anonViewerRpcDiagnostic);
+  anonViewerProbe.expectedResult =
+    visibility === "private" ? "authentication_required" : "viewer_ready";
+  anonViewerProbe.resultMatchesExpectation =
+    anonViewerProbe.code === anonViewerProbe.expectedResult;
+
+  const authenticatedViewerRpcDiagnostic = authenticatedViewerClient
+    ? await callViewerBundleRpc(authenticatedViewerClient, projectSlug, displaySlug)
+    : null;
+  const authenticatedViewerProbe = buildViewerProbeSummary(authenticatedViewerRpcDiagnostic);
+  authenticatedViewerProbe.attempted = Boolean(authenticatedViewerClient);
+  if (!authenticatedViewerClient) {
+    authenticatedViewerProbe.code = null;
+    authenticatedViewerProbe.viewerReady = null;
   }
+
+  const portalStatusProbe =
+    visibility === "private" && authenticatedViewerClient
+      ? authenticatedViewerProbe
+      : anonViewerProbe;
+  const portalStatusBundle =
+    visibility === "private" && authenticatedViewerClient
+      ? authenticatedViewerRpcDiagnostic?.bundle
+      : anonViewerRpcDiagnostic?.bundle;
+
+  if (isRecord(portalStatusBundle)) {
+    viewerRpcCode =
+      typeof portalStatusBundle.code === "string"
+        ? portalStatusBundle.code
+        : portalStatusBundle.ok
+          ? "viewer_ready"
+          : portalStatusProbe.code ?? "unknown";
+    publisherOnline =
+      typeof portalStatusBundle.publisher_online === "boolean"
+        ? portalStatusBundle.publisher_online
+        : null;
+    viewerBundleOnlineViewerEnabled =
+      typeof portalStatusBundle.online_viewer_enabled === "boolean"
+        ? portalStatusBundle.online_viewer_enabled
+        : null;
+    htmlPresent = Boolean(
+      portalStatusBundle.html_content && String(portalStatusBundle.html_content).trim().length > 0,
+    );
+    canonicalPayloadPresent =
+      isRecord(portalStatusBundle.canonical_payload) &&
+      Object.keys(portalStatusBundle.canonical_payload).length > 0;
+    if (viewerRpcCode === "viewer_ready" || portalStatusBundle.ok === true) {
+      const leaseSummary = summarizeLeaseFromBundle(portalStatusBundle);
+      leasePresent = leaseSummary.publisherLeaseExists;
+      heartbeatFresh = leaseSummary.heartbeatFresh;
+      lastHeartbeatAgeSeconds = leaseSummary.lastHeartbeatAgeSeconds;
+    }
+  } else {
+    viewerRpcCode = portalStatusProbe.code ?? "viewer_rpc_response_invalid";
+  }
+
+  const effectiveViewerStatus = effectiveViewerStatusResolver
+    ? effectiveViewerStatusResolver.resolveEffectiveViewerStatus({
+        visibility,
+        onlineViewerEnabled: Boolean(cloudRow?.online_viewer_enabled),
+        publishedRevisionPresent: Boolean(cloudRow?.online_published_revision_id),
+        publisherLeaseValid,
+        heartbeatVerifiedInCloud,
+        anonProbe: anonViewerProbe,
+        authenticatedProbe: authenticatedViewerProbe,
+      })
+    : null;
 
   const statusInput = {
     displayExists: cloudRow != null,
     displayEnabled: Boolean(cloudRow?.enabled),
     onlineViewerEnabled: Boolean(cloudRow?.online_viewer_enabled),
-    visibility: cloudRow?.online_visibility ?? "private",
+    visibility,
     publishedRevisionPresent: Boolean(cloudRow?.online_published_revision_id),
     onlinePublishedRevisionPresent: Boolean(cloudRow?.online_published_revision_id),
     htmlPresent: htmlPresent ?? revisionHtmlPresent,
-    authorized: true,
+    authorized:
+      visibility === "private"
+        ? authenticatedViewerProbe.authorized ?? true
+        : true,
+    portalSessionPresent: visibility === "private",
+    authenticatedViewerAuthorized: authenticatedViewerProbe.authorized,
     publisherOnline,
     viewerRpcCode,
     publishError: cloudRow?.online_publish_error ?? null,
@@ -185,7 +287,28 @@ async function buildOnlineViewerDiagnosticRow({
     localOnlineViewerEnabled: local?.localOnlineViewerEnabled ?? null,
     cloudEnabled: cloudRow?.enabled ?? null,
     cloudOnlineViewerEnabled: cloudRow?.online_viewer_enabled ?? null,
-    visibility: cloudRow?.online_visibility ?? local?.localVisibility ?? null,
+    viewerBundleOnlineViewerEnabled,
+    queuedOnlineViewerValue: local?.queuedOnlineViewerValue ?? null,
+    displaySyncPending: local?.syncStatus ? local.syncStatus !== "synced" : null,
+    displaySyncError: local?.localPublishError ?? cloudRow?.online_publish_error ?? null,
+    valuesConverged:
+      local?.localOnlineViewerEnabled != null &&
+      cloudRow?.online_viewer_enabled != null &&
+      viewerBundleOnlineViewerEnabled != null
+        ? Boolean(local.localOnlineViewerEnabled) === Boolean(cloudRow.online_viewer_enabled) &&
+          Boolean(cloudRow.online_viewer_enabled) === Boolean(viewerBundleOnlineViewerEnabled)
+        : null,
+    firstDisplayCloudDivergence:
+      local?.localOnlineViewerEnabled === true && cloudRow?.online_viewer_enabled === false
+        ? "cloud_row_false"
+        : local?.localOnlineViewerEnabled === true && viewerBundleOnlineViewerEnabled === false
+          ? "viewer_bundle_false"
+          : local?.syncStatus && local.syncStatus !== "synced"
+            ? "display_sync_pending"
+            : viewerRpcCode === "viewer_offline" || viewerRpcCode === "online_viewer_disabled"
+              ? "viewer_bundle_gate"
+              : "none",
+    visibility,
     publisherOnline,
     leasePresent,
     leaseExpired: leasePresent === false ? true : leasePresent ? !heartbeatFresh : null,
@@ -193,8 +316,30 @@ async function buildOnlineViewerDiagnosticRow({
     publishedRevisionPresent: Boolean(cloudRow?.online_published_revision_id),
     onlinePublishedRevisionPresent: Boolean(cloudRow?.online_published_revision_id),
     htmlPresent: htmlPresent ?? revisionHtmlPresent,
-    authorized: true,
+    authorized: statusInput.authorized,
     viewerRpcCode,
+    anonViewerProbe,
+    authenticatedViewerProbe: {
+      ...authenticatedViewerProbe,
+      authenticatedViewerRpcAttempted: authenticatedViewerProbe.attempted,
+      authenticatedViewerRpcResponseValid: authenticatedViewerProbe.responseValid,
+      authenticatedViewerRpcCode: authenticatedViewerProbe.code,
+      authenticatedViewerAuthorized: authenticatedViewerProbe.authorized,
+      authenticatedViewerPublishedRevisionId: authenticatedViewerProbe.publishedRevisionId,
+      authenticatedViewerPublisherOnline: authenticatedViewerProbe.publisherOnline,
+      authenticatedViewerViewerReady: authenticatedViewerProbe.viewerReady,
+      authenticatedViewerCanonicalPayloadPresent: authenticatedViewerProbe.canonicalPayloadPresent,
+    },
+    publisher: {
+      publisherLeaseExists: publisherLeaseValid != null ? publisherLeaseValid : leasePresent,
+      publisherLeaseValid: publisherLeaseValid ?? null,
+      heartbeatVerifiedInCloud: heartbeatVerifiedInCloud ?? null,
+    },
+    effectiveViewerStatus,
+    firstViewerRpcFailureStage:
+      visibility === "private" && authenticatedViewerProbe.attempted
+        ? authenticatedViewerRpcDiagnostic?.firstViewerRpcFailureStage ?? null
+        : anonViewerRpcDiagnostic?.firstViewerRpcFailureStage ?? null,
     connectionStatus: statusResolver
       ? statusResolver.resolveHostedDisplayConnectionStatus(statusInput)
       : null,
@@ -208,14 +353,17 @@ async function buildOnlineViewerDiagnosticRow({
       ? statusResolver.resolveHostedDisplayFailureStage(statusInput)
       : null,
     computedConnectionStatus:
-      statusInput.onlineViewerEnabled && publisherOnline === true ? "connected" : "disconnected",
+      effectiveViewerStatus ??
+      (statusInput.onlineViewerEnabled && publisherOnline === true ? "connected" : "disconnected"),
     revisionExistsInCloud: htmlRevisionId ? revisionIds.includes(htmlRevisionId) : false,
     cloudArchived: cloudRow?.is_archived ?? null,
     cloudDeleted: cloudRow?.deleted_at ?? null,
     canonicalPayloadPresent,
-    connected: statusInput.onlineViewerEnabled && publisherOnline === true,
+    connected: effectiveViewerStatus === "connected",
     publisherConnected: publisherOnline === true,
-    viewerReady: viewerRpcCode === "viewer_ready",
+    viewerReady:
+      authenticatedViewerProbe.viewerReady === true ||
+      (visibility !== "private" && viewerRpcCode === "viewer_ready"),
     fullscreenAvailable:
       Boolean(cloudRow?.online_published_revision_id) &&
       viewerRpcCode === "viewer_ready" &&
@@ -358,6 +506,35 @@ async function main() {
       })
     : null;
 
+  const anonViewerClient = createClient(url, publishableKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const viewerEmail =
+    process.env.NEUD_LIVE_VALIDATION_VIEWER_EMAIL?.trim() ??
+    process.env.NEUD_LIVE_VALIDATION_OWNER_EMAIL?.trim() ??
+    null;
+  const viewerPassword =
+    process.env.NEUD_LIVE_VALIDATION_VIEWER_PASSWORD?.trim() ??
+    process.env.NEUD_LIVE_VALIDATION_OWNER_PASSWORD?.trim() ??
+    null;
+
+  let authenticatedViewerClient = null;
+  if (viewerEmail && viewerPassword) {
+    try {
+      authenticatedViewerClient = await signInClient(
+        url,
+        publishableKey,
+        viewerEmail,
+        viewerPassword,
+      );
+    } catch (error) {
+      console.warn(
+        `Authenticated viewer probe sign-in failed: ${sanitizeError(error).message}`,
+      );
+    }
+  }
+
   const { data: projectRows } = admin
     ? await admin.from("projects").select("id, slug, name").eq("slug", BROAD_ARROW_SLUG)
     : { data: [] };
@@ -374,6 +551,24 @@ async function main() {
       .eq("project_id", broadArrow.id)
       .order("name");
     cloudDisplayRows = data ?? [];
+  }
+
+  let cloudPublishingSettings = null;
+  let cloudPublisherLease = null;
+  if (admin && broadArrow) {
+    const { data: settingsRow } = await admin
+      .from("project_publishing_settings")
+      .select("*")
+      .eq("project_id", broadArrow.id)
+      .maybeSingle();
+    cloudPublishingSettings = settingsRow ?? null;
+
+    const { data: leaseRow } = await admin
+      .from("project_publisher_leases")
+      .select("*")
+      .eq("project_id", broadArrow.id)
+      .maybeSingle();
+    cloudPublisherLease = leaseRow ?? null;
   }
 
   let revisionIds = [];
@@ -533,9 +728,25 @@ async function main() {
     localState.lastActivityEvent?.syncError ??
     null;
 
+  const publishingRuntime = localState.publishingRuntime ?? {
+    running: false,
+    heartbeatTimerActive: false,
+    authenticatedSessionAvailable: false,
+  };
+
   const statusResolver = await import(
     new URL("../../src/lib/hosted/hosted-display-connection-status.ts", import.meta.url).href
   ).catch(() => null);
+  const effectiveViewerStatusResolver = await import(
+    new URL("../../src/lib/hosted/effective-viewer-status.ts", import.meta.url).href
+  ).catch(() => null);
+
+  const cloudLeaseSummaryForProbes = summarizeLeaseRow(cloudPublisherLease);
+  const publisherLeaseValidForProbes =
+    cloudLeaseSummaryForProbes.publisherLeaseExists &&
+    !cloudLeaseSummaryForProbes.leaseExpired;
+  const heartbeatVerifiedInCloudForProbes =
+    publishingRuntime.heartbeatVerifiedInCloud ?? null;
 
   const localBySlug = new Map((localState.displays ?? []).map((entry) => [entry.slug, entry]));
   const onlineViewerDiagnostics = [];
@@ -544,23 +755,28 @@ async function main() {
       onlineViewerDiagnostics.push(
         await buildOnlineViewerDiagnosticRow({
           admin,
+          anonViewerClient,
+          authenticatedViewerClient,
           projectSlug: broadArrow.slug,
           displaySlug,
           local: localBySlug.get(displaySlug) ?? null,
           cloud: cloudBySlug.get(displaySlug) ?? null,
           revisionIds,
           statusResolver,
+          effectiveViewerStatusResolver,
+          publisherLeaseValid: publisherLeaseValidForProbes,
+          heartbeatVerifiedInCloud: heartbeatVerifiedInCloudForProbes,
         }),
       );
     }
   }
 
-  const publishingRuntime = localState.publishingRuntime ?? {
-    running: false,
-    heartbeatTimerActive: false,
-    authenticatedSessionAvailable: false,
-  };
-  const sampleViewer = onlineViewerDiagnostics[0] ?? null;
+  const streamTickerViewer =
+    onlineViewerDiagnostics.find((entry) => entry.displaySlug === "stream-ticker") ?? null;
+  const sampleViewer = streamTickerViewer ?? onlineViewerDiagnostics[0] ?? null;
+  const anyOnlineViewerEnabled =
+    onlineViewerDiagnostics.some((entry) => entry.onlineViewerEnabled === true) ||
+    (localState.displays ?? []).some((entry) => entry.localOnlineViewerEnabled === true);
 
   const sharedAuthSnapshot = buildSharedCloudAuthSnapshot(localState.sharedCloudAuth, {
     hasRestorableCloudSession:
@@ -574,22 +790,23 @@ async function main() {
     ),
   });
 
+  const cloudLeaseSummary = summarizeLeaseRow(cloudPublisherLease);
   const publisherConnection = buildAlignedConnectionSection({
     authenticatedCloudSessionAvailable: sharedAuthSnapshot.authenticatedCloudSessionAvailable,
     hasRestorableCloudSession: sharedAuthSnapshot.hasRestorableCloudSession,
     publishingManagerRunning: publishingRuntime.running,
     heartbeatTimerActive: publishingRuntime.heartbeatTimerActive,
-    localDesktopInstanceId: localState.sharedCloudAuth?.sessionServiceInstanceIdHash ?? null,
-    activePublisherInstanceId: null,
-    leasePublisherInstanceId: null,
-    publisherLeaseExists: sampleViewer?.leasePresent ?? null,
-    leaseExpired: sampleViewer?.leaseExpired ?? null,
-    lastHeartbeatAgeSeconds: sampleViewer?.lastHeartbeatAgeSeconds ?? null,
-    projectPublishingEnabled: null,
+    localDesktopInstanceId: localState.neudInstanceId ?? null,
+    activePublisherInstanceId: cloudLeaseSummary.leasePublisherInstanceId,
+    leasePublisherInstanceId: cloudLeaseSummary.leasePublisherInstanceId,
+    publisherLeaseExists: cloudLeaseSummary.publisherLeaseExists,
+    leaseExpired: cloudLeaseSummary.leaseExpired,
+    lastHeartbeatAgeSeconds: cloudLeaseSummary.lastHeartbeatAgeSeconds,
+    projectPublishingEnabled: cloudPublishingSettings?.online_publishing_enabled ?? null,
     eligibleOnlineViewerDisplays: (localState.displays ?? []).filter(
       (row) => row.localEnabled && row.localOnlineViewerEnabled,
     ).length,
-    onlineViewerEnabled: sampleViewer?.onlineViewerEnabled ?? null,
+    onlineViewerEnabled: anyOnlineViewerEnabled,
     viewerPublisherOnline: sampleViewer?.publisherOnline ?? null,
   });
 
@@ -683,6 +900,41 @@ async function main() {
     onlineViewerDiagnostics,
     publisherConnection,
     firstPublisherConnectionFailureStage: publisherConnection.firstPublisherConnectionFailureStage,
+    firstPublisherLeaseFailureStage: publisherConnection.firstPublisherConnectionFailureStage,
+    publisherRegistrationExists: Boolean(cloudPublishingSettings?.project_id),
+    publisherInstanceId: cloudLeaseSummary.leasePublisherInstanceId,
+    publisherProjectId: broadArrow?.id ?? null,
+    publisherLeaseExists: cloudLeaseSummary.publisherLeaseExists,
+    publisherLeasePublisherInstanceId: cloudLeaseSummary.leasePublisherInstanceId,
+    publisherLeaseAcquiredAt: cloudPublisherLease?.acquired_at ?? null,
+    publisherLeaseHeartbeatAt: cloudPublisherLease?.last_heartbeat_at ?? null,
+    publisherLeaseExpiresAt: cloudLeaseSummary.leaseExpiresAt,
+    publisherLeaseValid:
+      cloudLeaseSummary.publisherLeaseExists && !cloudLeaseSummary.leaseExpired,
+    heartbeatRpcAttempted: publishingRuntime.heartbeatRpcAttempted ?? null,
+    heartbeatRpcName: publishingRuntime.heartbeatRpcName ?? null,
+    heartbeatRpcSucceeded: publishingRuntime.heartbeatRpcSucceeded ?? null,
+    heartbeatRpcErrorCode: publishingRuntime.heartbeatRpcErrorCode ?? null,
+    heartbeatRpcSafeMessage: publishingRuntime.heartbeatRpcSafeMessage ?? null,
+    heartbeatResponseValid: publishingRuntime.heartbeatResponseValid ?? null,
+    heartbeatVerifiedInCloud: publishingRuntime.heartbeatVerifiedInCloud ?? null,
+    streamTickerViewerRpc: streamTickerViewer,
+    effectiveViewerStatus: streamTickerViewer?.effectiveViewerStatus ?? null,
+    authenticatedViewerProbe:
+      streamTickerViewer?.authenticatedViewerProbe ?? null,
+    anonViewerProbe: streamTickerViewer?.anonViewerProbe ?? null,
+    authenticatedViewerProbeAttempted:
+      streamTickerViewer?.authenticatedViewerProbe?.authenticatedViewerRpcAttempted ??
+      null,
+    authenticatedViewerProbeAuthorized:
+      streamTickerViewer?.authenticatedViewerProbe?.authenticatedViewerAuthorized ??
+      null,
+    authenticatedViewerProbePublisherOnline:
+      streamTickerViewer?.authenticatedViewerProbe?.authenticatedViewerPublisherOnline ??
+      null,
+    authenticatedViewerProbeViewerReady:
+      streamTickerViewer?.authenticatedViewerProbe?.authenticatedViewerViewerReady ??
+      null,
     streamTickerLogo,
     logoAssetReferenceType: streamTickerLogo.cloudPublished.logoAssetReferenceType,
     logoAssetPackaged: streamTickerLogo.cloudPublished.logoAssetPackaged,

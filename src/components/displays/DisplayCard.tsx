@@ -20,15 +20,14 @@ import {
 import {
   localGetDisplayEnabled,
   localSetDisplayEnabled,
-  localSetDisplayRefreshRate,
   localSetDisplaySize,
 } from "@/lib/local/displays-api";
 import {
   notifyDisplayConnectionChanged,
   requestDisplayViewerReload,
 } from "@/lib/displays/display-connection-client";
-import { normalizeDisplayRefreshRateMs } from "@/lib/displays/refresh-rate";
 import { normalizeDisplaySize } from "@/lib/displays/display-size";
+import { buildDisplayWindowFitPath } from "@/lib/displays/display-view-mode";
 import { recordDesktopActivity } from "@/lib/desktop/activity-session-client";
 import { getDesktopAPI } from "@/lib/desktop/client";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
@@ -46,9 +45,17 @@ import { ViewOnlineButton } from "@/components/displays/ViewOnlineButton";
 import { useOnlineViewerSettings } from "@/lib/displays/use-online-viewer-settings";
 import { NoDrag } from "@/components/displays/NoDrag";
 import { DisplayPreviewPanel } from "@/components/displays/DisplayPreviewPanel";
-import { DisplayRefreshRateSelect } from "@/components/displays/DisplayRefreshRateSelect";
 import { DisplaySizeSelect } from "@/components/displays/DisplaySizeSelect";
+import { DisplayPinButton } from "@/components/displays/DisplayPinButton";
 import { DisplayVersionBadge } from "@/components/displays/DisplayVersionBadge";
+import {
+  requestPinnedViewerRefresh,
+  requestPinnedViewerUnpin,
+} from "@/lib/displays/pinned-viewer-context";
+import {
+  buildPinnedViewerDisplaySummary,
+  localUnpinDisplayIfPinned,
+} from "@/lib/local/pinned-viewer-api";
 import { useDisplayInlinePreview } from "@/lib/displays/display-inline-preview-context";
 import type { ProjectDisplaySource } from "@/lib/developer-tools/types";
 
@@ -181,12 +188,8 @@ export function DisplayCard({
   const initialSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [persistedEnabled, setPersistedEnabled] = useState(initialEnabled);
-  const [refreshRateMs, setRefreshRateMs] = useState(
-    normalizeDisplayRefreshRateMs(initialRefreshRateMs),
-  );
   const [displayWidth, setDisplayWidth] = useState(initialSize.displayWidth);
   const [displayHeight, setDisplayHeight] = useState(initialSize.displayHeight);
-  const [refreshRateSaving, setRefreshRateSaving] = useState(false);
   const [displaySizeSaving, setDisplaySizeSaving] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -205,9 +208,6 @@ export function DisplayCard({
   );
   const copyTimerRef = useRef<number | null>(null);
   const copyActivityLoggedRef = useRef(false);
-  const pollAbortRef = useRef<AbortController | null>(null);
-  const pollMs = refreshRateMs;
-
   const viewerUrl = (() => {
     if (typeof window === "undefined") {
       return display.outputUrl;
@@ -215,17 +215,16 @@ export function DisplayCard({
 
     const origin = window.location.origin;
     if (display.id === PYLON_DISPLAY_ID) {
-      return buildPylonViewerPath(origin, pollMs);
+      return buildPylonViewerPath(origin);
     }
     if (display.id === LOWER_TICKER_V5_DISPLAY_ID) {
-      const params = new URLSearchParams({ poll: String(pollMs) });
-      return `${buildLowerTickerV5ViewerPath(origin)}?${params.toString()}`;
+      return buildLowerTickerV5ViewerPath(origin);
     }
     if (display.id === NEW_BID_DISPLAY_V1_ID) {
-      return buildNewBidDisplayV1ViewerPath(origin, pollMs);
+      return buildNewBidDisplayV1ViewerPath(origin);
     }
     if (display.id === NEW_TICKER_V1_ID) {
-      return buildNewTickerV1ViewerPath(origin, pollMs);
+      return buildNewTickerV1ViewerPath(origin);
     }
 
     return display.outputUrl;
@@ -248,10 +247,6 @@ export function DisplayCard({
     setEnabled(initialEnabled);
     setPersistedEnabled(initialEnabled);
   }, [initialEnabled]);
-
-  useEffect(() => {
-    setRefreshRateMs(normalizeDisplayRefreshRateMs(initialRefreshRateMs));
-  }, [initialRefreshRateMs]);
 
   useEffect(() => {
     const nextSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
@@ -306,85 +301,14 @@ export function DisplayCard({
   }, [enabled, previewOpen]);
 
   useEffect(() => {
-    if (!shouldUseLocalDataClient() || !enabled) {
-      pollAbortRef.current?.abort();
-      pollAbortRef.current = null;
-      setConnectionState("disconnected");
+    if (!enabled || previewOpen) {
+      if (!enabled) {
+        setConnectionState("disconnected");
+      }
       return;
     }
-
-    let cancelled = false;
-    let interval: number | null = null;
-
-    const stopPolling = () => {
-      if (interval !== null) {
-        window.clearInterval(interval);
-        interval = null;
-      }
-      pollAbortRef.current?.abort();
-      pollAbortRef.current = null;
-    };
-
-    const pollDataEndpoint = async () => {
-      if (cancelled || !enabled) return;
-
-      pollAbortRef.current?.abort();
-      const controller = new AbortController();
-      pollAbortRef.current = controller;
-
-      try {
-        const response = await fetch(`${display.dataPath}?_=${Date.now()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-          headers: {
-            "X-NEUD-Display-Client": "management-card",
-          },
-        });
-        if (cancelled || controller.signal.aborted) return;
-
-        if (response.status === 409 || response.status === 423) {
-          setConnectionState("disconnected");
-          stopPolling();
-          return;
-        }
-
-        if (!response.ok) {
-          setConnectionState("error");
-          return;
-        }
-
-        const payload = (await response.json()) as Record<string, unknown>;
-        if (
-          payload.enabled === false ||
-          payload.status === "display_disabled" ||
-          payload.dataConnected === false
-        ) {
-          setConnectionState("disconnected");
-          stopPolling();
-          return;
-        }
-
-        setConnectionState(
-          hasLivePayload(payload) || hasLiveSnapshot ? "connected" : "disconnected",
-        );
-      } catch (error) {
-        if (cancelled || (error instanceof DOMException && error.name === "AbortError")) {
-          return;
-        }
-        setConnectionState("error");
-      }
-    };
-
-    void pollDataEndpoint();
-    interval = window.setInterval(() => {
-      void pollDataEndpoint();
-    }, pollMs);
-
-    return () => {
-      cancelled = true;
-      stopPolling();
-    };
-  }, [display.dataPath, enabled, hasLivePayload, hasLiveSnapshot, pollMs]);
+    setConnectionState(hasLiveSnapshot ? "connected" : "disconnected");
+  }, [enabled, hasLiveSnapshot, previewOpen]);
 
   const resolvedConnectionState: PreviewConnectionState = enabled
     ? connectionState
@@ -409,16 +333,17 @@ export function DisplayCard({
     onEnabledChange?.(nextEnabled);
 
     if (!nextEnabled) {
-      pollAbortRef.current?.abort();
-      pollAbortRef.current = null;
       setConnectionState("disconnected");
       setBridgeReady(false);
     }
 
     notifyDisplayConnectionChanged(display.id, nextEnabled);
 
+    const previewDisplayId = displayPersistId ?? developerDisplay?.id ?? display.id;
     if (!nextEnabled && projectId && shouldUseLocalDataClient()) {
-      const previewDisplayId = displayPersistId ?? developerDisplay?.id ?? display.id;
+      if (previewDisplayId) {
+        requestPinnedViewerUnpin(previewDisplayId);
+      }
       const desktop = getDesktopAPI();
       if (desktop?.displays?.closePreview) {
         void desktop.displays.closePreview({
@@ -440,44 +365,27 @@ export function DisplayCard({
       setPersistedEnabled(result.enabled);
       onEnabledChange?.(result.enabled);
       notifyDisplayConnectionChanged(display.id, result.enabled);
+      if (
+        !result.enabled &&
+        projectSlug &&
+        projectId &&
+        previewDisplayId &&
+        shouldUseLocalDataClient()
+      ) {
+        await localUnpinDisplayIfPinned(projectSlug, projectId, previewDisplayId);
+        requestPinnedViewerRefresh();
+      }
     } catch (error) {
       setEnabled(previousEnabled);
       setPersistedEnabled(previousEnabled);
       onEnabledChange?.(previousEnabled);
       notifyDisplayConnectionChanged(display.id, previousEnabled);
+      requestPinnedViewerRefresh();
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to update display state.",
       );
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleRefreshRateChange(nextRefreshRateMs: number) {
-    const previousRefreshRateMs = refreshRateMs;
-    setRefreshRateMs(nextRefreshRateMs);
-    setErrorMessage(null);
-
-    if (!shouldUseLocalDataClient() || !projectSlug || !displayPersistId) {
-      return;
-    }
-
-    setRefreshRateSaving(true);
-    try {
-      const result = await localSetDisplayRefreshRate(
-        projectSlug,
-        displayPersistId,
-        nextRefreshRateMs,
-      );
-      setRefreshRateMs(normalizeDisplayRefreshRateMs(result.refreshRateMs));
-      requestDisplayViewerReload(display.id);
-    } catch (error) {
-      setRefreshRateMs(previousRefreshRateMs);
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to update refresh rate.",
-      );
-    } finally {
-      setRefreshRateSaving(false);
     }
   }
 
@@ -556,7 +464,16 @@ export function DisplayCard({
     const previewDisplayId = displayPersistId ?? developerDisplay?.id ?? display.id;
     if (!projectId) return;
 
-    const previewUrl = `${viewerUrl}${viewerUrl.includes("?") ? "&" : "?"}preview=1`;
+    const outputTargetUrl = viewerUrl;
+    const browserFullscreenUrl =
+      typeof window !== "undefined"
+        ? buildDisplayWindowFitPath({
+            targetUrl: outputTargetUrl,
+            displayWidth,
+            displayHeight,
+            origin: window.location.origin,
+          })
+        : outputTargetUrl;
 
     if (shouldUseLocalDataClient()) {
       const desktop = getDesktopAPI();
@@ -565,7 +482,7 @@ export function DisplayCard({
           projectId,
           displayId: previewDisplayId,
           title: developerDisplay?.name ?? display.name,
-          viewerUrl: previewUrl,
+          viewerUrl: outputTargetUrl,
           displayWidth,
           displayHeight,
         });
@@ -575,10 +492,21 @@ export function DisplayCard({
       return;
     }
 
-    window.open(previewUrl, "_blank", "noopener,noreferrer");
+    window.open(browserFullscreenUrl, "_blank", "noopener,noreferrer");
   }
 
   const displayTitle = developerDisplay?.name ?? display.name;
+  const pinnedViewerSummary =
+    projectId && displayPersistId
+      ? buildPinnedViewerDisplaySummary({
+          id: displayPersistId,
+          name: displayTitle,
+          displayKey: developerDisplay?.displayKey ?? display.id,
+          url: viewerUrl,
+          width: displayWidth,
+          height: displayHeight,
+        })
+      : undefined;
 
   const enabledLabel = getEnabledLabel(enabled);
   const resolvedDescription = cardDescription ?? display.description ?? null;
@@ -596,10 +524,20 @@ export function DisplayCard({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h4 className="text-sm font-semibold text-foreground">{displayTitle}</h4>
-                <DisplayVersionBadge
-                  versionNumber={activeVersionNumber}
-                  createdAt={activeVersionCreatedAt}
-                />
+                <div className="flex items-center gap-1">
+                  <DisplayVersionBadge
+                    versionNumber={activeVersionNumber}
+                    createdAt={activeVersionCreatedAt}
+                  />
+                  {projectId && displayPersistId && enabled ? (
+                    <DisplayPinButton
+                      displayId={displayPersistId}
+                      enabled={enabled}
+                      archived={developerDisplay?.archived ?? false}
+                      displaySummary={pinnedViewerSummary}
+                    />
+                  ) : null}
+                </div>
               </div>
               {resolvedDescription ? (
                 <p className="mt-1 text-xs text-muted">{resolvedDescription}</p>
@@ -635,16 +573,6 @@ export function DisplayCard({
                     />
                   </DisplayCardControlRow>
                 ) : null}
-                <DisplayCardControlRow label="Refresh Rate">
-                  <DisplayRefreshRateSelect
-                    valueMs={refreshRateMs}
-                    disabled={refreshRateSaving}
-                    showLabel={false}
-                    onChange={(nextRefreshRateMs) =>
-                      void handleRefreshRateChange(nextRefreshRateMs)
-                    }
-                  />
-                </DisplayCardControlRow>
               </DisplayCardControls>
             </NoDrag>
           </div>

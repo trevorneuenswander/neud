@@ -34,7 +34,15 @@ export function resolveHostedDisplayStatusBadge(input: {
     publishError: input.display?.publishError,
   };
 
-  const portalConnected = resolvePortalConnected(displayInput);
+  const portalConnected = resolvePortalConnected({
+    onlineViewerEnabled: displayInput.onlineViewerEnabled,
+    publisherOnline: input.publisherOnline,
+    visibility: displayInput.visibility,
+    portalSessionPresent: displayInput.portalSessionPresent,
+    viewerRpcCode: displayInput.viewerRpcCode,
+    publishedRevisionPresent: displayInput.publishedRevisionPresent,
+    authenticatedViewerAuthorized: displayInput.authenticatedViewerAuthorized,
+  });
 
   if (input.pollError && input.hasLoadedBundle) {
     return {

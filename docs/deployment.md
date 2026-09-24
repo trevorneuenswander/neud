@@ -48,7 +48,7 @@ Packaged resources include:
 | `NEXT_PUBLIC_SUPABASE_URL` | Auth (embedded in desktop during transition) |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Auth and desktop authenticated cloud sync |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Vercel/server only** — identity admin, access requests, trusted scripts. **Not packaged in Electron.** |
-| `NEUD_TRUSTED_PORTAL_ORIGIN` | Trusted HTTPS origin for desktop privileged admin API calls (Vercel / NEUD.io) |
+| `NEUD_TRUSTED_PORTAL_ORIGIN` | Trusted HTTPS origin for desktop privileged admin API calls (Vercel / NEUD.io). **Local dev:** leave unset in `.env.local` so `npm run dev:desktop` uses `http://127.0.0.1:3000`. Set to a Vercel Preview URL only when testing desktop against Preview. Production packaged builds should use `https://neud.io`. |
 | `NEUD_SUPABASE_DB_URL` | Non-production Postgres URI for live migration apply scripts only (never package) |
 | `NEUD_ALLOW_PLAINTEXT_CREDENTIALS` | Dev-only scraper credential fallback |
 

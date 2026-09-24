@@ -24,7 +24,6 @@ import {
 } from "@/lib/bag/downloaded-lot-navigation";
 import {
   buildSelectedLotPersistenceKey,
-  findDownloadedLotIndex,
   findDownloadedLotIndexByPersistenceKey,
   normalizeLotNumberForMatch,
   resolveDownloadedLotMatch,
@@ -78,6 +77,13 @@ import {
   type ReserveStatus,
 } from "@/lib/bag/reserve-status";
 import { getLotKey } from "@/lib/bag/lot-key";
+import {
+  filterLotsByAuctionDay,
+  type AuctionDayFilter,
+} from "@/lib/bag/auction-day-from-lot";
+import { preserveProjectScrollPosition } from "@/lib/portal/project-scroll-container";
+import { probeControllerScroll } from "@/lib/portal/controller-scroll-diagnostics";
+import { localGetAuctionDaySelection } from "@/lib/local/auction-day-selection-api";
 
 type BagControllerClientProps = {
   projectId: string;
@@ -455,6 +461,7 @@ export function BagControllerClient({
   hasResolvedInitialLotRef.current = hasResolvedInitialLot;
   const [sessionAuthReady, setSessionAuthReady] = useState(() => !shouldUseLocalDataClient());
   const [activeDatasetResolved, setActiveDatasetResolved] = useState(() => !shouldUseLocalDataClient());
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const sessionUserIdRef = useRef<string | null>(null);
   const lastPersistedLotKeyRef = useRef<string | null>(null);
 
@@ -464,6 +471,52 @@ export function BagControllerClient({
     datasetPath: activeDataset?.reference.filePath,
   });
   manualLotViewSourceRef.current = downloadedNav.manualLotViewSource;
+  const [auctionDayFilter, setAuctionDayFilter] = useState<AuctionDayFilter>("all");
+
+  useEffect(() => {
+    if (!shouldUseLocalDataClient()) {
+      return;
+    }
+    let cancelled = false;
+    const loadMasterDay = async () => {
+      try {
+        const payload = await localGetAuctionDaySelection(projectSlug);
+        if (!cancelled) {
+          setAuctionDayFilter(payload.filter);
+        }
+      } catch {
+        if (!cancelled) {
+          setAuctionDayFilter("all");
+        }
+      }
+    };
+    void loadMasterDay();
+    const interval = window.setInterval(() => {
+      void loadMasterDay();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [projectSlug]);
+
+  const navigableLots = useMemo(
+    () => filterLotsByAuctionDay(downloadedNav.loadedLots, auctionDayFilter),
+    [auctionDayFilter, downloadedNav.loadedLots],
+  );
+  const selectedNavigableIndex = useMemo(() => {
+    const selected = downloadedNav.selectedDownloadedLot;
+    if (!selected) {
+      return -1;
+    }
+    return navigableLots.findIndex((lot) => lot.stableId === selected.stableId);
+  }, [downloadedNav.selectedDownloadedLot, navigableLots]);
+  const canSelectPreviousNav =
+    selectedNavigableIndex > 0 && downloadedNav.manualLotViewSource === "downloaded-dataset";
+  const canSelectNextNav =
+    selectedNavigableIndex >= 0 &&
+    downloadedNav.manualLotViewSource === "downloaded-dataset" &&
+    selectedNavigableIndex < navigableLots.length - 1;
 
   useEffect(() => {
     if (!shouldUseLocalDataClient()) {
@@ -480,6 +533,7 @@ export function BagControllerClient({
       .then((session) => {
         if (cancelled) return;
         sessionUserIdRef.current = session.userId;
+        setSessionUserId(session.userId);
         lastPersistedLotKeyRef.current = readSessionSelectedLotKey(session.userId, projectId);
       })
       .catch(() => {
@@ -631,7 +685,10 @@ export function BagControllerClient({
       nextIndex: number,
       source: "previous" | "next" | "typed-match" | "downloaded-selection",
     ) => {
-      const lots = downloadedNav.loadedLots;
+      const lots =
+        source === "typed-match" || source === "downloaded-selection"
+          ? downloadedNav.loadedLots
+          : navigableLots;
       if (lots.length === 0) {
         return;
       }
@@ -642,29 +699,53 @@ export function BagControllerClient({
         return;
       }
 
-      downloadedNav.setSelectedDownloadedLotIndex(clampedIndex);
-      populateControllerFromDownloadedLot({
-        lot,
-        source,
-        preserveLotNumber: source === "typed-match" ? lotNumberInputRef.current.trim() : undefined,
+      probeControllerScroll("before-lot-change", lot.lotNumber ?? null);
+      preserveProjectScrollPosition(() => {
+        const fullIndex = downloadedNav.loadedLots.findIndex(
+          (entry) => entry.stableId === lot.stableId,
+        );
+        downloadedNav.setSelectedDownloadedLotIndex(
+          fullIndex >= 0 ? fullIndex : clampedIndex,
+        );
+        populateControllerFromDownloadedLot({
+          lot,
+          source,
+          preserveLotNumber: source === "typed-match" ? lotNumberInputRef.current.trim() : undefined,
+        });
+        persistSelectedLotKey(lot);
       });
-      persistSelectedLotKey(lot);
+      queueMicrotask(() => {
+        probeControllerScroll("after-lot-change-sync", lot.lotNumber ?? null);
+      });
+      window.requestAnimationFrame(() => {
+        probeControllerScroll("after-lot-change-frame", lot.lotNumber ?? null);
+      });
+      window.setTimeout(() => {
+        probeControllerScroll("after-lot-change-settled", lot.lotNumber ?? null);
+      }, 400);
     },
     [
       downloadedNav.loadedLots,
       downloadedNav.setSelectedDownloadedLotIndex,
+      navigableLots,
       populateControllerFromDownloadedLot,
       persistSelectedLotKey,
     ],
   );
 
   const handlePreviousLot = useCallback(() => {
-    selectDownloadedLotByIndex(downloadedNav.selectedDownloadedLotIndex - 1, "previous");
-  }, [downloadedNav.selectedDownloadedLotIndex, selectDownloadedLotByIndex]);
+    if (selectedNavigableIndex <= 0) {
+      return;
+    }
+    selectDownloadedLotByIndex(selectedNavigableIndex - 1, "previous");
+  }, [selectDownloadedLotByIndex, selectedNavigableIndex]);
 
   const handleNextLot = useCallback(() => {
-    selectDownloadedLotByIndex(downloadedNav.selectedDownloadedLotIndex + 1, "next");
-  }, [downloadedNav.selectedDownloadedLotIndex, selectDownloadedLotByIndex]);
+    if (selectedNavigableIndex < 0) {
+      return;
+    }
+    selectDownloadedLotByIndex(selectedNavigableIndex + 1, "next");
+  }, [selectDownloadedLotByIndex, selectedNavigableIndex]);
 
   useEffect(() => {
     const datasetKey =
@@ -708,17 +789,27 @@ export function BagControllerClient({
 
     const sessionKey = readSessionSelectedLotKey(sessionUserIdRef.current, projectId);
     if (sessionKey) {
-      const restoredIndex = findDownloadedLotIndexByPersistenceKey(
+      const restoredLotIndex = findDownloadedLotIndexByPersistenceKey(
         downloadedNav.loadedLots,
         sessionKey,
       );
-      if (restoredIndex >= 0) {
-        selectDownloadedLotByIndex(restoredIndex, "downloaded-selection");
-        return;
+      if (restoredLotIndex >= 0) {
+        const restoredLot = downloadedNav.loadedLots[restoredLotIndex];
+        if (restoredLot) {
+          const restoredIndex = downloadedNav.loadedLots.findIndex(
+            (lot) => lot.stableId === restoredLot.stableId,
+          );
+          if (restoredIndex >= 0) {
+            selectDownloadedLotByIndex(restoredIndex, "downloaded-selection");
+            return;
+          }
+        }
       }
     }
 
-    selectDownloadedLotByIndex(0, "downloaded-selection");
+    if (downloadedNav.loadedLots.length > 0) {
+      selectDownloadedLotByIndex(0, "downloaded-selection");
+    }
   }, [
     activeDatasetResolved,
     sessionAuthReady,
@@ -1127,10 +1218,7 @@ export function BagControllerClient({
 
       unmatchedLotDraftRef.current = false;
 
-      const matchIndex = findDownloadedLotIndex(
-        downloadedNav.loadedLots,
-        resolution.lot.stableId,
-      );
+      const matchIndex = downloadedNav.resolveFilteredIndexForLot(resolution.lot);
       if (matchIndex >= 0) {
         downloadedNav.setSelectedDownloadedLotIndex(matchIndex);
       }
@@ -1151,6 +1239,7 @@ export function BagControllerClient({
       clearUnmatchedLotProperties,
       downloadedNav.loadedLots,
       downloadedNav.manualLotViewSource,
+      downloadedNav.resolveFilteredIndexForLot,
       downloadedNav.setSelectedDownloadedLotIndex,
       populateControllerFromDownloadedLot,
       persistSelectedLotKey,
@@ -1682,7 +1771,6 @@ export function BagControllerClient({
             <div className={MANUAL_CARD_BODY_CLASS}>
               <div className={MANUAL_CARD_HEADING_ROW_CLASS}>
                 <h3 className="text-sm font-semibold text-foreground">Manual Lot Selection</h3>
-                <div className={MANUAL_CARD_HEADING_ACTIONS_CLASS} aria-hidden="true" />
               </div>
           {canControl ? (
             <>
@@ -1728,8 +1816,9 @@ export function BagControllerClient({
                     size="md"
                     variant="secondary"
                     className={MANUAL_ROW_BUTTON_CLASS}
-                    disabled={isSubmittingLot || !canSelectPrevious}
-                    aria-disabled={isSubmittingLot || !canSelectPrevious}
+                    disabled={isSubmittingLot || !canSelectPreviousNav}
+                    aria-disabled={isSubmittingLot || !canSelectPreviousNav}
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={handlePreviousLot}
                   >
                     Previous Lot
@@ -1739,8 +1828,9 @@ export function BagControllerClient({
                     size="md"
                     variant="secondary"
                     className={MANUAL_ROW_BUTTON_CLASS}
-                    disabled={isSubmittingLot || !canSelectNext}
-                    aria-disabled={isSubmittingLot || !canSelectNext}
+                    disabled={isSubmittingLot || !canSelectNextNav}
+                    aria-disabled={isSubmittingLot || !canSelectNextNav}
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={handleNextLot}
                   >
                     Next Lot
@@ -1798,12 +1888,18 @@ export function BagControllerClient({
                     ))}
                   </select>
                 </label>
-                <LotPhotoThumbnails
-                  key={`lot-photos-${projectId}`}
-                  projectId={projectId}
-                  lotNumber={photoPreviewLotNumber ?? ""}
-                  canManage={canControl}
-                />
+                <div
+                  data-neud-controller-photo-panel
+                  className="min-h-[8rem]"
+                  style={{ overflowAnchor: "none" }}
+                >
+                  <LotPhotoThumbnails
+                    key={`lot-photos-${projectId}-${photoPreviewLotNumber ?? "none"}`}
+                    projectId={projectId}
+                    lotNumber={photoPreviewLotNumber ?? ""}
+                    canManage={canControl}
+                  />
+                </div>
               </div>
 
             </>

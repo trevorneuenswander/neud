@@ -204,6 +204,7 @@ export class ProjectsRepository {
         "project_team_assignments",
         "local_project_memberships",
         "user_display_order",
+        "user_pinned_viewer_preferences",
       ] as const;
 
       for (const table of tables) {

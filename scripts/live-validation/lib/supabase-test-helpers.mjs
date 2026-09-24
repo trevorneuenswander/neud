@@ -1,15 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  createNodeSupabaseClient,
+  getNodeSupabaseRuntimeDiagnostics,
+} from "./supabase-node-client.mjs";
+
+export { getNodeSupabaseRuntimeDiagnostics };
 
 export function createAnonClient(url, publishableKey) {
-  return createClient(url, publishableKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  return createNodeSupabaseClient(url, publishableKey);
 }
 
 export function createAdminClient(url, serviceRoleKey) {
-  return createClient(url, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  return createNodeSupabaseClient(url, serviceRoleKey);
 }
 
 export async function signInClient(url, publishableKey, email, password) {

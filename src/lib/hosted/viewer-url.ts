@@ -96,6 +96,12 @@ export function logHostedViewerUrlDiagnostic(input: {
   if (process.env.NODE_ENV === "production") {
     return;
   }
+  if (
+    process.env.NEXT_PUBLIC_NEUD_DEBUG_VIEWER !== "true" &&
+    process.env.NEUD_DEBUG_VIEWER !== "1"
+  ) {
+    return;
+  }
 
   console.debug("[NEUD HostedViewerUrl]", {
     hostedOrigin: input.hostedOrigin,

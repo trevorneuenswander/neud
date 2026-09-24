@@ -29,6 +29,26 @@ export const IDENTITY_TOTAL_TIMEOUT_MS = 15_000;
 export const AUTH_VALIDATION_TIMEOUT_MS = 8_000;
 export const PROFILE_QUERY_TIMEOUT_MS = 8_000;
 
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof TimeoutError) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return true;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("econnrefused") ||
+    message.includes("enotfound") ||
+    message.includes("socket") ||
+    message.includes("offline")
+  );
+}
+
 export type IdentityStatus =
   | "idle"
   | "loading"
@@ -387,6 +407,14 @@ export class SupabaseIdentityService {
               ? error.message
               : "NEUD could not load your account from Supabase.";
 
+        if (isNetworkError(error)) {
+          return this.loadFromLocalCache(
+            authUser.userId,
+            true,
+            "Your account profile could not be refreshed. NEUD is using cached access.",
+          );
+        }
+
         this.resolved = {
           ...this.resolved,
           status: "error",
@@ -453,6 +481,15 @@ export class SupabaseIdentityService {
       const message =
         verification.error?.message ||
         "Your saved Supabase session is no longer valid. Sign in again.";
+
+      if (verification.error && isNetworkError(verification.error)) {
+        return this.loadFromLocalCache(
+          effectiveUserId,
+          true,
+          "Your account profile could not be refreshed. NEUD is using cached access.",
+        );
+      }
+
       this.resolved = {
         ...EMPTY_IDENTITY,
         status: "stale-session",
@@ -478,6 +515,14 @@ export class SupabaseIdentityService {
     );
 
     if (profileResult.status === "error") {
+      if (isNetworkError(new Error(profileResult.error))) {
+        return this.loadFromLocalCache(
+          effectiveUserId,
+          true,
+          "Your account profile could not be refreshed. NEUD is using cached access.",
+        );
+      }
+
       this.resolved = {
         ...EMPTY_IDENTITY,
         status: "error",

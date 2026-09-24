@@ -67,6 +67,7 @@ export type AccessManagementErrorCode =
   | "owner_role_not_assignable"
   | "sole_owner_protected"
   | "owner_team_protected"
+  | "neud_team_protected"
   | "invalid_team_role"
   | "last_owner"
   | "invitation_expired"
@@ -74,4 +75,6 @@ export type AccessManagementErrorCode =
   | "duplicate_invitation"
   | "offline_required"
   | "conflict"
-  | "invalid_request";
+  | "invalid_request"
+  | "invitation_service_unavailable"
+  | "auth_admin_invite_failed";

@@ -50,6 +50,8 @@ import { AppSettingsRepository } from "./repositories/app-settings-repository";
 import { DataSourcesRepository } from "./repositories/data-sources-repository";
 import { DisplaysRepository } from "./repositories/displays-repository";
 import { UserDisplayOrderRepository } from "./repositories/user-display-order-repository";
+import { UserPinnedViewerRepository } from "./repositories/user-pinned-viewer-repository";
+import { PinnedViewerSyncService } from "./services/pinned-viewer/pinned-viewer-sync-service";
 import { ProjectsRepository } from "./repositories/projects-repository";
 import { getAppPaths } from "./services/app-paths";
 import { AuctionDatasetService } from "./services/auction-dataset-service";
@@ -71,6 +73,7 @@ import { BagSourceService } from "./services/bag-source-service";
 import { BagProjectRepairService } from "./services/bag-project-repair-service";
 import { BroadArrowPhaseBootstrapService } from "./services/broad-arrow-phase-bootstrap-service";
 import { BagLiveStateEvents } from "./bag/live-state/bag-live-state-events";
+import { DisplayBridgeEvents } from "./displays/display-bridge-events";
 import { BagLiveStateRepository } from "./bag/live-state/bag-live-state-repository";
 import { BagLiveStateService } from "./bag/live-state/bag-live-state-service";
 import { BagManualEventsRepository } from "./bag/live-state/bag-manual-events-repository";
@@ -135,6 +138,7 @@ import {
 import {
   clearSavedStartupPath,
   DESKTOP_FALLBACK_LANDING_PATH,
+  isShellStartupPath,
   joinRendererUrl,
   persistStartupPath,
   readSavedStartupPath,
@@ -159,6 +163,11 @@ import {
   logStartupFailure,
   logStartupReady,
 } from "./services/startup-diagnostics";
+import {
+  markStartupPhase,
+  printStartupPerformanceSummary,
+} from "./services/startup-performance";
+import { resetCloudAccessStartupMetrics } from "./services/authenticated-client-provider";
 import { isPackagedDesktopRuntime } from "./lib/packaged-runtime";
 import { validateDesktopRuntimeAssets } from "./lib/runtime-assets";
 import { validateBundledDisplaySources } from "./lib/bundled-display-sources";
@@ -233,6 +242,7 @@ let localDataService: LocalDataService | null = null;
 let activitySyncService: import("./services/activity-sync/activity-sync-service").ActivitySyncService | null =
   null;
 let displaySyncService: DisplaySyncService | null = null;
+let pinnedViewerSyncService: PinnedViewerSyncService | null = null;
 let publishingManager: PublishingManager | null = null;
 let userDirectorySyncService: SupabaseUserDirectorySyncService | null = null;
 let offlineAuctionExportService: OfflineAuctionExportService | null = null;
@@ -257,6 +267,10 @@ const SHUTDOWN_RESOURCE_MS = 8000;
 async function cancelActiveExportsForShutdown() {
   offlineAuctionExportService?.cancelActiveExportForShutdown();
   localDataService?.cancelPendingExportsForShutdown();
+}
+
+if (process.env.NEUD_DISPLAY_RENDERING_DIAG === "1") {
+  app.commandLine.appendSwitch("remote-debugging-port", "9333");
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -531,10 +545,12 @@ function resolveDesktopApplicationIcon() {
 }
 
 async function createMainWindow() {
+  resetCloudAccessStartupMetrics();
   const paths = getAppPaths();
   processManager = new ProcessManager();
   nextServer = new NextServerService(paths, processManager);
   localDatabase = await openLocalDatabase(paths);
+  markStartupPhase("sqlite.ready");
   migrateLegacyAppSettings(localDatabase);
 
   const projectsRepository = new ProjectsRepository(localDatabase);
@@ -566,12 +582,17 @@ async function createMainWindow() {
     host.touch().id,
   );
   const supabaseUserSessionService = new SupabaseUserSessionService(paths);
+  const authRecordForCloudRef = authLicenseManager.getAuthenticatedUser();
+  if (authRecordForCloudRef?.supabaseProjectRef) {
+    supabaseUserSessionService.setStoredIssuerProjectRef(authRecordForCloudRef.supabaseProjectRef);
+  }
   const supabasePublicConfigLoad = loadSupabasePublicConfigWithSource(paths);
   const supabasePublicConfig = supabasePublicConfigLoad.config;
   writeCloudRuntimeConfigDiagnostic(paths.logs, supabasePublicConfigLoad.diagnostic);
   const authenticatedCloud = new AuthenticatedCloudCoordinator(
     supabaseUserSessionService,
     supabasePublicConfig,
+    supabasePublicConfigLoad.source,
   );
 
   authenticatedCloud.attachSharedDiagnosticsWriter((diagnostics) => {
@@ -607,6 +628,7 @@ async function createMainWindow() {
   registerAuthIpc(authLicenseManager, {
     userSession: supabaseUserSessionService,
     settings: appSettingsRepository,
+    supabasePublicConfig,
     onSessionStored: ({ startReason }) => {
       appSettingsRepository.set(AUTH_EXPLICITLY_SIGNED_OUT_KEY, false);
       reconcileIdentityOnSession?.();
@@ -644,6 +666,7 @@ async function createMainWindow() {
       });
 
       void displaySyncService?.requestSync("login");
+      void pinnedViewerSyncService?.syncAllPending("login");
       void localDataService?.refreshIdentity("login");
       void activitySyncService?.syncNow("login");
       void userDirectorySyncService?.syncNow("login");
@@ -744,6 +767,7 @@ async function createMainWindow() {
   const bagLiveStateRepository = new BagLiveStateRepository(localDatabase);
   const bagManualEventsRepository = new BagManualEventsRepository(localDatabase);
   const bagLiveStateEvents = new BagLiveStateEvents();
+  const displayBridgeEvents = new DisplayBridgeEvents();
   const bagLiveStateService = new BagLiveStateService(
     projectsRepository,
     dataSourcesRepository,
@@ -754,6 +778,7 @@ async function createMainWindow() {
   auctionDatasetService = new AuctionDatasetService(appSettingsRepository, projectsRepository);
   const displaysRepository = new DisplaysRepository(localDatabase);
   const userDisplayOrderRepository = new UserDisplayOrderRepository(localDatabase);
+  const userPinnedViewerRepository = new UserPinnedViewerRepository(localDatabase);
   const pylonDisplayService = new PylonDisplayService(
     projectsRepository,
     displaysRepository,
@@ -810,8 +835,16 @@ async function createMainWindow() {
     credentials,
     activityEventsRepository,
     userDisplayOrderRepository,
+    userPinnedViewerRepository,
   );
   localDataService.setAccessAuthorization(accessAuthorizationService);
+
+  pinnedViewerSyncService = new PinnedViewerSyncService(
+    authenticatedCloud,
+    authLicenseManager,
+    userPinnedViewerRepository,
+  );
+  localDataService.setPinnedViewerSync(pinnedViewerSyncService);
 
   const projectPhotoUploadRepository = new ProjectPhotoUploadRepository(localDatabase);
   const cloudPhotoAssetService = new CloudPhotoAssetService(
@@ -884,6 +917,7 @@ async function createMainWindow() {
       setTimeout(resolve, 10_000);
     }),
   ]);
+  markStartupPhase("auth.restore.waited");
 
   const supabaseIdentityService = new SupabaseIdentityService(
     authenticatedCloud,
@@ -962,6 +996,7 @@ async function createMainWindow() {
   };
 
   reconcileIdentityOnSession();
+  markStartupPhase("identity.reconciled");
 
   const importService = new ImportService(
     paths,
@@ -973,6 +1008,7 @@ async function createMainWindow() {
     authenticatedCloud,
   );
 
+  localDataService.setDisplayBridgeEvents(displayBridgeEvents);
   localApiServer = new LocalApiServer(
     paths,
     localDataService,
@@ -981,10 +1017,12 @@ async function createMainWindow() {
     importService,
     bagLiveStateService,
     bagLiveStateEvents,
+    displayBridgeEvents,
   );
   logStartupCheckpoint("startup.local_api_start");
   const localApiInfo = await localApiServer.start();
   logStartupCheckpoint("startup.local_api_ready", { baseUrl: localApiInfo.baseUrl });
+  markStartupPhase("local_api.ready", { baseUrl: localApiInfo.baseUrl });
   const canonicalLocalApiOrigin =
     normalizeLocalApiOrigin(localApiInfo.baseUrl) ?? DEFAULT_LOCAL_API_ORIGIN;
   const storedLocalApiOrigin = appSettingsRepository.get<string | null>(
@@ -1154,7 +1192,6 @@ async function createMainWindow() {
   );
   localDataService.setPublishingManager(publishingManager);
   localDataService.setDisplaySync(displaySyncService);
-  displaySyncService.start();
 
   const bootstrapRestoredCloudSession = async () => {
     const authSnapshot = authenticatedCloud.getAuthSnapshot();
@@ -1174,14 +1211,13 @@ async function createMainWindow() {
       return;
     }
 
-    await localDataService!.performStartupAuthValidation();
-
     if (!supabasePublicConfig) {
       displaySyncService?.markServiceUnavailable("missing_cloud_config");
       return;
     }
 
     const restore = await authenticatedCloud.restorePersistedSession();
+    await localDataService!.performStartupAuthValidation();
     const postRestoreAuth = authenticatedCloud.getAuthSnapshot();
     const lifecycle = supabaseUserSessionService.getSessionLifecycleDiagnostics();
     const existingDiagnostics =
@@ -1219,14 +1255,14 @@ async function createMainWindow() {
       );
       if (postRestoreAuth.hasRestorableCloudSession) {
         startCloudSyncServices("startup_restore");
+      } else if (authLicenseManager.isAccessAllowed()) {
+        startCloudSyncServices("startup_local");
       }
       return;
     }
 
     startCloudSyncServices("startup_restore");
-    startUserDirectorySync();
-    void activitySyncService?.syncNow("startup-restore");
-    void displaySyncService?.syncNow("startup-restore");
+    markStartupPhase("cloud.bootstrap.complete");
     if (isPackagedDesktopRuntime()) {
       void runAndWriteCloudIdentityDiagnostic({
         paths,
@@ -1246,6 +1282,11 @@ async function createMainWindow() {
     console.warn("[CloudCoordinator] session_restore failed:", message);
     displaySyncService?.markServiceUnavailable("session_restore_failed");
   });
+
+  localDataService.scheduleInternetReachabilityRefresh(true);
+  setInterval(() => {
+    localDataService?.scheduleInternetReachabilityRefresh();
+  }, 30_000);
 
   bagLiveStateEvents.on("update", (event) => {
     if (localDataService?.getDisplayDataSource() !== "webpage-scraper") {
@@ -1411,7 +1452,11 @@ async function createMainWindow() {
     : null;
   if (trustedPortal.ok) {
     localDataService.setTrustedAccessApi(
-      new DesktopTrustedAccessApiClient(trustedPortal.origin, authenticatedCloud),
+      new DesktopTrustedAccessApiClient(
+        trustedPortal.origin,
+        authenticatedCloud,
+        appSettingsRepository,
+      ),
     );
   }
   const accessManagementService = new AccessManagementService(
@@ -1454,6 +1499,7 @@ async function createMainWindow() {
       `[desktop] Legacy engine runtime assets migrated count=${legacyRuntimeMigrations.length}`,
     );
   }
+  localDataService.clearSessionFacingLastErrors();
 
   if (devMode) {
     await waitForDevHealth(appUrl);
@@ -1466,6 +1512,13 @@ async function createMainWindow() {
   if (savedPath && !authAllowed) {
     clearSavedStartupPath(appSettingsRepository);
     savedPath = null;
+  }
+  if (savedPath) {
+    const pathname = savedPath.trim().split(/[?#]/, 1)[0] ?? savedPath;
+    if (!isShellStartupPath(pathname)) {
+      clearSavedStartupPath(appSettingsRepository);
+      savedPath = null;
+    }
   }
 
   const startupPath = postUpdateSignInRequired
@@ -1584,9 +1637,12 @@ async function createMainWindow() {
     });
   }
 
+  markStartupPhase("renderer.load.requested", { rendererUrl });
   await loadRendererUrl(mainWindow, rendererUrl);
   attachMainWindowCloseHandler();
   mainWindow.show();
+  markStartupPhase("window.shown");
+  printStartupPerformanceSummary();
 
   initializeAutoUpdateService({
     getMainWindow: () => mainWindow,

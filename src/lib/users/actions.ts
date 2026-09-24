@@ -380,19 +380,44 @@ export async function deletePlatformUser(
     };
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin.auth.admin.deleteUser(targetUserId);
-
-  if (error) {
-    return { error: mapMutationError(error.message), success: null };
+  const { fetchAccessManagementDirectory } = await import(
+    "@/lib/access-management/directory-client"
+  );
+  const { deletePlatformUserWithTrustedAuth } = await import(
+    "@/lib/access-management/delete-platform-user"
+  );
+  const supabase = await createClient();
+  let directory;
+  try {
+    directory = await fetchAccessManagementDirectory(supabase);
+  } catch {
+    return { error: "Unable to load access directory.", success: null };
   }
 
-  await recordUserAuditEvent({
+  const result = await deletePlatformUserWithTrustedAuth({
     actorUserId: actorProfile.id,
     targetUserId,
-    eventType: "user.deleted",
-    metadata: { previousRole: targetRole },
+    directory,
   });
+
+  if (!result.ok) {
+    switch (result.code) {
+      case "owner_protected":
+        return {
+          error: toUserFacingError(AUTH_ERROR_CODES.lastOwnerProtected),
+          success: null,
+        };
+      case "user_not_found":
+        return { error: "User not found.", success: null };
+      case "auth_admin_delete_failed":
+        return { error: "Unable to delete the user's authentication account.", success: null };
+      case "database_cleanup_failed":
+        return { error: "User deletion failed during cleanup.", success: null };
+      case "permission_denied":
+      default:
+        return { error: toUserFacingError(AUTH_ERROR_CODES.forbidden), success: null };
+    }
+  }
 
   revalidatePath("/users");
   return { error: null, success: "User deleted." };

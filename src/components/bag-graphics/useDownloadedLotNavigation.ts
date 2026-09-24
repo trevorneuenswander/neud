@@ -117,6 +117,13 @@ export function useDownloadedLotNavigation({
     loadedLots.length > 0 &&
     selectedDownloadedLotIndex < loadedLots.length - 1;
 
+  const resolveFilteredIndexForLot = useCallback(
+    (lot: DownloadedAuctionLot) => {
+      return loadedLots.findIndex((entry) => entry.stableId === lot.stableId);
+    },
+    [loadedLots],
+  );
+
   return {
     manualLotViewSource,
     loadedLots,
@@ -134,6 +141,7 @@ export function useDownloadedLotNavigation({
     previewLotNumber,
     previewPhotos,
     setSelectedDownloadedLotIndex,
+    resolveFilteredIndexForLot,
     clearSelectedDownloadedLot: () => setSelectedDownloadedLotIndex(-1),
     buildBaselineDraft: (lot: DownloadedAuctionLot) => buildManualDraftFromDownloadedLot(lot),
   };

@@ -116,4 +116,10 @@ export class LocalInvitationsRepository {
       .prepare("UPDATE local_invitations SET status = 'accepted', updated_at = ? WHERE id = ?")
       .run(now, invitationId);
   }
+
+  deleteByEmail(email: string): void {
+    this.db
+      .prepare("DELETE FROM local_invitations WHERE email = ? COLLATE NOCASE")
+      .run(email.trim().toLowerCase());
+  }
 }

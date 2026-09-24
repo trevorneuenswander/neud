@@ -14,6 +14,13 @@ import { useEngineLastPollAt } from "@/lib/data-engines/engine-status-session-cl
 import type { EngineHealthState } from "@/lib/data-engines/constants";
 import type { DataEngineLog, DataEngineStatus } from "@/lib/data-engines/types";
 import type { ScrapeRunMetadata } from "@/lib/data-engines/bag-diagnostic-log";
+import {
+  buildCurrentLotPhotoDiagnostics,
+  buildRuntimeDiagnosticsFromSnapshot,
+  buildStateConsistencyDiagnostics,
+  findLatestLiveDiagnosticsLog,
+} from "@/lib/data-engines/runtime-diagnostics-from-snapshot";
+import type { BagSnapshotData } from "@/lib/data-engines/types";
 
 type RuntimeDiagnosticsProps = {
   status: DataEngineStatus | null;
@@ -23,6 +30,8 @@ type RuntimeDiagnosticsProps = {
   health?: EngineHealthState;
   embedded?: boolean;
   engineId?: string | null;
+  snapshotData?: BagSnapshotData | Record<string, unknown> | null;
+  liveFeedRuntime?: Record<string, unknown> | null;
 };
 
 const HEALTH_STYLES: Record<EngineHealthState, string> = {
@@ -119,16 +128,30 @@ export function RuntimeDiagnostics({
   health = "unknown",
   embedded = false,
   engineId = null,
+  snapshotData = null,
+  liveFeedRuntime = null,
 }: RuntimeDiagnosticsProps) {
   const { lastPollAt: sessionLastPollAt } = useEngineLastPollAt(engineId);
   const latestLog = findLatestScrapeLog(logs);
+  const latestLiveLog = findLatestLiveDiagnosticsLog(logs);
   const latestStopLog = findLatestStopLog(logs);
   const latestLoginFailureLog = findLatestLoginFailureLog(logs);
   const loginFailureScreenshot =
     typeof latestLoginFailureLog?.metadata?.loginFailureScreenshot === "string"
       ? latestLoginFailureLog.metadata.loginFailureScreenshot
       : null;
-  const metadata = parseRunMetadata(latestLog);
+  const snapshotDiagnostics = buildRuntimeDiagnosticsFromSnapshot(snapshotData);
+  const liveLogMetadata =
+    latestLiveLog?.metadata && typeof latestLiveLog.metadata === "object"
+      ? (latestLiveLog.metadata as ScrapeRunMetadata)
+      : {};
+  const metadata = {
+    ...parseRunMetadata(latestLog),
+    ...snapshotDiagnostics,
+    ...liveLogMetadata,
+  };
+  const consistency = buildStateConsistencyDiagnostics(snapshotData, metadata);
+  const photoDiagnostics = buildCurrentLotPhotoDiagnostics(snapshotData);
 
   const lastSuccessfulPoll =
     sessionLastPollAt ??
@@ -219,6 +242,54 @@ export function RuntimeDiagnostics({
           label="Polling interval"
           value={formatPollInterval(pollIntervalMs)}
         />
+        <DiagnosticRow
+          label="Live feed mode"
+          value={
+            typeof liveFeedRuntime?.liveFeedMode === "string"
+              ? String(liveFeedRuntime.liveFeedMode)
+              : typeof metadata?.liveFeedMode === "string"
+                ? metadata.liveFeedMode
+                : "—"
+          }
+        />
+        <DiagnosticRow
+          label="Live feed status"
+          value={
+            typeof liveFeedRuntime?.liveFeedHealth === "string"
+              ? String(liveFeedRuntime.liveFeedHealth)
+              : typeof metadata?.liveFeedHealth === "string"
+                ? metadata.liveFeedHealth
+                : "—"
+          }
+        />
+        <DiagnosticRow
+          label="Current lot photos"
+          value={
+            metadata?.currentPhotoCount != null
+              ? String(metadata.currentPhotoCount)
+              : metadata?.photosAvailableForCurrentLot
+                ? "yes"
+                : photoDiagnostics.canonicalPhotoCount > 0
+                  ? String(photoDiagnostics.canonicalPhotoCount)
+                  : "—"
+          }
+        />
+        <DiagnosticRow
+          label="State views agree"
+          value={consistency.allStateViewsAgree ? "yes" : "no"}
+        />
+        {!consistency.allStateViewsAgree ? (
+          <DiagnosticRow
+            label="First state divergence"
+            value={consistency.firstStateDivergenceStage ?? "unknown"}
+          />
+        ) : null}
+        {photoDiagnostics.firstPhotoFailureStage !== "none" ? (
+          <DiagnosticRow
+            label="Photo failure stage"
+            value={photoDiagnostics.firstPhotoFailureStage}
+          />
+        ) : null}
         {actualState === "stopping" || latestStopLog ? (
           <DiagnosticRow
             label="Shutdown stage"

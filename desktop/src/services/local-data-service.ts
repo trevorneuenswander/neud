@@ -148,6 +148,16 @@ import { finalizeDownloadPackage } from "./auction-data-paths";
 import { getDownloadSizeForJsonPath } from "./auction-download-json-sync";
 import { formatDownloadSize } from "./auction-download-size";
 import type { UserDisplayOrderRepository } from "../repositories/user-display-order-repository";
+import type { UserPinnedViewerRepository } from "../repositories/user-pinned-viewer-repository";
+import type { PinnedViewerSyncService } from "./pinned-viewer/pinned-viewer-sync-service";
+import {
+  DEFAULT_PINNED_VIEWER_HEIGHT_PX,
+  MAX_PINNED_DISPLAYS,
+  clampPinnedViewerHeight,
+  normalizePinnedViewerHeight,
+  orderPinnedDisplayIds,
+  sanitizePinnedDisplayIds,
+} from "../lib/displays/pinned-viewer-preference";
 import type { ProjectDisplayCodeRepository } from "../repositories/project-display-code-repository";
 import { reconcileHostedProjectAndDisplayIdentity } from "./display-sync/hosted-identity-reconciliation";
 import type { LocalDisplay } from "../repositories/displays-repository";
@@ -162,6 +172,29 @@ import {
   type CanonicalProjectData,
 } from "../displays/canonical-project-data";
 import { normalizeBroadArrowDisplayData } from "../displays/normalize-broad-arrow-display-data";
+import {
+  attachStreamTickerFeedToBridgePayload,
+  buildStreamTickerFeed,
+} from "../displays/stream-ticker-feed";
+import {
+  parseStreamTickerDayFilter,
+  streamTickerDayFilterSettingKey,
+} from "../displays/stream-ticker-day-filter-settings";
+import {
+  auctionDaySelectionSettingKey,
+  readAuctionDaySelectionWithMigration,
+} from "../bag/auction-day-selection";
+import {
+  collectLotNumbersForAuctionDayDetection,
+  detectAuctionDayOptionsFromLotNumbers,
+} from "../bag/auction-day-options";
+import {
+  detectAuctionDaysFromLotNumbers,
+  getAuctionDayFromLotNumber,
+  normalizeAuctionDayFilter,
+  type AuctionDayFilter,
+} from "../bag/auction-day-from-lot";
+import type { CloudAccessLocalSyncDiagnostics } from "./cloud-access-local-sync";
 import {
   buildPublishedProjectPayload,
   CanonicalRevisionTracker,
@@ -182,6 +215,15 @@ import {
   createDefaultCanonicalPipelineDiagnostics,
   type CanonicalPipelineDiagnostics,
 } from "./canonical/canonical-pipeline-diagnostics";
+import {
+  resolveDashboardConnectionState,
+  resolveProfileIndicatorState,
+} from "./account-connection-state";
+import { probeInternetReachability } from "../connectivity/internet-reachability-probe";
+import {
+  resolveSessionFacingEngineLastError,
+  shouldClearPersistedEngineLastError,
+} from "./engine-session-facing-errors";
 
 const REGISTRY_DISPLAY_KEYS = new Set([
   "pylon",
@@ -253,6 +295,7 @@ export class LocalDataService {
   private activitySync: ActivitySyncService | null = null;
   private displaySync: import("./display-sync/display-sync-service").DisplaySyncService | null =
     null;
+  private pinnedViewerSync: PinnedViewerSyncService | null = null;
   private activitySyncState: ActivitySyncState | null = null;
   private userDirectorySync: SupabaseUserDirectorySyncService | null = null;
   private userDirectorySyncState: UserDirectorySyncState | null = null;
@@ -268,8 +311,16 @@ export class LocalDataService {
     (engineId: string, snapshot: EngineStatusSnapshot) => void
   >();
   private displayDataRevision = 0;
+  private lastLocalDisplayBroadcastHash = new Map<string, string>();
+  private displayBridgeEvents: import("../displays/display-bridge-events").DisplayBridgeEvents | null =
+    null;
+  private auctionDayOptionsCache = new Map<
+    string,
+    { days: number[]; revision: number; expiresAt: number }
+  >();
   private controllerStateRevision = 0;
   private scraperStateRevision = 0;
+  private liveFeedRuntimeByEngine = new Map<string, Record<string, unknown>>();
   private canonicalRevisionTrackers = new Map<string, CanonicalRevisionTracker>();
   private canonicalSnapshotLogHashes = new Map<string, string>();
   private lastObservedCanonicalSnapshot = new Map<string, Record<string, unknown>>();
@@ -333,6 +384,15 @@ export class LocalDataService {
     createEmptyCloudAccessDirectoryDiagnostics();
   private trustedAccessApi: import("./desktop-trusted-access-api-client").DesktopTrustedAccessApiClient | null =
     null;
+  private cloudAccessLocalSyncDiagnostics: CloudAccessLocalSyncDiagnostics | null = null;
+  private streamTickerFilterDiagnostics: Record<string, unknown> = {};
+  private startupScraperDiagnostics: Record<string, unknown> = {};
+  private startupAuthConsistencyDiagnostics: Record<string, unknown> = {};
+  private internetReachabilityCached: boolean | null = null;
+  private internetReachabilityCheckedAt = 0;
+  private internetReachabilityProbeInFlight: Promise<boolean> | null = null;
+  private cloudAuthRecoveryInFlight: Promise<void> | null = null;
+  private static readonly INTERNET_PROBE_STALE_MS = 30_000;
 
   constructor(
     private readonly projects: ProjectsRepository,
@@ -354,6 +414,7 @@ export class LocalDataService {
     private readonly credentials: CredentialStore,
     activityEvents?: ActivityEventsRepository,
     private readonly userDisplayOrder?: UserDisplayOrderRepository | null,
+    private readonly userPinnedViewer?: UserPinnedViewerRepository | null,
   ) {
     this.activityEventsRepository = activityEvents ?? null;
     this.activitySession = new ActivitySessionStore(activityEvents ?? null);
@@ -368,6 +429,10 @@ export class LocalDataService {
 
   setDisplaySync(service: import("./display-sync/display-sync-service").DisplaySyncService) {
     this.displaySync = service;
+  }
+
+  setPinnedViewerSync(service: PinnedViewerSyncService) {
+    this.pinnedViewerSync = service;
   }
 
   getDisplaySyncDiagnostics() {
@@ -449,15 +514,52 @@ export class LocalDataService {
         connectionOnline: false,
       };
 
+    const sharedAuthSnapshot = this.cloudCoordinator?.getAuthSnapshot() ?? null;
+    const localSessionValid = this.auth.isAccessAllowed();
+    const authenticatedCloudSessionAvailable =
+      sharedAuthSnapshot?.authenticatedCloudSessionAvailable ?? false;
+    const profileIndicatorState = resolveProfileIndicatorState({
+      localSessionValid,
+      authMode: auth.mode,
+      sharedAuth: sharedAuthSnapshot,
+    });
+    const dashboardConnectionState = resolveDashboardConnectionState({
+      localSessionValid,
+      authMode: auth.mode,
+      sharedAuth: sharedAuthSnapshot,
+    });
+
+    const networkReachable = this.getNetworkReachable();
+
+    this.startupAuthConsistencyDiagnostics = {
+      localSessionValid,
+      networkReachable,
+      authenticatedClientReady: sharedAuthSnapshot?.authenticatedClientReady ?? false,
+      authenticatedCloudSessionAvailable,
+      reauthenticationRequired: sharedAuthSnapshot?.reauthenticationRequired ?? false,
+      publishingManagerRunning: Boolean(this.publishingManager),
+      displaySyncAvailable: Boolean(this.displaySync),
+      activitySyncAvailable: Boolean(this.activitySync),
+      profileIndicatorState,
+      dashboardConnectionState,
+      usersPageAuthState:
+        authenticatedCloudSessionAvailable || localSessionValid ? "ready" : "sign_in_required",
+      sharedAuthSnapshotState: sharedAuthSnapshot,
+      statesAgree: profileIndicatorState === "online" ? dashboardConnectionState === "connected" : true,
+    };
+
     return {
       auth,
-      connectionStatus:
-        auth.mode === "online" || userDirectorySync.connectionOnline
-          ? ("connected" as const)
-          : ("offline" as const),
+      connectionStatus: dashboardConnectionState === "connected" ? ("connected" as const) : ("offline" as const),
       cloudConfigured: this.cloudCoordinator?.isCloudConfigured() ?? false,
-      hasCloudSession: this.cloudCoordinator?.hasCloudSession() ?? false,
+      hasCloudSession: authenticatedCloudSessionAvailable,
+      authenticatedCloudSessionAvailable,
       requiresCloudReauthentication: this.cloudCoordinator?.requiresReauthentication() ?? false,
+      sharedAuthSnapshot,
+      profileIndicatorState,
+      dashboardConnectionState,
+      localSessionValid,
+      networkReachable,
       userDirectorySync: {
         status: userDirectorySync.status,
         message: userDirectorySync.message,
@@ -467,6 +569,54 @@ export class LocalDataService {
         connectionOnline: userDirectorySync.connectionOnline,
       },
     };
+  }
+
+  getStartupAuthConsistencyDiagnostics() {
+    return { ...this.startupAuthConsistencyDiagnostics };
+  }
+
+  getNetworkReachable(): boolean {
+    if (this.internetReachabilityCached !== null) {
+      return this.internetReachabilityCached;
+    }
+    return this.auth.isConnectionOnline();
+  }
+
+  async refreshInternetReachability(force = false): Promise<boolean> {
+    const now = Date.now();
+    if (
+      !force &&
+      this.internetReachabilityCached !== null &&
+      now - this.internetReachabilityCheckedAt < LocalDataService.INTERNET_PROBE_STALE_MS
+    ) {
+      return this.internetReachabilityCached;
+    }
+    if (this.internetReachabilityProbeInFlight) {
+      return this.internetReachabilityProbeInFlight;
+    }
+
+    this.internetReachabilityProbeInFlight = probeInternetReachability()
+      .then((reachable) => {
+        this.internetReachabilityCached = reachable;
+        this.internetReachabilityCheckedAt = Date.now();
+        if (reachable) {
+          this.auth.setConnectionOnline(true);
+        }
+        return reachable;
+      })
+      .finally(() => {
+        this.internetReachabilityProbeInFlight = null;
+      });
+
+    return this.internetReachabilityProbeInFlight;
+  }
+
+  scheduleInternetReachabilityRefresh(force = false): void {
+    void this.refreshInternetReachability(force).catch(() => undefined);
+  }
+
+  getStartupScraperDiagnostics() {
+    return { ...this.startupScraperDiagnostics };
   }
 
   getHostedPortalOrigin(): {
@@ -500,15 +650,63 @@ export class LocalDataService {
       return;
     }
 
-    if (!this.cloudCoordinator?.hasCloudSession()) {
-      await this.supabaseIdentity?.ensureLoaded("startup");
-      return;
-    }
+    await this.refreshInternetReachability(true);
+    await this.ensureSharedCloudAuthRecovery("startup");
 
     const result = await this.verifyOnlineSession({ reason: "startup" });
     if (result.verification.status === "offline") {
       await this.supabaseIdentity?.ensureLoaded("startup");
     }
+  }
+
+  async ensureSharedCloudAuthRecovery(reason: string): Promise<void> {
+    if (!this.cloudCoordinator?.isCloudConfigured()) {
+      return;
+    }
+    if (
+      !this.cloudCoordinator.hasCloudSession() &&
+      !this.cloudCoordinator.hasRestorableCloudSession()
+    ) {
+      await this.supabaseIdentity?.ensureLoaded(reason);
+      return;
+    }
+
+    await this.cloudCoordinator.ensureAuthenticatedClient(reason, {
+      forceRefresh: reason === "reconnect",
+    });
+
+    if (this.cloudCoordinator.isAuthenticatedCloudSessionAvailable()) {
+      await this.runPostCloudAuthRecovery(reason);
+    }
+  }
+
+  async runPostCloudAuthRecovery(reason: string): Promise<void> {
+    if (this.cloudAuthRecoveryInFlight) {
+      return this.cloudAuthRecoveryInFlight;
+    }
+    this.cloudAuthRecoveryInFlight = this.executePostCloudAuthRecovery(reason).finally(() => {
+      this.cloudAuthRecoveryInFlight = null;
+    });
+    return this.cloudAuthRecoveryInFlight;
+  }
+
+  private async executePostCloudAuthRecovery(reason: string): Promise<void> {
+    this.displaySync?.updateRuntimeContext({
+      authenticatedSessionAvailable: true,
+      lastUnavailableReason: null,
+    });
+
+    if (reason === "startup") {
+      void this.getCloudAccessDirectory({ forceRefresh: false }).catch(() => undefined);
+      return;
+    }
+
+    this.publishingManager?.ensureStarted(`auth-recovered:${reason}`);
+    this.displaySync?.requestSync(`${reason}-auth-recovered`);
+    void this.activitySync?.syncNow(`auth-recovered:${reason}`).catch(() => undefined);
+    void this.userDirectorySync?.syncNow("startup").catch(() => undefined);
+    void this.getCloudAccessDirectory({ forceRefresh: true }).catch(() => undefined);
+    await this.displaySync?.syncNow(`${reason}-auth-recovered`).catch(() => undefined);
   }
 
   async recoverSessionAfterInternetRestore(): Promise<{
@@ -520,11 +718,17 @@ export class LocalDataService {
       return { attempted: false, status: this.getAuthStatusBundle() };
     }
 
-    if (!this.auth.isAccessAllowed() || !this.cloudCoordinator?.hasCloudSession()) {
+    if (
+      !this.auth.isAccessAllowed() ||
+      (!this.cloudCoordinator?.hasCloudSession() &&
+        !this.cloudCoordinator?.hasRestorableCloudSession())
+    ) {
       return { attempted: false, status: this.getAuthStatusBundle() };
     }
 
     this.lastSessionRecoveryAt = now;
+    await this.refreshInternetReachability(true);
+    await this.ensureSharedCloudAuthRecovery("reconnect");
     const result = await this.verifyOnlineSession({ reason: "reconnect" });
     return { attempted: true, status: result.status };
   }
@@ -655,6 +859,23 @@ export class LocalDataService {
     this.localApiBaseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  setDisplayBridgeEvents(
+    events: import("../displays/display-bridge-events").DisplayBridgeEvents,
+  ) {
+    this.displayBridgeEvents = events;
+  }
+
+  getProjectDisplayBridgeSyncState(projectId: string) {
+    return {
+      revision: this.displayDataRevision,
+      contentHash: this.lastLocalDisplayBroadcastHash.get(projectId) ?? null,
+    };
+  }
+
+  projectExistsForRoutes(projectId: string) {
+    return Boolean(this.getProjectById(projectId));
+  }
+
   setViewerBaseUrl(baseUrl: string) {
     this.viewerBaseUrl = baseUrl.replace(/\/$/, "");
   }
@@ -690,6 +911,42 @@ export class LocalDataService {
     this.publishingManager?.notifyProjectCanonicalMayHaveChanged(projectId, reason);
   }
 
+  private broadcastProjectDisplayDataChanged(projectId: string): void {
+    const revision = this.displayDataRevision;
+    const contentHash = this.lastLocalDisplayBroadcastHash.get(projectId) ?? null;
+    this.displayBridgeEvents?.publishDisplayDataChanged(projectId, {
+      revision,
+      contentHash,
+    });
+    for (const window of BrowserWindowRuntime.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        sendToRenderer(window, "neud:displayData:changed", {
+          projectId,
+          revision,
+          contentHash,
+        });
+      }
+    }
+  }
+
+  tryNotifyProjectDisplayDataChanged(
+    projectId: string,
+    options?: { force?: boolean },
+  ): boolean {
+    const snapshot = this.getActiveCanonicalProjectSnapshot(projectId);
+    const hash = snapshot ? hashCanonicalProjectDataForPublish(snapshot) : null;
+    const previous = this.lastLocalDisplayBroadcastHash.get(projectId) ?? null;
+    if (!options?.force && hash !== null && hash === previous) {
+      return false;
+    }
+    if (hash !== null) {
+      this.lastLocalDisplayBroadcastHash.set(projectId, hash);
+    }
+    this.displayDataRevision += 1;
+    this.broadcastProjectDisplayDataChanged(projectId);
+    return true;
+  }
+
   /** Persists manual controller state without changing the selected data source. */
   notifyLocalControllerStateChanged(projectId: string, actionType: string) {
     const now = new Date().toISOString();
@@ -707,7 +964,8 @@ export class LocalDataService {
     });
 
     if (activeSourceSelected) {
-      this.notifyActiveCanonicalDataChanged(projectId, `controller:${actionType}`);
+      this.tryNotifyProjectDisplayDataChanged(projectId);
+      this.notifyProjectCanonicalMayHaveChanged(projectId, `controller:${actionType}`);
     }
   }
 
@@ -718,6 +976,7 @@ export class LocalDataService {
 
   /** Requests publication when changed data belongs to the currently selected source. */
   notifyActiveCanonicalDataChanged(projectId: string, reason: string) {
+    this.tryNotifyProjectDisplayDataChanged(projectId);
     this.notifyProjectCanonicalMayHaveChanged(projectId, reason);
   }
 
@@ -739,6 +998,7 @@ export class LocalDataService {
       scraperObservation: true,
       publicationRequestedAt: now,
     });
+    this.tryNotifyProjectDisplayDataChanged(projectId);
     this.notifyProjectCanonicalMayHaveChanged(projectId, "scraper-update");
   }
 
@@ -1060,6 +1320,31 @@ export class LocalDataService {
         };
       }
 
+      const localSessionValid = this.auth.isAccessAllowed();
+      const sessionRestorePending = this.cloudCoordinator?.isSessionRestorePending() ?? false;
+
+      if (cached?.directory && localSessionValid) {
+        diagnostics.cloudDirectoryRequestResult = "not_attempted";
+        diagnostics.actualFallbackReason = sessionRestorePending ? "session_restoring" : "offline";
+        diagnostics.cloudDirectoryEntityCounts = countCloudAccessDirectoryEntities(
+          cached.directory as Record<string, unknown>,
+        );
+        this.cloudAccessDirectoryDiagnostics = this.mergeBridgeDiagnostics(diagnostics);
+        return {
+          ...(cached.directory as Record<string, unknown>),
+          ok: true,
+          syncedAt: cached.syncedAt,
+          stale: true,
+          offline: true,
+          fallbackReason: (sessionRestorePending
+            ? "session_restoring"
+            : "offline") satisfies CloudAccessFallbackReason,
+          warning: sessionRestorePending
+            ? "Restoring cloud access… Showing cached directory read-only."
+            : "Cloud access is offline. Cached access data is shown read-only.",
+        };
+      }
+
       if (cached?.directory) {
         diagnostics.cloudDirectoryRequestResult = "not_attempted";
         diagnostics.actualFallbackReason = "no_session";
@@ -1138,6 +1423,24 @@ export class LocalDataService {
       }
 
       this.cloudAccessDirectoryDiagnostics = this.mergeBridgeDiagnostics(diagnostics);
+
+      if (this.accessManagement && directory.projectTeams && directory.teamMemberships) {
+        const actorUserId = this.auth.getAuthenticatedUser()?.userId ?? null;
+        this.cloudAccessLocalSyncDiagnostics =
+          this.accessManagement.syncCloudDirectoryProjectTeams({
+            projectTeams: directory.projectTeams as Array<{
+              projectId?: string;
+              teamId?: string;
+            }>,
+            cloudProjects: directory.projects as Array<{ id?: string; slug?: string }>,
+            teamMemberships: directory.teamMemberships as Array<{
+              teamId?: string;
+              userId?: string;
+              role?: string;
+            }>,
+            actorUserId,
+          });
+      }
 
       return {
         ...directory,
@@ -1222,7 +1525,7 @@ export class LocalDataService {
 
   async createCloudAccessTeam(input: { name: string; description?: string | null }) {
     const result = await this.requireCloudAccessBridge().createTeam(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
@@ -1233,37 +1536,37 @@ export class LocalDataService {
     isActive?: boolean;
   }) {
     const result = await this.requireCloudAccessBridge().updateTeam(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
   async archiveCloudAccessTeam(teamId: string) {
     const result = await this.requireCloudAccessBridge().archiveTeam(teamId);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
   async upsertCloudTeamMember(input: { teamId: string; userId: string; role: string }) {
     const result = await this.requireCloudAccessBridge().upsertTeamMember(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
   async removeCloudTeamMember(input: { teamId: string; userId: string }) {
     const result = await this.requireCloudAccessBridge().removeTeamMember(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
   async assignCloudProjectTeam(input: { projectId: string; teamId: string }) {
     const result = await this.requireCloudAccessBridge().assignProjectTeam(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
   async removeCloudProjectTeam(input: { projectId: string; teamId: string }) {
     const result = await this.requireCloudAccessBridge().removeProjectTeam(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
@@ -1273,14 +1576,41 @@ export class LocalDataService {
     role: string;
   }) {
     const result = await this.requireCloudAccessBridge().upsertProjectMember(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
   async removeCloudProjectMember(input: { projectId: string; userId: string }) {
     const result = await this.requireCloudAccessBridge().removeProjectMember(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
+  }
+
+  async probeCloudAccessInvitationAuth() {
+    if (!this.trustedAccessApi) {
+      return {
+        ok: false,
+        code: "trusted_access_api_unconfigured",
+        sharedCloudAuthAvailable: this.cloudCoordinator?.isAuthenticatedCloudSessionAvailable() ?? false,
+      };
+    }
+    const probe = await this.trustedAccessApi.probeTrustedAccessAuth();
+    const shared = this.cloudCoordinator?.getSharedAuthDiagnostics() ?? null;
+    const sharedCloudAuthAvailable =
+      this.cloudCoordinator?.isAuthenticatedCloudSessionAvailable() ?? false;
+    const { ok: _probeOk, ...probeBody } = probe;
+    return {
+      sharedCloudAuthAvailable,
+      authenticatedClientReady: shared?.authenticatedClientReady ?? null,
+      accessTokenPresent: shared?.accessTokenPresent ?? null,
+      accessTokenExpired: shared?.accessTokenExpired ?? null,
+      localApiReceivedAuthorization: false,
+      localApiCloudBearerExpected: false,
+      localApiCloudBearerPresent: false,
+      trustedClientTokenPresent: probe.trustedClientTokenPresent ?? shared?.accessTokenPresent ?? null,
+      ...probeBody,
+      ok: probe.trustedAccessCallerResolved === true,
+    };
   }
 
   async createCloudAccessInvitation(input: {
@@ -1296,7 +1626,7 @@ export class LocalDataService {
       );
     }
     const result = await this.trustedAccessApi.createInvitation(input);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
@@ -1307,7 +1637,7 @@ export class LocalDataService {
       );
     }
     const result = await this.trustedAccessApi.resendInvitation(invitationId);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
@@ -1318,7 +1648,7 @@ export class LocalDataService {
       );
     }
     const result = await this.trustedAccessApi.revokeInvitation(invitationId);
-    await this.getCloudAccessDirectory();
+    await this.getCloudAccessDirectory({ forceRefresh: true });
     return result;
   }
 
@@ -1367,13 +1697,47 @@ export class LocalDataService {
     return this.accessManagement.listViewableUserIds(userId);
   }
 
+  private readCloudDirectoryForAuthorization():
+    | import("../access/can-view-user-details").UserDetailsDirectory
+    | null {
+    const cached = this.cloudAccessCache?.getCachedDirectory()?.directory;
+    if (!cached || typeof cached !== "object") {
+      return null;
+    }
+    const record = cached as Record<string, unknown>;
+    const users = Array.isArray(record.users) ? record.users : [];
+    const teams = Array.isArray(record.teams) ? record.teams : [];
+    const teamMemberships = Array.isArray(record.teamMemberships)
+      ? record.teamMemberships
+      : [];
+    const projectMembers = Array.isArray(record.projectMembers)
+      ? record.projectMembers
+      : [];
+    const projectTeams = Array.isArray(record.projectTeams) ? record.projectTeams : [];
+    const projects = Array.isArray(record.projects) ? record.projects : [];
+    return {
+      users: users as import("../access/can-view-user-details").UserDetailsDirectory["users"],
+      teams: teams as import("../access/can-view-user-details").UserDetailsDirectory["teams"],
+      teamMemberships:
+        teamMemberships as import("../access/can-view-user-details").UserDetailsDirectory["teamMemberships"],
+      projectMembers:
+        projectMembers as import("../access/can-view-user-details").UserDetailsDirectory["projectMembers"],
+      projectTeams:
+        projectTeams as import("../access/can-view-user-details").UserDetailsDirectory["projectTeams"],
+      projects: projects as Array<{ id: string; name: string; slug: string }>,
+    };
+  }
+
   async getUserDetails(targetUserId: string) {
     const userId = this.auth.getAuthenticatedUser()?.userId;
     if (!userId || !this.accessManagement) {
       throw new Error("You do not have permission to view users.");
     }
 
-    const base = this.accessManagement.getUserDetails(userId, targetUserId);
+    const cloudDirectory = this.readCloudDirectoryForAuthorization();
+    const base = this.accessManagement.getUserDetails(userId, targetUserId, {
+      cloudDirectory,
+    });
     const identity = this.supabaseIdentity?.getResolvedIdentity() ?? null;
     const supabaseUserId = base.user.supabaseUserId?.trim() || null;
     let source: "supabase" | "local-cache" = "local-cache";
@@ -1402,7 +1766,7 @@ export class LocalDataService {
       localEmail: base.user.email,
       localPhone: base.user.phone,
       localProfileTeam: base.user.profileTeam,
-      localPlatformRole: base.user.platformRole,
+      localPlatformRole: base.user.platformRole as import("./access-types").PlatformRole,
       supabaseFullName: remoteProfile?.full_name ?? null,
       supabaseEmail: remoteProfile?.email ?? identity?.email ?? null,
       supabasePhoneNumber: remoteProfile?.phone_number ?? null,
@@ -1410,6 +1774,11 @@ export class LocalDataService {
       supabaseRole: remoteProfile?.role ?? identity?.profile.role ?? null,
       source,
     });
+
+    const canDeleteUser =
+      this.accessAuthorization?.canDeleteUserDetails(userId, targetUserId, {
+        cloudDirectory,
+      }) === true;
 
     return {
       user: {
@@ -1424,7 +1793,83 @@ export class LocalDataService {
       },
       teams: base.teams,
       projects: base.projects,
+      canDeleteUser,
     };
+  }
+
+  async deletePlatformTeam(teamId: string) {
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId || !this.accessManagement) {
+      throw new Error("You do not have permission to delete teams.");
+    }
+    if (!this.trustedAccessApi) {
+      throw new Error("Connect to the internet to delete a team.");
+    }
+    if (!this.supabaseIdentity?.isOnlineReady()) {
+      throw new Error("Connect to the internet to delete a team.");
+    }
+
+    const cloudDirectory = this.readCloudDirectoryForAuthorization();
+    return this.accessManagement.deleteTeam(userId, teamId, {
+      cloudDirectory,
+      trustedDelete: async (targetTeamId) => {
+        try {
+          const result = await this.trustedAccessApi!.deleteTeam(targetTeamId);
+          return {
+            ok: result.ok === true,
+            code: typeof result.code === "string" ? result.code : undefined,
+          };
+        } catch (error) {
+          const { TrustedAccessRequestError } = await import(
+            "./desktop-trusted-access-api-client"
+          );
+          if (error instanceof TrustedAccessRequestError) {
+            return { ok: false, code: error.code };
+          }
+          throw error;
+        }
+      },
+      refreshCloudDirectory: async () => {
+        await this.getCloudAccessDirectory({ forceRefresh: true });
+      },
+    });
+  }
+
+  async deletePlatformUser(targetUserId: string) {
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId || !this.accessManagement) {
+      throw new Error("You do not have permission to delete users.");
+    }
+    if (!this.trustedAccessApi) {
+      throw new Error(
+        "Cloud user deletion requires a configured trusted access connection.",
+      );
+    }
+
+    const cloudDirectory = this.readCloudDirectoryForAuthorization();
+    return this.accessManagement.deleteUser(userId, targetUserId, {
+      cloudDirectory,
+      trustedDelete: async (targetId) => {
+        try {
+          const result = await this.trustedAccessApi!.deleteUser(targetId);
+          return {
+            ok: result.ok === true,
+            code: typeof result.code === "string" ? result.code : undefined,
+          };
+        } catch (error) {
+          const { TrustedAccessRequestError } = await import(
+            "./desktop-trusted-access-api-client"
+          );
+          if (error instanceof TrustedAccessRequestError) {
+            return { ok: false, code: error.code };
+          }
+          throw error;
+        }
+      },
+      refreshCloudDirectory: async () => {
+        await this.getCloudAccessDirectory({ forceRefresh: true });
+      },
+    });
   }
 
   createTeam(input: { name: string; description?: string | null }) {
@@ -2114,10 +2559,14 @@ export class LocalDataService {
       if (!context?.isPlatformOwner) {
         records = records.filter((project) => normalizeProjectIsActive(project));
       }
+      const cloudDirectory = this.readCloudDirectoryForAuthorization();
       return records.map((project) => {
         const portalProject = toPortalProject(project);
         const teams = context
-          ? this.accessAuthorization!.getVisibleProjectTeams(context, project.id)
+          ? this.accessAuthorization!.getVisibleProjectTeams(context, project.id, {
+              cloudDirectory,
+              projectSlug: project.slug,
+            })
           : [];
         return {
           ...portalProject,
@@ -2774,6 +3223,176 @@ export class LocalDataService {
     return { ok: true as const, rowCount };
   }
 
+  private listPinnedViewerEligibleDisplays(projectId: string) {
+    return this.listProjectDisplays(projectId).map((display) => ({
+      id: display.id,
+      enabled: Boolean(display.enabled),
+      archived: false,
+      name: display.name,
+      displayKey: display.display_key,
+      url: display.url,
+      width: display.width ?? 1920,
+      height: display.height ?? 1080,
+      settings: display.settings ?? {},
+    }));
+  }
+
+  getPinnedViewerState(projectId: string) {
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId) {
+      throw new Error("Sign in to load pinned viewer preferences.");
+    }
+    if (!this.userPinnedViewer) {
+      throw new Error("Pinned viewer persistence is unavailable.");
+    }
+
+    const eligible = this.listPinnedViewerEligibleDisplays(projectId);
+    const displayOrderIds = eligible.map((display) => display.id);
+    const stored = this.userPinnedViewer.get(userId, projectId);
+    const rawPinned = stored?.pinnedDisplayIds ?? [];
+    const sanitized = sanitizePinnedDisplayIds(rawPinned, eligible);
+    const orderedPinnedIds = orderPinnedDisplayIds(sanitized.pinnedDisplayIds, displayOrderIds);
+    const viewerHeightPx = normalizePinnedViewerHeight(stored?.viewerHeightPx);
+
+    if (
+      sanitized.removedIds.length > 0 ||
+      orderedPinnedIds.join(",") !== rawPinned.join(",")
+    ) {
+      const updatedAt = new Date().toISOString();
+      this.userPinnedViewer.upsert({
+        userId,
+        projectId,
+        pinnedDisplayIds: orderedPinnedIds,
+        viewerHeightPx,
+        updatedAt,
+        cloudSyncStatus: "pending",
+      });
+      void this.pinnedViewerSync?.requestSync(projectId, "sanitize");
+    }
+
+    const pinnedDisplays = orderedPinnedIds
+      .map((id) => eligible.find((display) => display.id === id))
+      .filter((display): display is (typeof eligible)[number] => Boolean(display));
+
+    return {
+      pinnedDisplayIds: orderedPinnedIds,
+      viewerHeightPx,
+      updatedAt: stored?.updatedAt ?? new Date(0).toISOString(),
+      cloudSyncStatus: stored?.cloudSyncStatus ?? "pending",
+      displays: pinnedDisplays,
+      displayOrderIds,
+      eligible: eligible.map(({ id, enabled, archived }) => ({ id, enabled, archived })),
+    };
+  }
+
+  savePinnedViewerPreference(
+    projectId: string,
+    input: { pinnedDisplayIds: string[]; viewerHeightPx: number },
+  ) {
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId) {
+      throw new Error("Sign in to save pinned viewer preferences.");
+    }
+    if (!this.userPinnedViewer) {
+      throw new Error("Pinned viewer persistence is unavailable.");
+    }
+
+    const eligible = this.listPinnedViewerEligibleDisplays(projectId);
+    const displayOrderIds = eligible.map((display) => display.id);
+    const sanitized = sanitizePinnedDisplayIds(input.pinnedDisplayIds, eligible);
+    const orderedPinnedIds = orderPinnedDisplayIds(sanitized.pinnedDisplayIds, displayOrderIds);
+
+    if (orderedPinnedIds.length > MAX_PINNED_DISPLAYS) {
+      throw new Error("Maximum of 4 pinned displays.");
+    }
+
+    const updatedAt = new Date().toISOString();
+    const row = this.userPinnedViewer.upsert({
+      userId,
+      projectId,
+      pinnedDisplayIds: orderedPinnedIds,
+      viewerHeightPx: normalizePinnedViewerHeight(input.viewerHeightPx),
+      updatedAt,
+      cloudSyncStatus: "pending",
+    });
+    void this.pinnedViewerSync?.requestSync(projectId, "save");
+    return { ok: true as const, preference: row };
+  }
+
+  togglePinnedDisplay(projectId: string, displayId: string) {
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId || !this.userPinnedViewer) {
+      throw new Error("Sign in to pin displays.");
+    }
+
+    const state = this.getPinnedViewerState(projectId);
+    const isPinned = state.pinnedDisplayIds.includes(displayId);
+    if (isPinned) {
+      return this.savePinnedViewerPreference(projectId, {
+        pinnedDisplayIds: state.pinnedDisplayIds.filter((id) => id !== displayId),
+        viewerHeightPx: state.viewerHeightPx,
+      });
+    }
+
+    const eligible = state.eligible.find((entry) => entry.id === displayId);
+    if (!eligible || !eligible.enabled || eligible.archived) {
+      throw new Error("Only enabled displays can be pinned.");
+    }
+
+    if (state.pinnedDisplayIds.length >= MAX_PINNED_DISPLAYS) {
+      throw new Error("Maximum of 4 pinned displays.");
+    }
+
+    return this.savePinnedViewerPreference(projectId, {
+      pinnedDisplayIds: [...state.pinnedDisplayIds, displayId],
+      viewerHeightPx: state.viewerHeightPx,
+    });
+  }
+
+  setPinnedViewerHeight(projectId: string, viewerHeightPx: number) {
+    const state = this.getPinnedViewerState(projectId);
+    return this.savePinnedViewerPreference(projectId, {
+      pinnedDisplayIds: state.pinnedDisplayIds,
+      viewerHeightPx,
+    });
+  }
+
+  unpinDisplayIfPinned(projectId: string, displayId: string) {
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId || !this.userPinnedViewer) {
+      return { ok: true as const, changed: false };
+    }
+    const stored = this.userPinnedViewer.get(userId, projectId);
+    if (!stored?.pinnedDisplayIds.includes(displayId)) {
+      return { ok: true as const, changed: false };
+    }
+    this.savePinnedViewerPreference(projectId, {
+      pinnedDisplayIds: stored.pinnedDisplayIds.filter((id) => id !== displayId),
+      viewerHeightPx: stored.viewerHeightPx,
+    });
+    return { ok: true as const, changed: true };
+  }
+
+  unpinDisplayKeyForAllProjects(displayKey: string) {
+    const normalizedKey = displayKey.trim();
+    if (!normalizedKey) {
+      return { ok: true as const, unpinnedDisplayIds: [] as string[] };
+    }
+    const unpinnedDisplayIds: string[] = [];
+    for (const project of this.listProjects()) {
+      for (const display of this.listProjectDisplays(project.id)) {
+        if (display.display_key !== normalizedKey) {
+          continue;
+        }
+        const result = this.unpinDisplayIfPinned(project.id, display.id);
+        if (result.changed) {
+          unpinnedDisplayIds.push(display.id);
+        }
+      }
+    }
+    return { ok: true as const, unpinnedDisplayIds };
+  }
+
   setDisplayRefreshRate(projectId: string, displayIdOrKey: string, refreshRateMs: number) {
     const normalizedRefreshRateMs = normalizeDisplayRefreshRateMs(refreshRateMs);
     if (!isAllowedDisplayRefreshRateMs(normalizedRefreshRateMs)) {
@@ -2887,6 +3506,9 @@ export class LocalDataService {
   setPylonDisplayEnabled(enabled: boolean) {
     const previous = this.pylonDisplays.isPylonEnabled();
     const result = this.pylonDisplays.setPylonEnabled(enabled);
+    if (!enabled) {
+      this.unpinDisplayKeyForAllProjects("pylon");
+    }
     if (previous !== enabled) {
       this.notifyPlatformDisplayConnectionChanged("pylon", enabled);
       this.recordActivity({
@@ -2907,6 +3529,9 @@ export class LocalDataService {
   setLowerTickerDisplayEnabled(enabled: boolean) {
     const previous = this.lowerTickerDisplays.isLowerTickerEnabled();
     const result = this.lowerTickerDisplays.setLowerTickerEnabled(enabled);
+    if (!enabled) {
+      this.unpinDisplayKeyForAllProjects("lower-ticker-v5");
+    }
     if (previous !== enabled) {
       this.notifyPlatformDisplayConnectionChanged("lower-ticker-v5", enabled);
       this.recordActivity({
@@ -2961,6 +3586,9 @@ export class LocalDataService {
     this.settings.set(DISPLAY_DATA_SOURCE_SETTING_KEY, source);
     this.displayDataRevision += 1;
     this.pushDisplayDataSourceChanged(source);
+    for (const project of this.projects.list()) {
+      this.broadcastProjectDisplayDataChanged(project.id);
+    }
 
     const label = displayDataSourceLabel(source);
     const primaryEngineId = this.getPrimaryBagEngineId();
@@ -3113,6 +3741,9 @@ export class LocalDataService {
   setNewBidDisplayEnabled(enabled: boolean) {
     const previous = this.newAuctionDisplays.isNewBidDisplayEnabled();
     const result = this.newAuctionDisplays.setNewBidDisplayEnabled(enabled);
+    if (!enabled) {
+      this.unpinDisplayKeyForAllProjects("new-bid-display-v1");
+    }
     if (previous !== enabled) {
       this.notifyPlatformDisplayConnectionChanged("new-bid-display-v1", enabled);
       this.recordActivity({
@@ -3133,6 +3764,9 @@ export class LocalDataService {
   setNewTickerDisplayEnabled(enabled: boolean) {
     const previous = this.newAuctionDisplays.isNewTickerDisplayEnabled();
     const result = this.newAuctionDisplays.setNewTickerDisplayEnabled(enabled);
+    if (!enabled) {
+      this.unpinDisplayKeyForAllProjects("new-ticker-v1");
+    }
     if (previous !== enabled) {
       this.notifyPlatformDisplayConnectionChanged("new-ticker-v1", enabled);
       this.recordActivity({
@@ -3250,6 +3884,275 @@ export class LocalDataService {
     };
   }
 
+  private liveFeedModeSettingKey(projectId: string) {
+    return `liveFeedMode:${projectId}`;
+  }
+
+  getLiveFeedMode(projectId: string): "faye" | "dom" | "legacy" {
+    const raw = this.settings.get(this.liveFeedModeSettingKey(projectId), "faye");
+    const normalized = String(raw ?? "faye").trim().toLowerCase();
+    if (normalized === "automatic") {
+      return "faye";
+    }
+    if (normalized === "faye" || normalized === "dom" || normalized === "legacy") {
+      return normalized;
+    }
+    return "faye";
+  }
+
+  setLiveFeedMode(projectId: string, mode: "faye" | "dom" | "legacy") {
+    if (!this.projects.getById(projectId)) {
+      throw new Error("Project not found.");
+    }
+    const previousMode = this.getLiveFeedMode(projectId);
+    const next =
+      mode === "faye" || mode === "dom" || mode === "legacy" ? mode : "faye";
+    this.settings.set(this.liveFeedModeSettingKey(projectId), next);
+    this.logLiveFeedModeChange(projectId, next, previousMode, "manual");
+    return { mode: next, previousMode };
+  }
+
+  applyLiveFeedModeFailover(
+    engineId: string,
+    mode: "faye" | "dom" | "legacy",
+    reason: string,
+  ) {
+    const engine = this.dataSources.getById(engineId);
+    if (!engine?.projectId) {
+      return { mode, changed: false };
+    }
+    const previousMode = this.getLiveFeedMode(engine.projectId);
+    if (previousMode === mode) {
+      return { mode, changed: false };
+    }
+    const rank = { faye: 0, dom: 1, legacy: 2 } as const;
+    if (rank[mode] < rank[previousMode]) {
+      return { mode: previousMode, changed: false };
+    }
+    this.settings.set(this.liveFeedModeSettingKey(engine.projectId), mode);
+    return { mode, changed: true, previousMode };
+  }
+
+  private logLiveFeedModeChange(
+    projectId: string,
+    next: "faye" | "dom" | "legacy",
+    previousMode: "faye" | "dom" | "legacy",
+    source: "manual" | "failover",
+  ) {
+    if (next === previousMode) {
+      return;
+    }
+    const engine = this.getProjectEngines(projectId).find(
+      (entry) =>
+        entry.config &&
+        typeof entry.config === "object" &&
+        (entry.config as { adapter?: string }).adapter === "bag-auction",
+    );
+    if (!engine?.id) {
+      return;
+    }
+    const label =
+      next === "faye" ? "Faye" : next === "dom" ? "DOM" : "Legacy Polling";
+    this.dataSources.insertLog(engine.id, {
+      level: "info",
+      eventType: "engine.execution",
+      message:
+        source === "manual"
+          ? `Live feed mode set to ${label}`
+          : `Live feed mode changed to ${label}`,
+      metadata: { liveFeedMode: next, previousMode, source },
+    });
+  }
+
+  collectLotNumbersForAuctionDayDetection(projectId: string): string[] {
+    const downloadedLots: string[] = [];
+    try {
+      const dataset = this.getActiveDownloadedDataset(projectId);
+      const lots = Array.isArray(dataset?.lots) ? dataset.lots : [];
+      for (const lot of lots as Array<{ lotNumber?: string; lot?: string }>) {
+        downloadedLots.push(lot.lotNumber ?? lot.lot ?? "");
+      }
+    } catch {
+      // fall through to canonical sources
+    }
+
+    const snapshot = this.getActiveCanonicalProjectSnapshot(projectId);
+    const canonicalLots = Array.isArray(snapshot?.lots)
+      ? (snapshot.lots as Array<{ lot?: string; lotNumber?: string }>).map(
+          (row) => row.lot ?? row.lotNumber ?? "",
+        )
+      : [];
+
+    const engine = this.getProjectEngines(projectId)[0];
+    const latestSnapshot = engine
+      ? this.dataSources.getLatestSnapshot(engine.id)
+      : null;
+    const engineLots =
+      latestSnapshot?.data &&
+      typeof latestSnapshot.data === "object" &&
+      Array.isArray((latestSnapshot.data as { lots?: unknown }).lots)
+        ? (
+            (latestSnapshot.data as { lots: Array<{ lot?: string; lotNumber?: string }> })
+              .lots ?? []
+          ).map((row) => row.lot ?? row.lotNumber ?? "")
+        : [];
+
+    return collectLotNumbersForAuctionDayDetection([
+      downloadedLots,
+      canonicalLots,
+      engineLots,
+    ]);
+  }
+
+  getAuctionDaySelectionState(projectId: string) {
+    const lotNumbers = this.collectLotNumbersForAuctionDayDetection(projectId);
+    const detectedAuctionDays = detectAuctionDayOptionsFromLotNumbers(lotNumbers);
+    const filter = readAuctionDaySelectionWithMigration(
+      this.settings,
+      projectId,
+      detectedAuctionDays,
+    );
+    const snapshot = this.getActiveCanonicalProjectSnapshot(projectId);
+    this.refreshStreamTickerFilterDiagnostics(
+      projectId,
+      filter,
+      detectedAuctionDays,
+      snapshot,
+    );
+    return {
+      filter,
+      detectedAuctionDays,
+      diagnostics: this.getStreamTickerFilterDiagnostics(),
+    };
+  }
+
+  private getCachedAuctionDaysForProject(projectId: string): number[] {
+    const revision = this.displayDataRevision;
+    const cached = this.auctionDayOptionsCache.get(projectId);
+    if (cached && cached.revision === revision && cached.expiresAt > Date.now()) {
+      return cached.days;
+    }
+    const lotNumbers = this.collectLotNumbersForAuctionDayDetection(projectId);
+    const days = detectAuctionDayOptionsFromLotNumbers(lotNumbers);
+    this.auctionDayOptionsCache.set(projectId, {
+      days,
+      revision,
+      expiresAt: Date.now() + 5000,
+    });
+    return days;
+  }
+
+  getStreamTickerDayFilter(projectId: string): AuctionDayFilter {
+    return readAuctionDaySelectionWithMigration(
+      this.settings,
+      projectId,
+      this.getCachedAuctionDaysForProject(projectId),
+    );
+  }
+
+  setStreamTickerDayFilter(projectId: string, filter: AuctionDayFilter) {
+    if (!this.projects.getById(projectId)) {
+      throw new Error("Project not found.");
+    }
+    const lotNumbers = this.collectLotNumbersForAuctionDayDetection(projectId);
+    const detectedAuctionDays = detectAuctionDayOptionsFromLotNumbers(lotNumbers);
+    const normalized = normalizeAuctionDayFilter(filter, detectedAuctionDays);
+    this.auctionDayOptionsCache.delete(projectId);
+    this.settings.set(auctionDaySelectionSettingKey(projectId), normalized);
+    const snapshot = this.getActiveCanonicalProjectSnapshot(projectId);
+    this.refreshStreamTickerFilterDiagnostics(projectId, normalized, detectedAuctionDays, snapshot);
+    this.tryNotifyProjectDisplayDataChanged(projectId, { force: true });
+    this.broadcastStreamTickerFeedInvalidated(projectId);
+    return {
+      filter: normalized,
+      detectedAuctionDays,
+      displayDataRevision: this.displayDataRevision,
+    };
+  }
+
+  getStreamTickerDisplayBridgeData(projectId: string) {
+    const bridge = this.getGenericDisplayBridgeData(projectId);
+    const snapshot = bridge.snapshot as Record<string, unknown> | null;
+    const streamTickerDayFilter = bridge.streamTickerDayFilter as AuctionDayFilter;
+    const streamTickerFeed = buildStreamTickerFeed(snapshot, streamTickerDayFilter);
+    return attachStreamTickerFeedToBridgePayload(
+      bridge as Record<string, unknown>,
+      streamTickerFeed,
+    );
+  }
+
+  getStreamTickerDayFilterDiagnosticsReport() {
+    return { ...this.streamTickerFilterDiagnostics };
+  }
+
+  private broadcastStreamTickerFeedInvalidated(projectId: string) {
+    for (const window of BrowserWindowRuntime.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        sendToRenderer(window, "neud:streamTickerFeed:changed", {
+          projectId,
+          revision: this.displayDataRevision,
+        });
+      }
+    }
+  }
+
+  getStreamTickerFilterDiagnostics() {
+    return { ...this.streamTickerFilterDiagnostics };
+  }
+
+  getCloudAccessLocalSyncDiagnostics() {
+    return this.cloudAccessLocalSyncDiagnostics;
+  }
+
+  private refreshStreamTickerFilterDiagnostics(
+    projectId: string,
+    selectedFilter: AuctionDayFilter,
+    detectedAuctionDays: number[],
+    snapshot: Record<string, unknown> | null,
+  ) {
+    const lots = Array.isArray(snapshot?.lots)
+      ? (snapshot.lots as Array<{ lot?: string; lotNumber?: string }>)
+      : [];
+    const eligibleTickerLots =
+      selectedFilter === "all"
+        ? lots.length
+        : lots.filter(
+            (row) => getAuctionDayFromLotNumber(row.lot ?? row.lotNumber ?? "") === selectedFilter,
+          ).length;
+    const tickerData = snapshot
+      ? normalizeBroadArrowDisplayData(snapshot, { streamTickerDayFilter: selectedFilter })
+      : null;
+
+    const filteredNext = tickerData?.ticker.next ?? [];
+    const filteredFeedLotDays = [
+      ...new Set(
+        filteredNext
+          .map((row) => getAuctionDayFromLotNumber(String(row.lot ?? "")))
+          .filter((day): day is number => typeof day === "number"),
+      ),
+    ].sort((a, b) => a - b);
+
+    this.streamTickerFilterDiagnostics = {
+      selectedTickerDayFilter: selectedFilter,
+      persistedTickerDayFilter: this.settings.get(
+        streamTickerDayFilterSettingKey(projectId),
+        "all",
+      ),
+      mapperTickerDayFilter: selectedFilter,
+      detectedAuctionDays,
+      totalLots: lots.length,
+      eligibleTickerLots,
+      eligibleLotNumbersDayBuckets: detectedAuctionDays,
+      outputTickerLotDayBuckets: filteredFeedLotDays,
+      tickerUpcomingLotCount: filteredNext.length,
+      filteredFeedLotDays,
+      feedRegeneratedAt: new Date().toISOString(),
+      displayUpdatePublishedAt: new Date().toISOString(),
+      filterAppliedToLiveOutput: selectedFilter === "all" || filteredFeedLotDays.every((day) => day === selectedFilter),
+      firstTickerFilterFailureStage: "none",
+    };
+  }
+
   getGenericDisplayBridgeData(projectId: string) {
     const source = this.getDisplayDataSource();
     const effective = this.resolveDisplayData(source, projectId);
@@ -3265,6 +4168,8 @@ export class LocalDataService {
               >[0],
             )
           : null);
+
+    const streamTickerDayFilter = this.getStreamTickerDayFilter(projectId);
 
     const canonicalFields = snapshot ?? {
       prev: null,
@@ -3284,10 +4189,13 @@ export class LocalDataService {
       revision: this.displayDataRevision,
       snapshot,
       broadArrowDisplay: snapshot
-        ? normalizeBroadArrowDisplayData(snapshot as Record<string, unknown>)
+        ? normalizeBroadArrowDisplayData(snapshot as Record<string, unknown>, {
+            streamTickerDayFilter,
+          })
         : null,
       currencies: effective.currency.displayCurrencies,
       projectId,
+      streamTickerDayFilter,
     };
   }
 
@@ -3350,11 +4258,53 @@ export class LocalDataService {
   initializeSessionDiagnostics() {
     this.logStartupAuthDiagnostics();
     this.clearSessionFacingLastErrors();
+    this.captureStartupScraperDiagnostics();
     for (const project of this.projects.list()) {
       for (const engine of this.dataSources.listByProject(project.id)) {
         this.pushEngineStatusSnapshot(engine.id);
       }
     }
+  }
+
+  private captureStartupScraperDiagnostics() {
+    let startupPersistedLastError: string | null = null;
+    let startupActiveScraperError: string | null = null;
+    let startupErrorOrigin: string | null = null;
+    let firstStartupScraperFailureStage = "none";
+
+    for (const project of this.projects.list()) {
+      for (const engine of this.dataSources.listByProject(project.id)) {
+        const status = this.dataSources.getStatus(engine.id);
+        const persisted = status?.lastError?.trim() ?? "";
+        if (persisted && !startupPersistedLastError) {
+          startupPersistedLastError = persisted;
+        }
+        const sessionFacing = resolveSessionFacingEngineLastError(status);
+        if (sessionFacing && !startupActiveScraperError) {
+          startupActiveScraperError = sessionFacing;
+        }
+      }
+    }
+
+    if (startupPersistedLastError && !startupActiveScraperError) {
+      firstStartupScraperFailureStage = "persisted_stale_error";
+      startupErrorOrigin = "sqlite.last_error";
+    } else if (startupActiveScraperError) {
+      firstStartupScraperFailureStage = "ui_merge_retains_old_error";
+      startupErrorOrigin = "engine.status.last_error";
+    }
+
+    this.startupScraperDiagnostics = {
+      startupActiveScraperError,
+      startupPersistedLastError,
+      startupWorkerBootAttempted: false,
+      startupWorkerBootResult: "not_attempted",
+      startupErrorOrigin,
+      startupErrorFresh: Boolean(startupActiveScraperError),
+      requireReferenceSource: null,
+      firstStartupScraperFailureStage,
+      invalidRequireReferenceCount: 0,
+    };
   }
 
   private shouldAutoResolveActivityActor(type: string, userAction?: string): boolean {
@@ -3721,12 +4671,23 @@ export class LocalDataService {
     const adapterContamination =
       this.genericScraper.detectGenericAdapterContamination(engineId);
 
+    const project = this.projects.getById(refreshed.projectId);
+    const portalSettings = toPortalScraperSettings(refreshed.id, settings, refreshed.createdAt);
+
     return {
       engine: toPortalDataEngine(refreshed),
       status: toPortalEngineStatus(refreshed.id, status, refreshed.createdAt, {
         pollIntervalMs: settings?.pollIntervalMs ?? null,
       }),
-      settings: toPortalScraperSettings(refreshed.id, settings, refreshed.createdAt),
+      settings: portalSettings
+        ? {
+            ...portalSettings,
+            live_feed_mode: project ? this.getLiveFeedMode(project.id) : "faye",
+            auction_day_selection: project
+              ? this.getStreamTickerDayFilter(project.id)
+              : "all",
+          }
+        : portalSettings,
       sources: sources.map(toPortalScraperSource),
       latestSnapshot: latestSnapshot ? toPortalSnapshot(latestSnapshot) : null,
       recentSnapshots: recentSnapshots.map(toPortalSnapshot),
@@ -3740,6 +4701,7 @@ export class LocalDataService {
       adapterContamination: adapterContamination.contaminated
         ? { adapter: adapterContamination.adapter }
         : null,
+      liveFeedRuntime: this.liveFeedRuntimeByEngine.get(engineId) ?? null,
     };
   }
 
@@ -3819,13 +4781,12 @@ export class LocalDataService {
         }
 
         const status = this.dataSources.getStatus(engine.id);
-        if (
-          status?.lastError &&
-          status.lastSuccessAt &&
-          (!status.lastRunFailedAt ||
-            Date.parse(status.lastSuccessAt) >= Date.parse(status.lastRunFailedAt))
-        ) {
+        if (shouldClearPersistedEngineLastError(status)) {
           this.dataSources.upsertStatus(engine.id, { lastError: null });
+          if (project.projectType === "bag-graphics") {
+            this.bagLiveState.syncEngineStatus(engine.id);
+          }
+          this.pushEngineStatusSnapshot(engine.id);
         }
       }
     }
@@ -3930,14 +4891,24 @@ export class LocalDataService {
 
     const settings = this.dataSources.getSettings(refreshed.id);
     const isBagEngine = this.bagSources.isBagAuctionEngine(refreshed);
+    const project = this.projects.getById(refreshed.projectId);
+    const portalSettings = toPortalScraperSettings(
+      refreshed.id,
+      settings,
+      refreshed.createdAt,
+    );
 
     return {
       engine: toPortalDataEngine(refreshed),
-      settings: toPortalScraperSettings(
-        refreshed.id,
-        settings,
-        refreshed.createdAt,
-      ),
+      settings: portalSettings
+        ? {
+            ...portalSettings,
+            live_feed_mode: project ? this.getLiveFeedMode(project.id) : "faye",
+            auction_day_selection: project
+              ? this.getStreamTickerDayFilter(project.id)
+              : "all",
+          }
+        : portalSettings,
       sources: this.dataSources
         .listSources(refreshed.id, true)
         .map(toPortalScraperSource),
@@ -4118,8 +5089,12 @@ export class LocalDataService {
       payloadSizeBytes?: number | null;
       durationMs?: number | null;
       capturedAt?: string;
+      liveFeedRuntime?: Record<string, unknown> | null;
     },
   ) {
+    if (input.liveFeedRuntime && typeof input.liveFeedRuntime === "object") {
+      this.liveFeedRuntimeByEngine.set(engineId, input.liveFeedRuntime);
+    }
     const snapshot = this.dataSources.insertSnapshot(engineId, input);
     // Counters are owned by recordRunSuccess / recordRunFailure to avoid double-count.
     this.dataSources.upsertStatus(engineId, {
@@ -4193,7 +5168,7 @@ export class LocalDataService {
     const snapshot: EngineStatusSnapshot = {
       engineId,
       lastRunSucceededAt: status?.lastSuccessAt ?? null,
-      lastError: status?.lastError ?? null,
+      lastError: resolveSessionFacingEngineLastError(status),
       actualState: status?.actualState ?? null,
       healthState: status?.healthState ?? null,
     };
@@ -4617,7 +5592,7 @@ export class LocalDataService {
     for (const project of this.projects.list()) {
       for (const engine of this.dataSources.listByProject(project.id)) {
         const status = this.dataSources.getStatus(engine.id);
-        if (status?.lastError) {
+        if (shouldClearPersistedEngineLastError(status)) {
           this.dataSources.upsertStatus(engine.id, { lastError: null });
         }
         if (project.projectType === "bag-graphics") {
@@ -4741,13 +5716,34 @@ export class LocalDataService {
       lastError?: string | null;
     },
   ) {
+    const current = this.dataSources.getStatus(engineId);
+    let lastError = patch.lastError;
+
+    if (lastError === undefined) {
+      const nextActualState = patch.actualState ?? current?.actualState ?? null;
+      const nextHealthState = patch.healthState ?? current?.healthState ?? null;
+      const recoveredAfterSuccess =
+        current?.lastError &&
+        current.lastSuccessAt &&
+        (!current.lastRunFailedAt ||
+          Date.parse(current.lastSuccessAt) >= Date.parse(current.lastRunFailedAt));
+
+      if (
+        recoveredAfterSuccess &&
+        nextActualState === "running" &&
+        (nextHealthState === "healthy" || nextHealthState === null)
+      ) {
+        lastError = null;
+      }
+    }
+
     this.dataSources.upsertStatus(engineId, {
       actualState: patch.actualState,
       healthState: patch.healthState,
       workerId: patch.workerId,
       lastHeartbeatAt: patch.lastHeartbeatAt,
       lastRunAt: patch.lastRunAt,
-      lastError: patch.lastError,
+      lastError,
     });
     if (patch.lastHeartbeatAt) {
       logHeartbeatReceivedByParent({

@@ -13,6 +13,7 @@ type ButtonProps = {
   title?: string;
   "aria-label"?: string;
   onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onMouseDown?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 } & React.RefAttributes<HTMLButtonElement>;
 
 const variantClasses = {
@@ -46,6 +47,7 @@ export function Button({
   title,
   "aria-label": ariaLabel,
   onClick,
+  onMouseDown,
   ref,
 }: ButtonProps) {
   const classes = `inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none cursor-pointer disabled:cursor-not-allowed ${variantClasses[variant]} ${sizeClasses[size]} ${className}`;
@@ -67,6 +69,7 @@ export function Button({
       title={title}
       aria-label={ariaLabel}
       onClick={onClick}
+      onMouseDown={onMouseDown}
     >
       {children}
     </button>

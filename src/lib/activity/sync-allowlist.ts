@@ -50,6 +50,7 @@ export const ACTIVITY_SYNC_ALLOWED_EVENT_TYPES = [
   "developer-tools.display-version-activated",
   "developer-tools.display-version-renamed",
   "team.created",
+  "team.deleted",
   "team.updated",
   "team.archived",
   "team.member_added",
@@ -89,6 +90,7 @@ export const ACTIVITY_SYNC_ALLOWED_EVENT_TYPES = [
   "system.warning",
   "system.error",
   "user.action",
+  "user.deleted",
   "app.exit-canceled",
   "app.exit-confirmed",
 ] as const;

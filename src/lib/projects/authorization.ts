@@ -116,6 +116,25 @@ export async function resolveProjectAccess(
       meta?.identityStatus === "stale-session" ||
       meta?.identityStatus === "identity-conflict"
     ) {
+      const localPrincipal = await resolveLocalAuthenticatedPrincipal();
+      if (localPrincipal && meta?.identityStatus === "error") {
+        try {
+          const access = await localGetProjectAccessContext(projectIdentifier);
+          const projectRecord = access.project as ProjectAccessContext["project"];
+          return {
+            state: "ready",
+            access: buildProjectAccessContext({
+              project: projectRecord,
+              projectRole: access.projectRole as ProjectRole,
+              isPlatformAdmin: access.isPlatformAdmin,
+              canOperateDisplays: access.capabilities.canOperateDisplays,
+            }),
+          };
+        } catch {
+          // Fall through to identity-error when cached access is unavailable.
+        }
+      }
+
       return {
         state: "identity-error",
         message:

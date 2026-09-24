@@ -74,7 +74,8 @@ test("project navigation uses normal flow not fixed positioning", () => {
 });
 
 test("project layout uses two-row flex with page scroll below navigation", () => {
-  assert.match(frame, /project-layout-root flex h-full min-h-0 flex-1 flex-col overflow-hidden/);
+  assert.match(frame, /project-layout-root flex min-h-0 w-full flex-1 flex-col overflow-hidden/);
+  assert.doesNotMatch(frame, /project-layout-root[^"]*h-full/);
   assert.match(frame, /project-layout-frame min-h-0 flex-1 overflow-y-auto/);
   assert.match(frame, /pt-6/);
   assert.doesNotMatch(frame, /paddingTop:\s*\n?\s*"calc\(var\(--navigation-bar-height/);

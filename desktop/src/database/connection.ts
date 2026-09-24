@@ -6,6 +6,14 @@ import { runMigrations } from "./migrate";
 
 type BindParams = Record<string, unknown> | unknown[];
 
+const sqlitePersistMetrics = {
+  persistCount: 0,
+};
+
+export function getSqlitePersistMetrics(): typeof sqlitePersistMetrics {
+  return { ...sqlitePersistMetrics };
+}
+
 export type PreparedStatement = {
   all(...params: unknown[]): Record<string, unknown>[];
   get(...params: unknown[]): Record<string, unknown> | undefined;
@@ -14,6 +22,8 @@ export type PreparedStatement = {
 
 export class LocalDatabase {
   private deferPersist = false;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistPending = false;
 
   private constructor(
     private readonly db: SqlJsDatabase,
@@ -78,6 +88,10 @@ export class LocalDatabase {
   }
 
   close(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
     this.persist();
     this.db.close();
   }
@@ -117,12 +131,28 @@ export class LocalDatabase {
   }
 
   private persistIfNeeded() {
-    if (!this.deferPersist) {
-      this.persist();
+    if (this.deferPersist) {
+      return;
     }
+    this.schedulePersist();
+  }
+
+  private schedulePersist() {
+    this.persistPending = true;
+    if (this.persistTimer) {
+      return;
+    }
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      if (this.persistPending) {
+        this.persistPending = false;
+        this.persist();
+      }
+    }, 100);
   }
 
   private persist() {
+    sqlitePersistMetrics.persistCount += 1;
     const data = this.db.export();
     fs.writeFileSync(this.filePath, Buffer.from(data));
   }

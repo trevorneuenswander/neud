@@ -37,6 +37,13 @@ window.__NEUD_STREAM_TICKER_REVISION__ = "stream-ticker-v1-2026-07-27";
     }
 
     if (
+      payload.streamTickerFeed &&
+      Array.isArray(payload.streamTickerFeed.next)
+    ) {
+      return { next: payload.streamTickerFeed.next };
+    }
+
+    if (
       payload.broadArrowDisplay &&
       payload.broadArrowDisplay.ticker &&
       Array.isArray(payload.broadArrowDisplay.ticker.next)
@@ -46,10 +53,6 @@ window.__NEUD_STREAM_TICKER_REVISION__ = "stream-ticker-v1-2026-07-27";
 
     if (Array.isArray(payload.next)) {
       return { next: payload.next };
-    }
-
-    if (Array.isArray(payload.lots)) {
-      return payload;
     }
 
     return null;

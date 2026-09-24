@@ -573,12 +573,17 @@ export class BagLiveStateService {
       lastError: status?.lastError ?? undefined,
     });
 
+    const mergedConnection = {
+      ...state.connection,
+      ...connection,
+    };
+    if (!status?.lastError?.trim()) {
+      delete mergedConnection.lastError;
+    }
+
     return {
       ...state,
-      connection: {
-        ...state.connection,
-        ...connection,
-      },
+      connection: mergedConnection,
     };
   }
 
@@ -589,13 +594,21 @@ export class BagLiveStateService {
     const status = this.dataSources.getStatus(engineId);
     const mappedStatus = mapEngineStatus(status?.actualState, status?.healthState);
 
-    return {
+    const resolvedLastError =
+      patch.lastError !== undefined
+        ? patch.lastError
+        : status?.lastError ?? null;
+
+    const connection: BagLiveState["connection"] = {
       status: patch.status ?? mappedStatus,
       lastSuccessfulScrapeAt:
         patch.lastSuccessfulScrapeAt ?? status?.lastSuccessAt ?? undefined,
       lastAttemptAt: patch.lastAttemptAt ?? status?.lastRunAt ?? undefined,
-      lastError: patch.lastError ?? status?.lastError ?? undefined,
     };
+    if (resolvedLastError?.trim()) {
+      connection.lastError = resolvedLastError;
+    }
+    return connection;
   }
 }
 

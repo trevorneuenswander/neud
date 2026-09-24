@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createClient } from "@supabase/supabase-js";
+import { createNodeSupabaseClient } from "../../scripts/live-validation/lib/supabase-node-client.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 dotenv.config({ path: path.join(repoRoot, ".env.local") });
@@ -16,7 +16,7 @@ if (!url || !key) {
 }
 
 const projectRef = new URL(url).hostname.split(".")[0];
-const supabase = createClient(url, key, { auth: { persistSession: false } });
+const supabase = createNodeSupabaseClient(url, key);
 const userId = process.argv[2] ?? "323a2626-fd22-49ee-9abb-ebf6b72c8afa";
 
 console.log("Configured Supabase project reference:", projectRef);

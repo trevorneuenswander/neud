@@ -117,7 +117,9 @@ Before making a large change:
 
 **Alpha v0.1.1** functional development is complete at application version **0.1.1**. See [docs/alpha-v0.1.1-online-delivery-plan.md](./docs/alpha-v0.1.1-online-delivery-plan.md) and [docs/alpha-v0.1.1-packaging-validation.md](./docs/alpha-v0.1.1-packaging-validation.md).
 
-The **current release milestone** is Windows x64 packaging, bundled Puppeteer Chrome, installation validation, and automatic updates. See [docs/windows-packaging.md](./docs/windows-packaging.md).
+**Latest published release:** v0.1.4. **Current release candidate:** v0.2.0 (canonical `package.json` version). See [docs/release-milestones.md](./docs/release-milestones.md).
+
+The **current release milestone** remains Windows x64 packaging, bundled Puppeteer Chrome, installation validation, and automatic updates for the v0.2.0 candidate. See [docs/windows-packaging.md](./docs/windows-packaging.md).
 
 Do not alter or regress the Alpha v0.1.0 display baseline (Stream Bid Display, Stream Ticker, Legacy Pylon, Legacy Ticker) unless a compatible delivery-only change is explicitly required.
 

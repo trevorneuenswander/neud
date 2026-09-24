@@ -36,9 +36,10 @@ test("list revisions and summaries use persisted versionNumber", () => {
     service.indexOf("listDisplayVersionSummaries("),
     service.indexOf("listDisplays("),
   );
-  assert.match(summariesBlock, /activeRevision\?\.versionNumber/);
+  assert.match(summariesBlock, /resolveDisplayRevisionVersionNumber/);
+  assert.match(summariesBlock, /activeVersionNumber:/);
   assert.doesNotMatch(summariesBlock, /versionMap\.get/);
-  assert.match(service, /versionNumber: revision\.versionNumber/);
+  assert.match(service, /revision\.versionNumber/);
 });
 
 test("displays page badge shows compact v labels", () => {
@@ -83,11 +84,12 @@ test("local URL output route is transparent without viewer chrome", () => {
   assert.doesNotMatch(output, /DisplayViewerScaledCanvas/);
 });
 
-test("view fullscreen viewer keeps white outer background", () => {
-  const liveView = readSrc("src/components/displays/broad-arrow/HtmlDisplayLiveView.tsx");
+test("view fullscreen viewer uses opaque resizable window and checkerboard shell", () => {
+  const windowFit = readSrc("src/components/displays/useDisplayWindowFitViewerStyles.ts");
   const manager = readSrc("desktop/src/services/display-preview-window-manager.ts");
-  assert.match(liveView, /backgroundColor: "#ffffff"/);
-  assert.match(manager, /backgroundColor: "#ffffff"/);
+  assert.match(windowFit, /MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE/);
+  assert.match(manager, /transparent: false/);
+  assert.match(manager, /resizable: true/);
 });
 
 test("fullscreen viewer uses display dimensions for canvas and window sizing", () => {
@@ -99,8 +101,9 @@ test("fullscreen viewer uses display dimensions for canvas and window sizing", (
   assert.match(liveView, /displayWidth={displayWidth}/);
   assert.match(canvas, /transform: `scale\(\$\{scale\}\)`/);
   assert.match(canvas, /ResizeObserver/);
-  assert.match(canvas, /computeDisplayViewerScale/);
+  assert.match(canvas, /buildDisplayViewerMeasurements/);
   assert.match(manager, /resolveDisplayWindowBounds/);
+  assert.match(manager, /setAspectRatio/);
   assert.match(manager, /displayWidth/);
   assert.match(card, /displayWidth,\s*\n\s*displayHeight/);
 });

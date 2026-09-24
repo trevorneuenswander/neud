@@ -240,6 +240,16 @@
     will-change: transform, opacity;
   }
 
+  .up-next-label.fade-out {
+    animation: fadeOut 250ms ease-in-out both;
+    will-change: opacity;
+  }
+
+  .up-next-label.slide-in-right {
+    animation: slideInRight 250ms ease-in-out both;
+    will-change: transform, opacity;
+  }
+
   .lot-entry.pill-dissolve {
     animation: fadeOut 250ms ease-in-out both;
     will-change: opacity;
@@ -263,7 +273,7 @@
         <div class="logo-panel">
           <img src="/displays/pylon/logo.png" alt="Broad Arrow Auctions" />
         </div>
-        <div class="up-next-label"><span>UP</span><span>NEXT</span></div>
+        <div id="upNextLabel" class="up-next-label"><span>UP</span><span>NEXT</span></div>
         <div class="lot-regions">
         <div id="slot1" class="lot-entry hidden">
           <div class="lot-content">
@@ -297,11 +307,20 @@
   var CANVAS_H = 2160;
   var FADE_MS = 250;
   var MAX_UPCOMING_LOTS = 3;
+  var urlParams = new URLSearchParams(window.location.search);
+  var PINNED_PREVIEW = urlParams.get("pinnedPreview") === "1";
+  var PREVIEW_SAMPLE = Math.min(
+    2,
+    Math.max(1, +(urlParams.get("previewSample") || window.devicePixelRatio || 1) || 1),
+  );
+  var pinnedPreviewViewportLayoutW = 0;
+  var pinnedPreviewViewportLayoutH = 0;
 
   var legacyTickerMarquee = createLegacyTickerMarquee({ speedPxPerSecond: 40 });
   var cancelLoop = legacyTickerMarquee.cancelLoop.bind(legacyTickerMarquee);
 
   var stage = document.getElementById("stage");
+  var upNextLabel = document.getElementById("upNextLabel");
   var slotStates = [
     {
       entry: document.getElementById("slot1"),
@@ -437,8 +456,51 @@
     return textValue(lot.lot) + "\u0000" + textValue(lot.title);
   }
 
+  function syncPinnedPreviewViewportMeta() {
+    if (!PINNED_PREVIEW) {
+      return;
+    }
+    var liveSample = Math.min(
+      2,
+      Math.max(1, +(window.devicePixelRatio || PREVIEW_SAMPLE || 1) || 1),
+    );
+    var layoutW = Math.max(1, Math.round(CANVAS_W * liveSample));
+    var layoutH = Math.max(1, Math.round(CANVAS_H * liveSample));
+    if (
+      pinnedPreviewViewportLayoutW === layoutW &&
+      pinnedPreviewViewportLayoutH === layoutH
+    ) {
+      return;
+    }
+    pinnedPreviewViewportLayoutW = layoutW;
+    pinnedPreviewViewportLayoutH = layoutH;
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "viewport");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute(
+      "content",
+      "width=" + layoutW + ", height=" + layoutH + ", initial-scale=1",
+    );
+  }
+
   function scaleStage() {
-    var scale = Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H);
+    if (PINNED_PREVIEW) {
+      syncPinnedPreviewViewportMeta();
+    }
+    var viewportW = window.innerWidth || CANVAS_W;
+    var viewportH = window.innerHeight || CANVAS_H;
+    var scale = Math.min(viewportW / CANVAS_W, viewportH / CANVAS_H);
+    if (PINNED_PREVIEW) {
+      stage.style.transformOrigin = "left bottom";
+      stage.style.zoom = "";
+      stage.style.transform = "scale(" + scale + ")";
+      window.__NEUD_PINNED_PREVIEW_SCALE__ = scale;
+      return;
+    }
+    stage.style.zoom = "";
     stage.style.transform = "scale(" + scale + ")";
   }
 
@@ -558,6 +620,42 @@
         }
         startMarquee(slot.title, slotStates.indexOf(slot));
       });
+    }, FADE_MS);
+  }
+
+  var upNextLabelShown = false;
+
+  function setUpNextLabelVisible(visible) {
+    if (!upNextLabel) {
+      return;
+    }
+    if (visible) {
+      if (upNextLabelShown && !upNextLabel.classList.contains("hidden")) {
+        return;
+      }
+      upNextLabel.classList.remove("hidden", "fade-out", "slide-in-right");
+      void upNextLabel.offsetWidth;
+      upNextLabel.classList.add("slide-in-right");
+      window.setTimeout(function () {
+        upNextLabel.classList.remove("slide-in-right");
+      }, FADE_MS);
+      upNextLabelShown = true;
+      return;
+    }
+
+    if (!upNextLabelShown || upNextLabel.classList.contains("hidden")) {
+      upNextLabelShown = false;
+      upNextLabel.classList.add("hidden");
+      return;
+    }
+
+    upNextLabel.classList.remove("fade-out", "slide-in-right");
+    void upNextLabel.offsetWidth;
+    upNextLabel.classList.add("fade-out");
+    window.setTimeout(function () {
+      upNextLabel.classList.add("hidden");
+      upNextLabel.classList.remove("fade-out", "slide-in-right");
+      upNextLabelShown = false;
     }, FADE_MS);
   }
 
@@ -696,6 +794,7 @@
         })
       : [];
     var count = Math.min(items.length, MAX_UPCOMING_LOTS);
+    setUpNextLabelVisible(count > 0);
     var incomingKeys = [];
 
     for (var index = 0; index < MAX_UPCOMING_LOTS; index += 1) {

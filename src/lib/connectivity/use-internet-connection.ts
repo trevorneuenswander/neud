@@ -7,6 +7,9 @@ import {
 } from "@/lib/connectivity/internet-connection";
 import { shouldRunDesktopConnectivityProbe } from "@/lib/connectivity/should-run-desktop-connectivity-probe";
 import { localFetch } from "@/lib/local/api";
+import { localGetAuthStatus } from "@/lib/local/auth-api";
+import { profileIndicatorLabel } from "@/lib/auth/account-connection-state";
+import type { DesktopAuthStatusResponse } from "@/lib/auth/desktop-auth-status";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 
 const RECHECK_INTERVAL_MS = 30_000;
@@ -52,11 +55,52 @@ export function useConnectivityPresentation(): InternetConnectivityPresentation 
     previousOnlineRef.current = isOnline;
   }, []);
 
+  const applyAuthAwarePresentation = useCallback(
+    (
+      networkPresentation: InternetConnectivityPresentation,
+      authStatus: DesktopAuthStatusResponse | null,
+    ): InternetConnectivityPresentation => {
+      if (!shouldUseLocalDataClient() || !authStatus?.profileIndicatorState) {
+        return networkPresentation;
+      }
+      const label = profileIndicatorLabel(authStatus.profileIndicatorState);
+      const tone =
+        authStatus.profileIndicatorState === "online"
+          ? "success"
+          : authStatus.profileIndicatorState === "offline"
+            ? "warning"
+            : "destructive";
+      return {
+        ...networkPresentation,
+        label,
+        tone,
+        detail:
+          authStatus.profileIndicatorState === "online"
+            ? "Cloud account session ready."
+            : authStatus.profileIndicatorState === "offline"
+              ? "Signed in locally; cloud session unavailable."
+              : "Sign in required.",
+      };
+    },
+    [],
+  );
+
   const runProbe = useCallback(async () => {
     const requestId = probeRequestRef.current + 1;
     probeRequestRef.current = requestId;
 
-    const next = await probeInternetConnectivityPresentation(presentationRef.current);
+    const networkPresentation = await probeInternetConnectivityPresentation(
+      presentationRef.current,
+    );
+    let authStatus: DesktopAuthStatusResponse | null = null;
+    if (shouldUseLocalDataClient()) {
+      try {
+        authStatus = await localGetAuthStatus();
+      } catch {
+        authStatus = null;
+      }
+    }
+    const next = applyAuthAwarePresentation(networkPresentation, authStatus);
     if (probeRequestRef.current !== requestId) {
       return;
     }
@@ -64,7 +108,7 @@ export function useConnectivityPresentation(): InternetConnectivityPresentation 
     presentationRef.current = next;
     setPresentation(next);
     maybeRecoverSession(next);
-  }, [maybeRecoverSession]);
+  }, [applyAuthAwarePresentation, maybeRecoverSession]);
 
   useEffect(() => {
     if (!probeEnabled) {

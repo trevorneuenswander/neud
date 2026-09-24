@@ -69,6 +69,30 @@ export function hasCanonicalDisplayFields(candidate: Record<string, unknown>): b
   );
 }
 
+function overlayStreamTickerFeedNext(
+  resolved: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const feed = isRecord(payload.streamTickerFeed) ? payload.streamTickerFeed : null;
+  if (feed && Array.isArray(feed.next)) {
+    return {
+      ...resolved,
+      next: feed.next,
+    };
+  }
+
+  const broadArrow = isRecord(payload.broadArrowDisplay) ? payload.broadArrowDisplay : null;
+  const ticker = broadArrow && isRecord(broadArrow.ticker) ? broadArrow.ticker : null;
+  if (ticker && Array.isArray(ticker.next)) {
+    return {
+      ...resolved,
+      next: ticker.next,
+    };
+  }
+
+  return resolved;
+}
+
 /**
  * Converts any inbound bridge/API/published payload into the display-runtime snapshot
  * object consumed by NEUDDisplay._publish and Stream Bid/Ticker adapters.
@@ -116,11 +140,11 @@ export function resolveDisplayRuntimeSnapshot(payload: unknown): Record<string, 
     if (isRecord(payload.snapshot) && isRecord(payload.snapshot.current)) {
       merged.current = payload.snapshot.current;
     }
-    return merged;
+    return overlayStreamTickerFeedNext(merged, payload);
   }
 
   if (hasCanonicalDisplayFields(candidate)) {
-    return candidate;
+    return overlayStreamTickerFeedNext(candidate, payload);
   }
 
   return null;

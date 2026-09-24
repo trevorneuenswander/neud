@@ -453,6 +453,14 @@ const neudDesktop = {
         order: Array<{ displayId: string; sortIndex: number; updatedAt: string }>;
         databasePath?: string;
       }>,
+    getPinnedViewer: (projectId: string) =>
+      ipcRenderer.invoke("neud:displays:getPinnedViewer", projectId),
+    togglePin: (payload: { projectId: string; displayId: string }) =>
+      ipcRenderer.invoke("neud:displays:togglePin", payload),
+    unpinIfPinned: (payload: { projectId: string; displayId: string }) =>
+      ipcRenderer.invoke("neud:displays:unpinIfPinned", payload),
+    setPinnedViewerHeight: (payload: { projectId: string; viewerHeightPx: number }) =>
+      ipcRenderer.invoke("neud:displays:setPinnedViewerHeight", payload),
   },
   updates: {
     getStatus: () => ipcRenderer.invoke("neud:updates:getStatus"),
@@ -482,6 +490,7 @@ const neudDesktop = {
 
 const DISPLAY_CONNECTION_EVENT = "neud-display-connection-changed";
 const DISPLAY_RELOAD_EVENT = "neud-display-reload-request";
+const DISPLAY_DATA_CHANGED_EVENT = "neud-display-data-changed";
 
 function postDisplayConnectionMessage(message: Record<string, unknown>): void {
   try {
@@ -524,6 +533,23 @@ ipcRenderer.on("neud:displayConnection:changed", (_event, payload: unknown) => {
   relayDisplayConnectionChanged({
     displayId: record.displayId,
     enabled: record.enabled === true,
+  });
+});
+
+ipcRenderer.on("neud:displayData:changed", (_event, payload: unknown) => {
+  if (!payload || typeof payload !== "object") return;
+  const record = payload as {
+    projectId?: unknown;
+    revision?: unknown;
+    contentHash?: unknown;
+  };
+  if (typeof record.projectId !== "string") return;
+  postDisplayConnectionMessage({
+    type: DISPLAY_DATA_CHANGED_EVENT,
+    projectId: record.projectId,
+    revision: typeof record.revision === "number" ? record.revision : null,
+    contentHash: typeof record.contentHash === "string" ? record.contentHash : null,
+    timestamp: Date.now(),
   });
 });
 

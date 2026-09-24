@@ -14,7 +14,9 @@ type ConfirmHashClientProps = {
 };
 
 export function ConfirmHashClient({ next }: ConfirmHashClientProps) {
-  const [message, setMessage] = useState("Confirming your link…");
+  const [message, setMessage] = useState(
+    isInviteDestination(next) ? "Accepting invitation…" : "Confirming your link…",
+  );
 
   useEffect(() => {
     let cancelled = false;

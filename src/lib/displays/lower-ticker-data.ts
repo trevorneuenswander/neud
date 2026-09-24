@@ -1,3 +1,8 @@
+import {
+  getAuctionDayFromLotNumber,
+  type AuctionDayFilter,
+} from "@/lib/bag/auction-day-from-lot";
+
 export type LowerTickerLot = {
   lot: string;
   title: string;
@@ -37,7 +42,52 @@ function isTrustedNextArray(value: unknown): value is Record<string, unknown>[] 
   return Array.isArray(value) && value.length > 0;
 }
 
-function deriveNextFromLots(snapshot: Record<string, unknown>): LowerTickerLot[] {
+function normalizeLotKey(value: unknown): string {
+  const cleaned = asString(value, "").trim().replace(/^lot\s+/i, "");
+  const numeric = cleaned.match(/\d+/);
+  return numeric ? numeric[0] : cleaned.toLowerCase();
+}
+
+function resolveCurrentLotIndex(
+  lots: Record<string, unknown>[],
+  snapshot: Record<string, unknown>,
+): number {
+  const candidates = [
+    asString((snapshot.current as Record<string, unknown> | undefined)?.lot, ""),
+    asString(
+      (snapshot.auctionDisplay as Record<string, unknown> | undefined)?.lot,
+      "",
+    ),
+  ]
+    .map((entry) => normalizeLotKey(entry))
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const index = lots.findIndex(
+      (row) => normalizeLotKey(row.lot ?? row.lotNumber) === candidate,
+    );
+    if (index >= 0) {
+      return index;
+    }
+  }
+
+  return lots.findIndex((row) => row.status && /active/i.test(String(row.status)));
+}
+
+function lotMatchesDayFilter(
+  lotValue: unknown,
+  dayFilter: AuctionDayFilter,
+): boolean {
+  if (dayFilter === "all") {
+    return true;
+  }
+  return getAuctionDayFromLotNumber(asString(lotValue, "")) === dayFilter;
+}
+
+function deriveNextFromLots(
+  snapshot: Record<string, unknown>,
+  dayFilter: AuctionDayFilter = "all",
+): LowerTickerLot[] {
   const lots = Array.isArray(snapshot.lots)
     ? (snapshot.lots as Record<string, unknown>[])
     : [];
@@ -45,28 +95,37 @@ function deriveNextFromLots(snapshot: Record<string, unknown>): LowerTickerLot[]
     return [];
   }
 
-  let activeIndex = lots.findIndex(
-    (row) => row.status && /active/i.test(String(row.status)),
-  );
+  const activeIndex = resolveCurrentLotIndex(lots, snapshot);
+  const startIndex = activeIndex >= 0 ? activeIndex + 1 : lots.length;
 
-  if (activeIndex < 0 && snapshot.current && typeof snapshot.current === "object") {
-    const currentLot = asString(
-      (snapshot.current as Record<string, unknown>).lot,
-      "",
-    ).trim();
-    if (currentLot) {
-      activeIndex = lots.findIndex((row) => asString(row.lot, "").trim() === currentLot);
+  if (dayFilter !== "all") {
+    const upcoming: LowerTickerLot[] = [];
+    for (let index = startIndex; index < lots.length && upcoming.length < 3; index += 1) {
+      const row = lots[index] as Record<string, unknown>;
+      if (!lotMatchesDayFilter(row.lot ?? row.lotNumber, dayFilter)) {
+        continue;
+      }
+      const normalized = normalizeLot(row);
+      if (normalized) {
+        upcoming.push(normalized);
+      }
+    }
+    return upcoming;
+  }
+  const upcoming: LowerTickerLot[] = [];
+
+  for (let index = startIndex; index < lots.length && upcoming.length < 3; index += 1) {
+    const row = lots[index] as Record<string, unknown>;
+    if (!lotMatchesDayFilter(row.lot ?? row.lotNumber, dayFilter)) {
+      continue;
+    }
+    const normalized = normalizeLot(row);
+    if (normalized) {
+      upcoming.push(normalized);
     }
   }
 
-  const sliceStart = activeIndex >= 0 ? activeIndex + 1 : 1;
-  const sliceEnd = activeIndex >= 0 ? activeIndex + 4 : 4;
-
-  return lots
-    .slice(sliceStart, sliceEnd)
-    .map((row) => normalizeLot(row))
-    .filter((row): row is LowerTickerLot => row !== null)
-    .slice(0, 3);
+  return upcoming;
 }
 
 export function mapLiveStateToLowerTickerFeed(
@@ -86,12 +145,15 @@ export function mapLiveStateToLowerTickerFeed(
 
 export function mapSnapshotToLowerTickerFeed(
   snapshot: Record<string, unknown> | null | undefined,
+  options?: { dayFilter?: AuctionDayFilter },
 ): LowerTickerFeedPayload {
   if (!snapshot) {
     return { next: [] };
   }
 
-  if (isTrustedNextArray(snapshot.next)) {
+  const dayFilter = options?.dayFilter ?? "all";
+
+  if (dayFilter === "all" && isTrustedNextArray(snapshot.next)) {
     const fromNext = snapshot.next
       .map((row) => normalizeLot(row))
       .filter((row): row is LowerTickerLot => row !== null)
@@ -101,5 +163,5 @@ export function mapSnapshotToLowerTickerFeed(
     }
   }
 
-  return { next: deriveNextFromLots(snapshot) };
+  return { next: deriveNextFromLots(snapshot, dayFilter) };
 }

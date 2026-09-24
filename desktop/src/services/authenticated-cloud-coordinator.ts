@@ -1,9 +1,11 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CloudRuntimeConfigSource } from "./cloud-runtime-config";
 import type { SupabasePublicConfig } from "./supabase-public-config";
 import { SupabaseUserSessionService } from "./supabase-user-session";
 import {
   logCloudAccessLifecycle,
+  recordCloudAccessSessionRefreshAttempt,
   type AuthenticatedClientAcquisitionResult,
   type AuthenticatedClientProvider,
   type CloudAccessSessionState,
@@ -29,6 +31,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
   constructor(
     private readonly session: SupabaseUserSessionService,
     private readonly publicConfig: SupabasePublicConfig | null,
+    private readonly publicConfigSource: CloudRuntimeConfigSource = "missing",
   ) {
     const serial = AuthenticatedCloudCoordinator.nextInstanceSerial++;
     this.instanceIdHash = createHash("sha256")
@@ -208,6 +211,24 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       };
     }
 
+    if (!options?.forceRefresh) {
+      const cachedClient = this.session.peekAuthenticatedClient();
+      if (cachedClient) {
+        logCloudAccessLifecycle("client_available", {
+          sessionRefreshResult: "cache_hit",
+        });
+        return {
+          client: cachedClient,
+          sessionState: "session_ready",
+          errorCode: null,
+          clientCreationAttempted: false,
+          clientCreationSucceeded: true,
+          sessionRefreshAttempted: false,
+          sessionRefreshResult: "not_attempted",
+        };
+      }
+    }
+
     if (this.sessionRestorePromise && !this.sessionRestoreCompleted && !options?.forceRefresh) {
       logCloudAccessLifecycle("session_restore_observed", {
         waiting: true,
@@ -226,10 +247,21 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
     let sessionRefreshResult: AuthenticatedClientAcquisitionResult["sessionRefreshResult"] =
       "not_attempted";
 
+    const finalizeAcquisition = (
+      result: AuthenticatedClientAcquisitionResult,
+    ): AuthenticatedClientAcquisitionResult => {
+      if (result.sessionRefreshAttempted) {
+        recordCloudAccessSessionRefreshAttempt();
+      }
+      return result;
+    };
+
     const attemptClient = async (): Promise<SupabaseClient | null> => {
       if (options?.forceRefresh) {
         sessionRefreshAttempted = true;
-        const refresh = await this.session.refreshCloudSessionIfNeeded(this.publicConfig!);
+        const refresh = await this.session.refreshCloudSessionIfNeeded(this.publicConfig!, {
+          configSource: this.publicConfigSource,
+        });
         sessionRefreshResult = refresh.ok
           ? refresh.code === "still_fresh"
             ? "still_fresh"
@@ -241,7 +273,9 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       }
 
       sessionRefreshAttempted = true;
-      const refresh = await this.session.refreshCloudSessionIfNeeded(this.publicConfig!);
+      const refresh = await this.session.refreshCloudSessionIfNeeded(this.publicConfig!, {
+        configSource: this.publicConfigSource,
+      });
       sessionRefreshResult = refresh.ok
         ? refresh.code === "still_fresh"
           ? "still_fresh"
@@ -255,7 +289,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       logCloudAccessLifecycle("client_available", {
         sessionRefreshResult,
       });
-      return {
+      return finalizeAcquisition({
         client,
         sessionState: "session_ready",
         errorCode: null,
@@ -263,7 +297,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
         clientCreationSucceeded: true,
         sessionRefreshAttempted,
         sessionRefreshResult,
-      };
+      });
     }
 
     if (!options?.forceRefresh) {
@@ -282,7 +316,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
         sessionRefreshResult,
         recovered: true,
       });
-      return {
+      return finalizeAcquisition({
         client,
         sessionState: "session_ready",
         errorCode: null,
@@ -290,7 +324,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
         clientCreationSucceeded: true,
         sessionRefreshAttempted,
         sessionRefreshResult,
-      };
+      });
     }
 
     const refreshCode = this.session.getRefreshDiagnostics().lastRefreshErrorCode;
@@ -298,7 +332,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       logCloudAccessLifecycle("client_unavailable", {
         reasonCode: "invalid_refresh_token",
       });
-      return {
+      return finalizeAcquisition({
         client: null,
         sessionState: "invalid_refresh_token",
         errorCode: "invalid_refresh_token",
@@ -306,7 +340,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
         clientCreationSucceeded: false,
         sessionRefreshAttempted,
         sessionRefreshResult,
-      };
+      });
     }
 
     if (
@@ -318,7 +352,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
         reasonCode: "session_refresh_failed_transient",
         refreshCode,
       });
-      return {
+      return finalizeAcquisition({
         client: null,
         sessionState: "session_refresh_failed_transient",
         errorCode: "token_refresh_failed",
@@ -326,7 +360,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
         clientCreationSucceeded: false,
         sessionRefreshAttempted,
         sessionRefreshResult: "failure",
-      };
+      });
     }
 
     logCloudAccessLifecycle("client_unavailable", {
@@ -334,7 +368,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       refreshCode: refreshCode ?? "unknown",
     });
 
-    return {
+    return finalizeAcquisition({
       client: null,
       sessionState: "authenticated_client_initialization_failed",
       errorCode: "client_creation_failed",
@@ -342,7 +376,7 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       clientCreationSucceeded: false,
       sessionRefreshAttempted,
       sessionRefreshResult,
-    };
+    });
   }
 
   async restorePersistedSession(): Promise<{
@@ -441,5 +475,17 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
     } catch {
       return false;
     }
+  }
+
+  async getCloudAccessToken(options?: { forceRefresh?: boolean }): Promise<{
+    accessToken: string | null;
+    expired: boolean;
+    errorCode: string | null;
+  }> {
+    if (!this.publicConfig) {
+      return { accessToken: null, expired: true, errorCode: "cloud_config_missing" };
+    }
+    await this.waitForSessionRestore();
+    return this.session.getCloudAccessToken(this.publicConfig, options);
   }
 }

@@ -12,6 +12,7 @@ import {
   PROJECT_ACCESS_COLUMN_WIDTHS,
   PROJECT_TEAM_COLUMN_WIDTHS,
 } from "@/lib/access-management/table-layout";
+import { ACCESS_TABLE_ACTION_BUTTON_CLASS } from "@/lib/access-management/table-action-buttons";
 import type { AccessManagementActions } from "@/lib/access-management/actions";
 import type { AccessManagementDirectory, CloudProjectRole } from "@/lib/access-management/types";
 import { accessManagementErrorMessage } from "@/lib/access-management/errors";
@@ -240,7 +241,55 @@ export function ProjectAccessPanel({
 
       <div>
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-          Project access
+          Assigned Teams
+        </h3>
+        {assignedTeams.length === 0 ? (
+          <p className="text-sm text-muted">No teams assigned to this project.</p>
+        ) : (
+          <AccessManagementTable
+            columnWidths={PROJECT_TEAM_COLUMN_WIDTHS}
+            headers={["Team", "Actions"]}
+          >
+            {assignedTeams.map((assignment) => {
+              const team = teams.find((entry) => entry.id === assignment.teamId);
+              return (
+                <DataTableRow key={`${assignment.projectId}:${assignment.teamId}`}>
+                  <DataTableCell className="truncate">{team?.name || assignment.teamId}</DataTableCell>
+                  <DataTableCell>
+                    {canManage && actions?.removeProjectTeam ? (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="danger"
+                          className={ACCESS_TABLE_ACTION_BUTTON_CLASS}
+                          disabled={busy}
+                          onClick={() =>
+                            void runAction(async () => {
+                              await actions.removeProjectTeam!({
+                                projectId: assignment.projectId,
+                                teamId: assignment.teamId,
+                              });
+                            })
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </DataTableCell>
+                </DataTableRow>
+              );
+            })}
+          </AccessManagementTable>
+        )}
+      </div>
+
+      <div>
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
+          User Access
         </h3>
         {accessRows.length === 0 ? (
           <p className="text-sm text-muted">No access rows for this project.</p>
@@ -263,10 +312,10 @@ export function ProjectAccessPanel({
                 <DataTableCell>{row.status}</DataTableCell>
                 <DataTableCell>
                   {canManage && row.isMutable ? (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-nowrap items-center justify-end gap-2">
                       <select
                         aria-label={`Change project role for ${row.userName}`}
-                        className="rounded-md border border-border bg-surface-raised px-2 py-1 text-sm"
+                        className="h-8 rounded-md border border-border bg-surface-raised px-2 text-xs"
                         value={row.projectRole.toLowerCase()}
                         disabled={busy}
                         onChange={(event) => {
@@ -288,7 +337,9 @@ export function ProjectAccessPanel({
                       </select>
                       <Button
                         type="button"
+                        size="sm"
                         variant="danger"
+                        className={ACCESS_TABLE_ACTION_BUTTON_CLASS}
                         disabled={busy}
                         onClick={() =>
                           void runAction(async () => {
@@ -308,50 +359,6 @@ export function ProjectAccessPanel({
                 </DataTableCell>
               </DataTableRow>
             ))}
-          </AccessManagementTable>
-        )}
-      </div>
-
-      <div>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-          Assigned teams (inherited access)
-        </h3>
-        {assignedTeams.length === 0 ? (
-          <p className="text-sm text-muted">No teams assigned to this project.</p>
-        ) : (
-          <AccessManagementTable
-            columnWidths={PROJECT_TEAM_COLUMN_WIDTHS}
-            headers={["Team", "Actions"]}
-          >
-            {assignedTeams.map((assignment) => {
-              const team = teams.find((entry) => entry.id === assignment.teamId);
-              return (
-                <DataTableRow key={`${assignment.projectId}:${assignment.teamId}`}>
-                  <DataTableCell className="truncate">{team?.name || assignment.teamId}</DataTableCell>
-                  <DataTableCell>
-                    {canManage && actions?.removeProjectTeam ? (
-                      <Button
-                        type="button"
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() =>
-                          void runAction(async () => {
-                            await actions.removeProjectTeam!({
-                              projectId: assignment.projectId,
-                              teamId: assignment.teamId,
-                            });
-                          })
-                        }
-                      >
-                        Remove
-                      </Button>
-                    ) : (
-                      "—"
-                    )}
-                  </DataTableCell>
-                </DataTableRow>
-              );
-            })}
           </AccessManagementTable>
         )}
       </div>

@@ -7,6 +7,18 @@
 
   var LOOP_GAP = "\u00A0\u00A0\u00A0•\u00A0\u00A0\u00A0";
 
+  function snapPinnedPreviewTranslate(value) {
+    try {
+      if (new URLSearchParams(global.location.search).get("pinnedPreview") !== "1") {
+        return value;
+      }
+      var dpr = global.devicePixelRatio || 1;
+      return Math.round(value * dpr) / dpr;
+    } catch (_) {
+      return value;
+    }
+  }
+
   function createLegacyTickerMarquee(config) {
     config = config || {};
     var V = config.speedPxPerSecond != null ? config.speedPxPerSecond : 40;
@@ -531,7 +543,7 @@
           return;
         }
 
-        var distance = distanceAt(elapsed);
+        var distance = snapPinnedPreviewTranslate(distanceAt(elapsed));
         inner.style.transform = "translate3d(" + (-distance) + "px,0,0)";
       }
 

@@ -12,7 +12,7 @@ export type NavItem = {
 export const PORTAL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
-  { href: "/users", label: "Users", adminOnly: true },
+  { href: "/users", label: "Users and Access", adminOnly: true },
   { href: "/activity", label: "Activity", viewerHidden: true },
   { href: "/settings", label: "Settings" },
 ];
@@ -21,7 +21,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/projects": "Projects",
   "/projects/new": "New Project",
-  "/users": "Users",
+  "/users": "Users and Access",
   "/activity": "Activity",
   "/settings": "Settings",
 };

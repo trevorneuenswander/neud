@@ -91,12 +91,20 @@ export function buildDisplayPreviewDocument(input: {
   dataUrl?: string;
   displayInfo?: Record<string, unknown>;
 }): string {
+  const localApiBase = "http://127.0.0.1:8070";
+  const projectId =
+    typeof input.displayInfo?.projectId === "string" ? input.displayInfo.projectId : null;
   const configScript = input.dataUrl
     ? `<script>window.__NEUD_DISPLAY_CONFIG__ = ${JSON.stringify({
         dataUrl: input.dataUrl,
         displayInfo: input.displayInfo ?? {},
-        localApiBase: "http://127.0.0.1:8070",
+        localApiBase,
         debug: true,
+        ...(projectId
+          ? {
+              displayBridgeEventsUrl: `${localApiBase}/api/projects/${encodeURIComponent(projectId)}/display-bridge/events`,
+            }
+          : {}),
       })};</script>`
     : "";
 

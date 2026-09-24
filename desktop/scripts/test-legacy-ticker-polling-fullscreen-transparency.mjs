@@ -23,8 +23,8 @@ test("display data route reports enabled state even in preview mode", () => {
     api.indexOf('action === "data" && request.method === "GET"'),
     api.indexOf('if (!action && request.method === "GET")'),
   );
-  assert.match(customBlock, /enabled: viewerState\.enabled/);
-  assert.match(customBlock, /dataConnected: viewerState\.enabled/);
+  assert.match(customBlock, /previewMode/);
+  assert.match(customBlock, /dataConnected = previewMode \|\| viewerState\.enabled/);
 });
 
 test("connection toggle does not reload iframe viewers", () => {
@@ -94,12 +94,12 @@ test("toggle persistence uses display id not slug-only lookup", () => {
   );
 });
 
-test("fullscreen opens local display route with preview and revision", () => {
+test("fullscreen opens the same output URL as Copy Local URL", () => {
   const card = readSrc("src/components/displays/DeveloperHtmlDisplayCard.tsx");
   assert.match(card, /localDisplayUrl/);
-  assert.match(card, /preview: "1"/);
-  assert.match(card, /publishedRevisionId/);
-  assert.match(card, /viewerUrl: previewUrl/);
+  assert.match(card, /viewerUrl: outputTargetUrl/);
+  assert.match(card, /outputTargetUrl = localDisplayUrl/);
+  assert.doesNotMatch(card, /handleViewFullscreen[\s\S]{0,400}preview: "1"/);
 });
 
 test("HtmlDisplayLiveView uses iframe load phases instead of location.replace", () => {
@@ -114,10 +114,10 @@ test("HtmlDisplayLiveView uses iframe load phases instead of location.replace", 
 
 test("HtmlDisplayLiveView scales fixed canvas to fit viewer", () => {
   const liveView = readSrc("src/components/displays/broad-arrow/HtmlDisplayLiveView.tsx");
-  assert.match(liveView, /displayWidth/);
-  assert.match(liveView, /displayHeight/);
-  assert.match(liveView, /transform: `scale\(\$\{scale\}\)`/);
-  assert.match(liveView, /ResizeObserver/);
+  const scaled = readSrc("src/components/displays/DisplayViewerScaledCanvas.tsx");
+  assert.match(liveView, /DisplayViewerScaledCanvas/);
+  assert.match(scaled, /transform: `scale\(\$\{scale\}\)`/);
+  assert.match(scaled, /ResizeObserver/);
 });
 
 test("HtmlDisplayLiveView resolves legacy-ticker as generic HTML display", () => {
@@ -137,20 +137,30 @@ test("display meta includes publishedRevisionId and displayId", () => {
   assert.match(service, /displayId: code\.displayId/);
 });
 
-test("preview iframe uses transparent background for management preview", () => {
+test("management preview and graphic output shells use transparent backgrounds", () => {
   const preview = readSrc("src/components/displays/DisplayCanvasPreview.tsx");
   const liveView = readSrc("src/components/displays/broad-arrow/HtmlDisplayLiveView.tsx");
+  const scaled = readSrc("src/components/displays/DisplayViewerScaledCanvas.tsx");
+  const shell = readSrc("src/lib/displays/display-graphic-output-shell.ts");
   assert.match(preview, /bg-transparent/);
   assert.match(preview, /backgroundColor: "transparent"/);
-  assert.match(liveView, /backgroundColor: "#ffffff"/);
+  assert.match(liveView, /DISPLAY_GRAPHIC_OUTPUT_BACKGROUND/);
+  assert.match(scaled, /DISPLAY_GRAPHIC_OUTPUT_BACKGROUND/);
+  assert.match(shell, /transparent/);
 });
 
-test("electron preview window opens with display dimensions and white background", () => {
+test("electron preview window opens resizable window-fit viewer", () => {
   const manager = readSrc("desktop/src/services/display-preview-window-manager.ts");
+  const card = readSrc("src/components/displays/DisplayCard.tsx");
+  const windowFit = readSrc("src/components/displays/DisplayWindowFitClient.tsx");
   assert.match(manager, /resolveDisplayWindowBounds/);
-  assert.match(manager, /backgroundColor: "#ffffff"/);
-  assert.match(manager, /displayWidth/);
-  assert.match(manager, /DEFAULT_DISPLAY_WIDTH = 1920/);
+  assert.match(manager, /transparent: false/);
+  assert.match(manager, /resizable: true/);
+  assert.match(manager, /display\/window-fit/);
+  assert.match(windowFit, /useDisplayWindowFitViewerStyles/);
+  assert.match(card, /buildDisplayWindowFitPath/);
+  assert.match(card, /viewerUrl: outputTargetUrl/);
+  assert.doesNotMatch(card, /handleViewFullscreen[\s\S]{0,200}preview=1/);
 });
 
 test("legacy ticker card scopes updates to display record slug prop", () => {

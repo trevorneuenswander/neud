@@ -1,3 +1,4 @@
+import { DISPLAY_METADATA_BADGE_BOX_CLASS } from "@/components/displays/display-metadata-badge-classes";
 import {
   formatDisplayVersion,
   DISPLAY_VERSION_UNAVAILABLE_LABEL,
@@ -15,7 +16,9 @@ export function DisplayVersionBadge({
 }: DisplayVersionBadgeProps) {
   if (versionNumber === null) {
     return (
-      <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+      <span
+        className={`${DISPLAY_METADATA_BADGE_BOX_CLASS} uppercase tracking-wide text-muted border-border`}
+      >
         {DISPLAY_VERSION_UNAVAILABLE_LABEL}
       </span>
     );
@@ -29,7 +32,7 @@ export function DisplayVersionBadge({
 
   return (
     <span
-      className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted"
+      className={`${DISPLAY_METADATA_BADGE_BOX_CLASS} border-border text-muted`}
       title={accessibleLabel}
       aria-label={accessibleLabel}
     >

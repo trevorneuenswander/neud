@@ -55,7 +55,6 @@ export function HtmlDisplayOutputView({
   const [meta, setMeta] = useState<DisplayMetaResponse | null>(null);
   const [resolved, setResolved] = useState(false);
 
-  const resolvedRefreshRateMs = meta?.refreshRateMs ?? refreshRateMs;
   const resolvedRevisionId = meta?.publishedRevisionId ?? publishedRevisionId;
   const displayWidth = meta?.displayWidth ?? initialDisplayWidth;
   const displayHeight = meta?.displayHeight ?? initialDisplayHeight;
@@ -74,17 +73,23 @@ export function HtmlDisplayOutputView({
     void resolveDisplay();
   }, [resolveDisplay]);
 
-  const iframeUrl = useMemo(
-    () =>
-      buildHtmlDisplayDocumentPath({
-        projectId,
-        slug,
-        refreshRateMs: resolvedRefreshRateMs,
-        outputMode: true,
-        publishedRevisionId: resolvedRevisionId,
-      }),
-    [projectId, resolvedRefreshRateMs, resolvedRevisionId, slug],
-  );
+  const iframeUrl = useMemo(() => {
+    let pinnedPreview = false;
+    let previewSample: string | null = null;
+    if (typeof window !== "undefined") {
+      const search = new URLSearchParams(window.location.search);
+      pinnedPreview = search.get("pinnedPreview") === "1";
+      previewSample = search.get("previewSample");
+    }
+    return buildHtmlDisplayDocumentPath({
+      projectId,
+      slug,
+      outputMode: true,
+      publishedRevisionId: resolvedRevisionId,
+      pinnedPreview,
+      previewSample,
+    });
+  }, [projectId, resolvedRevisionId, slug]);
 
   const absoluteIframeUrl =
     typeof window !== "undefined"

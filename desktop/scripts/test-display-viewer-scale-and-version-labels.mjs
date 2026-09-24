@@ -89,7 +89,7 @@ test("HtmlDisplayLiveView uses DisplayViewerScaledCanvas with measured viewport"
   assert.match(canvas, /display-viewer-scaled-bounds/);
   assert.match(canvas, /display-viewer-canvas/);
   assert.match(canvas, /buildDisplayViewerMeasurements/);
-  assert.match(canvas, /process\.env\.NODE_ENV === "development"/);
+  assert.match(canvas, /displayViewerDebug/);
   assert.match(canvas, /Rendered Display Bounds: \{measurements\.displayWidth\}/);
   assert.match(canvas, /On-Screen Bounds:/);
   assert.match(measurements, /export type DisplayViewerMeasurements/);

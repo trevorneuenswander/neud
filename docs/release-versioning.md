@@ -8,13 +8,20 @@ NEUD uses semantic versions during Alpha.
 Alpha MAJOR.MINOR.PATCH
 ```
 
-Example: `Alpha 0.1.1`
+Example: `Alpha 0.2.0`
+
+## Published vs current development
+
+- **Latest published release:** v0.1.4 (see [release-milestones.md](./release-milestones.md))
+- **Current unreleased version:** v0.2.0 (canonical `package.json` version during development)
+
+There is no published v0.1.5. The next expected update path is **v0.1.4 → v0.2.0**.
 
 ## Canonical source of truth
 
 The release version is defined once in the root package metadata:
 
-- Root `package.json` → `"version": "0.1.1"` (**canonical**)
+- Root `package.json` → `"version": "0.2.0"` (**canonical** during current development)
 - `@neud/desktop` `package.json` → synchronized from root during desktop build
 - `desktop/dist/package.json` → written during desktop build for Electron runtime metadata
 

@@ -8,6 +8,7 @@ import type {
   LocalSourceSnapshot,
   LocalSourceStatus,
 } from "../repositories/data-sources-repository";
+import { resolveSessionFacingEngineLastError } from "../services/engine-session-facing-errors";
 
 export function toPortalDisplay(display: LocalDisplay, localApiBaseUrl: string) {
   const settings = display.settings ?? {};
@@ -140,7 +141,7 @@ export function toPortalEngineStatus(
     successful_today: status.successfulToday,
     failed_today: status.failedToday,
     stats_day: status.statsDay,
-    last_error: status.lastError,
+    last_error: resolveSessionFacingEngineLastError(status),
     updated_at: status.updatedAt,
     execution_host_id: null,
   };

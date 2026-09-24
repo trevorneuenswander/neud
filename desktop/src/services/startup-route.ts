@@ -17,6 +17,27 @@ const EXACT_PATH_MIGRATIONS: Record<string, string> = {
 
 const OBSOLETE_PROJECT_SUBROUTES = ["/controllers", "/members"] as const;
 
+/** Routes that must never restore as the main desktop window (no portal shell). */
+export function isShellStartupPath(pathname: string): boolean {
+  const path = pathname.trim();
+  if (!path.startsWith("/")) {
+    return false;
+  }
+  if (path.startsWith("/display/")) {
+    return false;
+  }
+  if (path.startsWith("/view/")) {
+    return false;
+  }
+  if (path.startsWith("/displays/")) {
+    return false;
+  }
+  if (path.includes("/fullscreen")) {
+    return false;
+  }
+  return true;
+}
+
 export function isInternalStartupPath(path: string): boolean {
   const trimmed = path.trim();
   return (
@@ -61,7 +82,12 @@ export function normalizeStartupPath(
     return fallback;
   }
 
-  return migrateStartupPath(pathname);
+  const migrated = migrateStartupPath(pathname);
+  if (!isShellStartupPath(migrated)) {
+    return fallback;
+  }
+
+  return migrated;
 }
 
 export function joinRendererUrl(baseUrl: string, path: string): string {
@@ -114,6 +140,9 @@ export function persistStartupPath(
 ): void {
   const normalized = normalizeStartupPath(path, DESKTOP_DEFAULT_STARTUP_PATH);
   if (normalized === DESKTOP_DEFAULT_STARTUP_PATH) {
+    return;
+  }
+  if (!isShellStartupPath(normalized)) {
     return;
   }
 

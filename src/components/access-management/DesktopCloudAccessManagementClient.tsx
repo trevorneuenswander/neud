@@ -136,6 +136,8 @@ export function DesktopCloudAccessManagementClient() {
         setError(payload.warning ?? null);
       } else if (payload.stale && reason && reason !== "no_session" && reason !== "offline") {
         setError(resolvePrimaryMessage(reason, payload.error ?? null, null));
+      } else if (payload.stale && reason === "no_session" && hasDirectoryContent(payload)) {
+        setError(null);
       } else if (payload.stale && reason === "no_session") {
         setError(resolvePrimaryMessage(reason, payload.error ?? null, payload.warning ?? null));
       } else if (payload.stale && reason === "offline") {
@@ -178,10 +180,11 @@ export function DesktopCloudAccessManagementClient() {
     try {
       await resolveDesktopLocalApiConfig();
       const authStatus = await localGetAuthStatus();
-      setIsConnected(authStatus.connectionStatus === "connected");
-      setHasCloudSession(Boolean(authStatus.hasCloudSession));
+      const cloudReady = Boolean(authStatus.authenticatedCloudSessionAvailable);
+      setIsConnected(cloudReady || authStatus.connectionStatus === "connected");
+      setHasCloudSession(cloudReady);
 
-      if (authStatus.connectionStatus === "connected" && !authStatus.hasCloudSession) {
+      if (!cloudReady && authStatus.localSessionValid) {
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
 

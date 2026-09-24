@@ -18,7 +18,8 @@ export type HostedDisplayConnectionStatus =
   | "viewer_off"
   | "waiting_for_publication"
   | "unavailable"
-  | "access_denied";
+  | "access_denied"
+  | "authentication_required";
 
 export type HostedDisplayFailureStage =
   | "display_not_synced"
@@ -43,6 +44,8 @@ export type HostedDisplayStatusInput = {
   onlinePublishedRevisionPresent?: boolean;
   htmlPresent?: boolean | null;
   authorized?: boolean;
+  portalSessionPresent?: boolean;
+  authenticatedViewerAuthorized?: boolean | null;
   publisherOnline: boolean | null;
   leasePresent?: boolean | null;
   heartbeatFresh?: boolean | null;
@@ -66,8 +69,28 @@ export type ResolvedHostedDisplayStatus = {
 export function resolvePortalConnected(input: {
   onlineViewerEnabled: boolean;
   publisherOnline: boolean | null;
+  visibility?: "private" | "public";
+  portalSessionPresent?: boolean;
+  viewerRpcCode?: string | null;
+  publishedRevisionPresent?: boolean;
+  authenticatedViewerAuthorized?: boolean | null;
 }): boolean {
-  return input.onlineViewerEnabled === true && input.publisherOnline === true;
+  if (input.onlineViewerEnabled !== true) {
+    return false;
+  }
+  if (input.publisherOnline === true) {
+    return true;
+  }
+  if (
+    input.visibility === "private" &&
+    input.portalSessionPresent &&
+    input.viewerRpcCode === "viewer_ready" &&
+    input.publishedRevisionPresent !== false &&
+    input.authenticatedViewerAuthorized !== false
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function resolveViewerRenderable(input: {
@@ -93,6 +116,9 @@ export function resolveHostedDisplayFailureStage(
     return "no_published_revision";
   }
   if (input.viewerRpcCode === "authentication_required") {
+    if (input.visibility === "private" && input.portalSessionPresent) {
+      return "viewer_rpc_failed";
+    }
     return "authorization_denied";
   }
   if (input.viewerRpcCode === "not_found") {
@@ -146,6 +172,9 @@ export function resolveHostedDisplayConnectionStatus(
     return "waiting_for_publication";
   }
   if (input.viewerRpcCode === "authentication_required") {
+    if (input.visibility === "private") {
+      return "authentication_required";
+    }
     return "access_denied";
   }
   if (input.viewerRpcCode === "not_found") {
@@ -182,6 +211,11 @@ export function resolveHostedDisplayHelperText(
   if (connectionStatus === "waiting_for_publication" || !input.publishedRevisionPresent) {
     return "Waiting for first publication";
   }
+  if (connectionStatus === "authentication_required") {
+    return input.portalSessionPresent
+      ? "Restoring your viewer session…"
+      : "Sign in to view this private display.";
+  }
   if (connectionStatus === "access_denied") {
     return "You do not have access to this display.";
   }
@@ -210,7 +244,15 @@ export function resolveHostedDisplayStatus(
   const connectionStatus = resolveHostedDisplayConnectionStatus(input);
   const failureStage = resolveHostedDisplayFailureStage(input);
   const helperText = resolveHostedDisplayHelperText(input, connectionStatus);
-  const portalConnected = resolvePortalConnected(input);
+  const portalConnected = resolvePortalConnected({
+    onlineViewerEnabled: input.onlineViewerEnabled,
+    publisherOnline: input.publisherOnline,
+    visibility: input.visibility,
+    portalSessionPresent: input.portalSessionPresent,
+    viewerRpcCode: input.viewerRpcCode,
+    publishedRevisionPresent: input.publishedRevisionPresent,
+    authenticatedViewerAuthorized: input.authenticatedViewerAuthorized,
+  });
   const viewerRenderable = resolveViewerRenderable(input);
 
   const publishedAndEligible =

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isDesktopRuntimeClient } from "@/lib/runtime/environment";
 import {
   localGetOnlineViewerSettings,
@@ -35,6 +35,9 @@ export function useOnlineViewerSettings(
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const mutationGenerationRef = useRef(0);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
 
   const isDesktop = isDesktopRuntimeClient();
   const displayBlockedReason = !displayEnabled
@@ -63,12 +66,19 @@ export function useOnlineViewerSettings(
       return;
     }
 
+    const generationAtStart = mutationGenerationRef.current;
     setLoading(true);
     try {
       const next = await localGetOnlineViewerSettings(projectSlug, displayId);
+      if (generationAtStart !== mutationGenerationRef.current) {
+        return;
+      }
       applySettings(next);
       setLoadError(null);
     } catch (error) {
+      if (generationAtStart !== mutationGenerationRef.current) {
+        return;
+      }
       setSettings(null);
       setLoadError(
         error instanceof Error
@@ -76,13 +86,24 @@ export function useOnlineViewerSettings(
           : "Unable to load online viewer settings.",
       );
     } finally {
-      setLoading(false);
+      if (generationAtStart === mutationGenerationRef.current) {
+        setLoading(false);
+      }
     }
   }, [applySettings, displayId, isDesktop, projectSlug]);
 
   useEffect(() => {
+    if (busyRef.current) {
+      return;
+    }
     void refresh();
-  }, [displayEnabled, refresh]);
+  }, [displayId, isDesktop, projectSlug, refresh]);
+
+  useEffect(() => {
+    if (!displayEnabled) {
+      setEnabled(false);
+    }
+  }, [displayEnabled]);
 
   const toggleEnabled = useCallback(
     async (nextEnabled: boolean) => {
@@ -92,6 +113,7 @@ export function useOnlineViewerSettings(
 
       const previousEnabled = enabled;
       const previousSettings = settings;
+      const generation = ++mutationGenerationRef.current;
       setEnabled(nextEnabled);
       setBusy(true);
       setLoadError(null);
@@ -100,8 +122,14 @@ export function useOnlineViewerSettings(
         const next = await localUpdateOnlineViewerSettings(projectSlug, displayId, {
           onlineViewerEnabled: nextEnabled,
         });
+        if (generation !== mutationGenerationRef.current) {
+          return;
+        }
         applySettings(next);
       } catch (error) {
+        if (generation !== mutationGenerationRef.current) {
+          return;
+        }
         setEnabled(previousEnabled);
         if (previousSettings) {
           setSettings(previousSettings);
@@ -112,7 +140,9 @@ export function useOnlineViewerSettings(
             : "Unable to update online viewer settings.",
         );
       } finally {
-        setBusy(false);
+        if (generation === mutationGenerationRef.current) {
+          setBusy(false);
+        }
       }
     },
     [

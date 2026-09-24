@@ -25,6 +25,7 @@ import { DeveloperHtmlDisplayCard } from "@/components/displays/DeveloperHtmlDis
 import { BroadArrowTypedDisplayCard } from "@/components/displays/broad-arrow/BroadArrowTypedDisplayCard";
 import { DisplayCard } from "@/components/displays/DisplayCard";
 import { Alert } from "@/components/ui/Alert";
+import { requestPinnedViewerRefresh } from "@/lib/displays/pinned-viewer-context";
 import { localSaveDisplayOrder } from "@/lib/local/display-order-api";
 import { useDisplayInlinePreview } from "@/lib/displays/display-inline-preview-context";
 import {
@@ -167,6 +168,7 @@ export function DisplaysListClient({
         projectId,
         nextItems.map((item) => item.persistId),
       );
+      requestPinnedViewerRefresh();
       if (requestId !== saveRequestRef.current) return;
     } catch (error) {
       if (requestId !== saveRequestRef.current) return;

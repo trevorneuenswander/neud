@@ -9,6 +9,8 @@ import type { LocalDataService } from "./local-data-service";
 import type { BagLiveStateEvents } from "../bag/live-state/bag-live-state-events";
 import type { BagLiveStateService } from "../bag/live-state/bag-live-state-service";
 import { handleBagRoute } from "../bag/live-state/bag-live-state-routes";
+import type { DisplayBridgeEvents } from "../displays/display-bridge-events";
+import { handleDisplayBridgeRoute } from "../displays/display-bridge-routes";
 import { getPasswordResetEmailDiagnostics } from "../auth/password-reset-email-diagnostics";
 import { SIGN_IN_TO_NEUD_ACCOUNT_MESSAGE } from "../auth/messages";
 import {
@@ -60,6 +62,7 @@ export class LocalApiServer {
     private readonly importService: ImportService,
     private readonly bagLiveState: BagLiveStateService,
     private readonly bagEvents: BagLiveStateEvents,
+    private readonly displayBridgeEvents: DisplayBridgeEvents,
   ) {}
 
   setDeveloperTools(service: DeveloperToolsService) {
@@ -181,6 +184,7 @@ export class LocalApiServer {
 
       if (url.pathname === "/api/auth/status" && request.method === "GET") {
         try {
+          this.data.scheduleInternetReachabilityRefresh();
           return sendJson(response, 200, this.data.getAuthStatusBundle());
         } catch (error) {
           const message =
@@ -358,6 +362,20 @@ export class LocalApiServer {
             fallbackReason,
             offline: false,
           });
+        }
+      }
+
+      if (
+        url.pathname === "/api/access/cloud/invitations/probe" &&
+        request.method === "GET"
+      ) {
+        try {
+          this.requireAuth();
+          return sendJson(response, 200, await this.data.probeCloudAccessInvitationAuth());
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Invitation auth probe failed.";
+          return sendJson(response, 503, { ok: false, error: message });
         }
       }
 
@@ -575,6 +593,50 @@ export class LocalApiServer {
             error instanceof Error ? error.message : "Unable to load viewable users.";
           const status = message.includes("permission") ? 403 : 401;
           return sendJson(response, status, { error: message });
+        }
+      }
+
+      const accessTeamDeleteMatch = url.pathname.match(
+        /^\/api\/access\/teams\/([^/]+)\/delete$/,
+      );
+      if (accessTeamDeleteMatch && request.method === "POST") {
+        try {
+          this.requireAuth();
+          const teamId = decodeURIComponent(accessTeamDeleteMatch[1]!);
+          return sendJson(response, 200, await this.data.deletePlatformTeam(teamId));
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to delete team.";
+          let status = 400;
+          if (message.includes("permission")) {
+            status = 403;
+          } else if (message.includes("not found")) {
+            status = 404;
+          } else if (message.includes("internet")) {
+            status = 503;
+          }
+          return sendJson(response, status, { ok: false, error: message });
+        }
+      }
+
+      const accessUserDeleteMatch = url.pathname.match(
+        /^\/api\/access\/users\/([^/]+)\/delete$/,
+      );
+      if (accessUserDeleteMatch && request.method === "POST") {
+        try {
+          this.requireAuth();
+          const targetUserId = decodeURIComponent(accessUserDeleteMatch[1]!);
+          return sendJson(response, 200, await this.data.deletePlatformUser(targetUserId));
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to delete user.";
+          let status = 400;
+          if (message.includes("permission")) {
+            status = 403;
+          } else if (message.includes("not found")) {
+            status = 404;
+          }
+          return sendJson(response, status, { ok: false, error: message });
         }
       }
 
@@ -1232,6 +1294,77 @@ export class LocalApiServer {
         }
       }
 
+      const projectPinnedViewerMatch = url.pathname.match(
+        /^\/api\/projects\/([^/]+)\/viewer\/pinned$/,
+      );
+      if (projectPinnedViewerMatch && request.method === "GET") {
+        try {
+          this.requireAuth();
+          const slug = decodeURIComponent(projectPinnedViewerMatch[1]!);
+          const project = this.data.getProjectBySlug(slug);
+          if (!project) {
+            return sendJson(response, 404, { error: "Project not found." });
+          }
+          const state = this.data.getPinnedViewerState(project.id);
+          return sendJson(response, 200, state);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to load pinned viewer.";
+          const status = message.includes("Sign in") ? 401 : 400;
+          return sendJson(response, status, { error: message });
+        }
+      }
+
+      if (projectPinnedViewerMatch && request.method === "PATCH") {
+        try {
+          this.requireAuth();
+          const slug = decodeURIComponent(projectPinnedViewerMatch[1]!);
+          const project = this.data.getProjectBySlug(slug);
+          if (!project) {
+            return sendJson(response, 404, { error: "Project not found." });
+          }
+          const body = await readJsonBody(request);
+          if (body.action === "toggle" && typeof body.displayId === "string") {
+            const result = this.data.togglePinnedDisplay(project.id, body.displayId.trim());
+            return sendJson(response, 200, {
+              ...this.data.getPinnedViewerState(project.id),
+              ok: result.ok,
+            });
+          }
+          if (body.action === "unpin" && typeof body.displayId === "string") {
+            this.data.unpinDisplayIfPinned(project.id, body.displayId.trim());
+            return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
+          }
+          const pinnedDisplayIds = Array.isArray(body.pinnedDisplayIds)
+            ? body.pinnedDisplayIds.map(String)
+            : undefined;
+          const viewerHeightPx =
+            body.viewerHeightPx !== undefined ? Number(body.viewerHeightPx) : undefined;
+          if (pinnedDisplayIds && viewerHeightPx !== undefined) {
+            this.data.savePinnedViewerPreference(project.id, {
+              pinnedDisplayIds,
+              viewerHeightPx,
+            });
+          } else if (viewerHeightPx !== undefined && Number.isFinite(viewerHeightPx)) {
+            this.data.setPinnedViewerHeight(project.id, viewerHeightPx);
+          } else if (pinnedDisplayIds) {
+            const current = this.data.getPinnedViewerState(project.id);
+            this.data.savePinnedViewerPreference(project.id, {
+              pinnedDisplayIds,
+              viewerHeightPx: current.viewerHeightPx,
+            });
+          } else {
+            return sendJson(response, 400, { error: "Invalid pinned viewer update." });
+          }
+          return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to save pinned viewer.";
+          const status = message.includes("Maximum") ? 409 : message.includes("Sign in") ? 401 : 400;
+          return sendJson(response, status, { error: message });
+        }
+      }
+
       const projectDisplayRefreshRateMatch = url.pathname.match(
         /^\/api\/projects\/([^/]+)\/displays\/([^/]+)\/refresh-rate$/,
       );
@@ -1252,6 +1385,138 @@ export class LocalApiServer {
             refreshRateMs,
           );
           return sendJson(response, 200, result);
+        } catch (error) {
+          const failure = resolveLocalApiFailure(error);
+          return sendJson(response, failure.status, failure.body);
+        }
+      }
+
+      const streamTickerFilterMatch = url.pathname.match(
+        /^\/api\/projects\/([^/]+)\/displays\/stream-ticker\/day-filter$/,
+      );
+      if (streamTickerFilterMatch) {
+        try {
+          this.requireAuth();
+          const slug = decodeURIComponent(streamTickerFilterMatch[1]!);
+          const project = this.data.getProjectBySlug(slug);
+          if (!project) {
+            return sendJson(response, 404, { error: "Project not found." });
+          }
+          if (request.method === "GET") {
+            const filter = this.data.getStreamTickerDayFilter(project.id);
+            return sendJson(response, 200, {
+              filter,
+              diagnostics: this.data.getStreamTickerFilterDiagnostics(),
+            });
+          }
+          if (request.method === "PATCH") {
+            const body = await readJsonBody(request);
+            const rawFilter = body.filter;
+            const filter =
+              rawFilter === "all"
+                ? "all"
+                : typeof rawFilter === "number"
+                  ? rawFilter
+                  : Number.parseInt(String(rawFilter ?? ""), 10);
+            const result = this.data.setStreamTickerDayFilter(
+              project.id,
+              filter === "all" || !Number.isFinite(filter) ? "all" : filter,
+            );
+            return sendJson(response, 200, result);
+          }
+        } catch (error) {
+          const failure = resolveLocalApiFailure(error);
+          return sendJson(response, failure.status, failure.body);
+        }
+      }
+
+      const auctionDaySelectionMatch = url.pathname.match(
+        /^\/api\/projects\/([^/]+)\/auction-day-selection$/,
+      );
+      if (auctionDaySelectionMatch) {
+        try {
+          this.requireAuth();
+          const slug = decodeURIComponent(auctionDaySelectionMatch[1]!);
+          const project = this.data.getProjectBySlug(slug);
+          if (!project) {
+            return sendJson(response, 404, { error: "Project not found." });
+          }
+          if (request.method === "GET") {
+            const state = this.data.getAuctionDaySelectionState(project.id);
+            return sendJson(response, 200, state);
+          }
+          if (request.method === "PATCH") {
+            const body = await readJsonBody(request);
+            const rawFilter = body.filter;
+            const filter =
+              rawFilter === "all"
+                ? "all"
+                : typeof rawFilter === "number"
+                  ? rawFilter
+                  : Number.parseInt(String(rawFilter ?? ""), 10);
+            const result = this.data.setStreamTickerDayFilter(
+              project.id,
+              filter === "all" || !Number.isFinite(filter) ? "all" : filter,
+            );
+            return sendJson(response, 200, result);
+          }
+        } catch (error) {
+          const failure = resolveLocalApiFailure(error);
+          return sendJson(response, failure.status, failure.body);
+        }
+      }
+
+      const liveFeedFailoverMatch = url.pathname.match(
+        /^\/api\/data-sources\/([^/]+)\/live-feed-mode-failover$/,
+      );
+      if (liveFeedFailoverMatch && request.method === "PATCH") {
+        if (!isWorkerClientRequest(request)) {
+          return sendJson(response, 403, { error: "Forbidden." });
+        }
+        const body = await readJsonBody(request);
+        const rawMode = String(body.mode ?? "faye").trim().toLowerCase();
+        const mode =
+          rawMode === "dom" || rawMode === "legacy"
+            ? rawMode
+            : rawMode === "automatic"
+              ? "faye"
+              : "faye";
+        const result = this.data.applyLiveFeedModeFailover(
+          liveFeedFailoverMatch[1]!,
+          mode,
+          String(body.reason ?? "failover"),
+        );
+        return sendJson(response, 200, result);
+      }
+
+      const liveFeedModeMatch = url.pathname.match(
+        /^\/api\/projects\/([^/]+)\/live-feed-mode$/,
+      );
+      if (liveFeedModeMatch) {
+        try {
+          this.requireAuth();
+          const slug = decodeURIComponent(liveFeedModeMatch[1]!);
+          const project = this.data.getProjectBySlug(slug);
+          if (!project) {
+            return sendJson(response, 404, { error: "Project not found." });
+          }
+          if (request.method === "GET") {
+            return sendJson(response, 200, {
+              mode: this.data.getLiveFeedMode(project.id),
+            });
+          }
+          if (request.method === "PATCH") {
+            const body = await readJsonBody(request);
+            const rawMode = String(body.mode ?? "faye").trim().toLowerCase();
+            const mode =
+              rawMode === "automatic"
+                ? "faye"
+                : rawMode === "faye" || rawMode === "dom" || rawMode === "legacy"
+                  ? rawMode
+                  : "faye";
+            const result = this.data.setLiveFeedMode(project.id, mode);
+            return sendJson(response, 200, result);
+          }
         } catch (error) {
           const failure = resolveLocalApiFailure(error);
           return sendJson(response, failure.status, failure.body);
@@ -1711,6 +1976,8 @@ export class LocalApiServer {
           ),
           durationMs: readOptionalNumber(body, "durationMs", "duration_ms"),
           capturedAt: readOptionalString(body, "capturedAt", "captured_at"),
+          liveFeedRuntime:
+            (body.liveFeedRuntime as Record<string, unknown> | null | undefined) ?? null,
         });
         return sendJson(response, 201, { snapshot });
       }
@@ -1947,7 +2214,10 @@ export class LocalApiServer {
           }
 
           this.touchDisplayViewer(request, projectId, displaySlug);
-          const bridgeData = this.data.getGenericDisplayBridgeData(projectId);
+          const bridgeData =
+            displaySlug === "stream-ticker"
+              ? this.data.getStreamTickerDisplayBridgeData(projectId)
+              : this.data.getGenericDisplayBridgeData(projectId);
           const dataConnected = previewMode || viewerState.enabled;
           return sendJsonNoStore(response, 200, {
             ...bridgeData,
@@ -2154,6 +2424,16 @@ export class LocalApiServer {
       }
 
       if (
+        await handleDisplayBridgeRoute(request, response, url, {
+          displayBridgeEvents: this.displayBridgeEvents,
+          projectExists: (projectId) => this.data.projectExistsForRoutes(projectId),
+          getSyncState: (projectId) => this.data.getProjectDisplayBridgeSyncState(projectId),
+        })
+      ) {
+        return;
+      }
+
+      if (
         await handleBagRoute(request, response, url, {
           bagLiveState: this.bagLiveState,
           bagEvents: this.bagEvents,
@@ -2203,6 +2483,10 @@ export class LocalApiServer {
           developerTools: this.developerTools,
           sendJson,
           readJsonBody,
+          resolveProjectId: (projectSlug) => this.data.getProjectBySlug(projectSlug)?.id ?? null,
+          unpinDisplayIfPinned: (projectId, displayId) => {
+            this.data.unpinDisplayIfPinned(projectId, displayId);
+          },
         });
         if (handled) {
           return;

@@ -122,7 +122,13 @@ export function AccessManagementTabs({
 
       {activeTab === "users" ? (
         <PageSection title="Users">
-          <UsersPanel directory={directory} showUserDetailsLinks />
+          <UsersPanel
+            directory={directory}
+            showUserDetailsLinks
+            currentUserId={currentUserId}
+            isOnline={isOnline}
+            onDirectoryRefresh={actions?.refresh}
+          />
         </PageSection>
       ) : null}
 

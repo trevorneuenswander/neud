@@ -19,19 +19,26 @@ import { ViewOnlineButton } from "@/components/displays/ViewOnlineButton";
 import { useOnlineViewerSettings } from "@/lib/displays/use-online-viewer-settings";
 import { NoDrag } from "@/components/displays/NoDrag";
 import { DisplayPreviewPanel } from "@/components/displays/DisplayPreviewPanel";
-import { DisplayRefreshRateSelect } from "@/components/displays/DisplayRefreshRateSelect";
 import { DisplaySizeSelect } from "@/components/displays/DisplaySizeSelect";
+import { DisplayPinButton } from "@/components/displays/DisplayPinButton";
 import { DisplayVersionBadge } from "@/components/displays/DisplayVersionBadge";
+import {
+  requestPinnedViewerRefresh,
+  requestPinnedViewerUnpin,
+} from "@/lib/displays/pinned-viewer-context";
+import {
+  buildPinnedViewerDisplaySummary,
+  localUnpinDisplayIfPinned,
+} from "@/lib/local/pinned-viewer-api";
 import { useDisplayInlinePreview } from "@/lib/displays/display-inline-preview-context";
 import {
   notifyDisplayConnectionChanged,
-  notifyDisplayRefreshRateChanged,
   requestDisplayViewerReload,
 } from "@/lib/displays/display-connection-client";
 import { buildProjectDisplayOutputPath, buildProjectDisplayPreviewPath } from "@/lib/local/developer-tools-api";
+import { buildDisplayWindowFitPath } from "@/lib/displays/display-view-mode";
 import { localSetDeveloperDisplayEnabled } from "@/lib/local/developer-tools-api";
-import { localSetDisplayRefreshRate, localSetDisplaySize } from "@/lib/local/displays-api";
-import { normalizeDisplayRefreshRateMs } from "@/lib/displays/refresh-rate";
+import { localSetDisplaySize } from "@/lib/local/displays-api";
 import { normalizeDisplaySize } from "@/lib/displays/display-size";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { getDesktopAPI } from "@/lib/desktop/client";
@@ -111,22 +118,6 @@ function getDataConnectionLabel(input: {
   return "Data Disconnected";
 }
 
-function hasCanonicalPayload(payload: Record<string, unknown>): boolean {
-  if (!payload || payload.enabled === false || payload.status === "display_disabled") {
-    return false;
-  }
-  const snapshot =
-    payload.snapshot && typeof payload.snapshot === "object"
-      ? (payload.snapshot as Record<string, unknown>)
-      : payload;
-  const current = snapshot.current;
-  if (current && typeof current === "object") {
-    const row = current as Record<string, unknown>;
-    return Boolean(row.title || row.price || row.lot);
-  }
-  return Array.isArray(snapshot.next) && snapshot.next.length > 0;
-}
-
 export function DeveloperHtmlDisplayCard({
   projectSlug,
   projectId,
@@ -145,30 +136,21 @@ export function DeveloperHtmlDisplayCard({
   const initialSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
 
   const [enabled, setEnabled] = useState(display.enabled);
-  const [refreshRateMs, setRefreshRateMs] = useState(
-    normalizeDisplayRefreshRateMs(initialRefreshRateMs),
-  );
   const localDisplayUrl =
     typeof window !== "undefined"
       ? buildProjectDisplayOutputPath(projectId, display.slug, {
-          poll: refreshRateMs,
           origin: window.location.origin,
         })
-      : buildProjectDisplayOutputPath(projectId, display.slug, {
-          poll: refreshRateMs,
-        });
-  const dataPath = `/api/display/${encodeURIComponent(projectId)}/${encodeURIComponent(display.slug)}/data`;
+      : buildProjectDisplayOutputPath(projectId, display.slug);
   const [displayWidth, setDisplayWidth] = useState(initialSize.displayWidth);
   const [displayHeight, setDisplayHeight] = useState(initialSize.displayHeight);
   const [saving, setSaving] = useState(false);
-  const [refreshRateSaving, setRefreshRateSaving] = useState(false);
   const [displaySizeSaving, setDisplaySizeSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [connectionState, setConnectionState] =
     useState<PreviewConnectionState>("disconnected");
   const [bridgeReady, setBridgeReady] = useState(false);
-  const pollAbortRef = useRef<AbortController | null>(null);
   const { isExpanded, setExpanded } = useDisplayInlinePreview();
   const previewOpen = isExpanded(projectId, display.id);
   const hasActiveRevision = activeVersionNumber !== null && activeVersionNumber > 0;
@@ -178,17 +160,16 @@ export function DeveloperHtmlDisplayCard({
       const revisionSuffix = display.publishedRevisionId
         ? `&revision=${encodeURIComponent(display.publishedRevisionId)}`
         : "";
-      return `${htmlViewerPath}?poll=${refreshRateMs}&preview=1${revisionSuffix}`;
+      return `${htmlViewerPath}?preview=1${revisionSuffix}`;
     }
 
     const url = new URL(htmlViewerPath, window.location.origin);
-    url.searchParams.set("poll", String(refreshRateMs));
     url.searchParams.set("preview", "1");
     if (display.publishedRevisionId) {
       url.searchParams.set("revision", display.publishedRevisionId);
     }
     return url.toString();
-  }, [display.publishedRevisionId, htmlViewerPath, refreshRateMs]);
+  }, [display.publishedRevisionId, htmlViewerPath]);
   const previewIframeKey = display.publishedRevisionId
     ? `${display.id}:${display.publishedRevisionId}`
     : activeVersionNumber != null
@@ -198,10 +179,6 @@ export function DeveloperHtmlDisplayCard({
   useEffect(() => {
     setEnabled(display.enabled);
   }, [display.enabled]);
-
-  useEffect(() => {
-    setRefreshRateMs(normalizeDisplayRefreshRateMs(initialRefreshRateMs));
-  }, [initialRefreshRateMs]);
 
   useEffect(() => {
     const nextSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
@@ -216,83 +193,15 @@ export function DeveloperHtmlDisplayCard({
   }, [enabled, previewOpen]);
 
   useEffect(() => {
-    if (!shouldUseLocalDataClient() || !enabled) {
-      pollAbortRef.current?.abort();
-      pollAbortRef.current = null;
+    if (!enabled || !previewOpen) {
+      setBridgeReady(false);
       setConnectionState("disconnected");
       return;
     }
-
-    let cancelled = false;
-    let interval: number | null = null;
-
-    const stopPolling = () => {
-      if (interval !== null) {
-        window.clearInterval(interval);
-        interval = null;
-      }
-      pollAbortRef.current?.abort();
-      pollAbortRef.current = null;
-    };
-
-    const pollDataEndpoint = async () => {
-      if (cancelled || !enabled) return;
-
-      pollAbortRef.current?.abort();
-      const controller = new AbortController();
-      pollAbortRef.current = controller;
-
-      try {
-        const response = await fetch(`${dataPath}?preview=1&_=${Date.now()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-          headers: {
-            "X-NEUD-Display-Client": "management-card",
-          },
-        });
-        if (cancelled || controller.signal.aborted) return;
-
-        if (response.status === 409 || response.status === 423) {
-          setConnectionState("disconnected");
-          stopPolling();
-          return;
-        }
-
-        if (!response.ok) {
-          setConnectionState("error");
-          return;
-        }
-
-        const payload = (await response.json()) as Record<string, unknown>;
-        if (
-          payload.enabled === false ||
-          payload.status === "display_disabled" ||
-          payload.dataConnected === false
-        ) {
-          setConnectionState("disconnected");
-          stopPolling();
-          return;
-        }
-
-        setConnectionState(hasCanonicalPayload(payload) ? "connected" : "disconnected");
-      } catch (error) {
-        if (cancelled || (error instanceof DOMException && error.name === "AbortError")) {
-          return;
-        }
-        setConnectionState("error");
-      }
-    };
-
-    void pollDataEndpoint();
-    interval = window.setInterval(() => {
-      void pollDataEndpoint();
-    }, refreshRateMs);
-
-    return () => {
-      cancelled = true;
-      stopPolling();
-    };
-  }, [dataPath, enabled, refreshRateMs]);
+    if (bridgeReady) {
+      setConnectionState("connected");
+    }
+  }, [bridgeReady, enabled, previewOpen]);
 
   async function handleEnabledChange(nextEnabled: boolean) {
     const previousEnabled = enabled;
@@ -300,12 +209,15 @@ export function DeveloperHtmlDisplayCard({
     setErrorMessage(null);
 
     if (!nextEnabled) {
-      pollAbortRef.current?.abort();
-      pollAbortRef.current = null;
       setConnectionState("disconnected");
+      setBridgeReady(false);
     }
 
     notifyDisplayConnectionChanged(display.id, nextEnabled);
+
+    if (!nextEnabled && shouldUseLocalDataClient()) {
+      requestPinnedViewerUnpin(display.id);
+    }
 
     if (!shouldUseLocalDataClient()) return;
 
@@ -318,6 +230,10 @@ export function DeveloperHtmlDisplayCard({
       );
       setEnabled(result.display.enabled);
       notifyDisplayConnectionChanged(display.id, result.display.enabled);
+      if (!result.display.enabled && shouldUseLocalDataClient()) {
+        await localUnpinDisplayIfPinned(projectSlug, projectId, display.id);
+        requestPinnedViewerRefresh();
+      }
     } catch (error) {
       setEnabled(previousEnabled);
       notifyDisplayConnectionChanged(display.id, previousEnabled);
@@ -326,31 +242,6 @@ export function DeveloperHtmlDisplayCard({
       );
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleRefreshRateChange(nextRefreshRateMs: number) {
-    const previousRefreshRateMs = refreshRateMs;
-    setRefreshRateMs(nextRefreshRateMs);
-    setErrorMessage(null);
-    if (!shouldUseLocalDataClient()) return;
-
-    setRefreshRateSaving(true);
-    try {
-      const result = await localSetDisplayRefreshRate(
-        projectSlug,
-        display.id,
-        nextRefreshRateMs,
-      );
-      setRefreshRateMs(normalizeDisplayRefreshRateMs(result.refreshRateMs));
-      notifyDisplayRefreshRateChanged(display.id, result.refreshRateMs);
-    } catch (error) {
-      setRefreshRateMs(previousRefreshRateMs);
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to update refresh rate.",
-      );
-    } finally {
-      setRefreshRateSaving(false);
     }
   }
 
@@ -392,9 +283,11 @@ export function DeveloperHtmlDisplayCard({
 
   function handleViewFullscreen() {
     if (typeof window === "undefined") return;
-    const previewUrl = buildProjectDisplayPreviewPath(projectId, display.slug, {
-      poll: refreshRateMs,
-      revision: display.publishedRevisionId,
+    const outputTargetUrl = localDisplayUrl;
+    const browserFullscreenUrl = buildDisplayWindowFitPath({
+      targetUrl: outputTargetUrl,
+      displayWidth,
+      displayHeight,
       origin: window.location.origin,
     });
 
@@ -405,7 +298,7 @@ export function DeveloperHtmlDisplayCard({
           projectId,
           displayId: display.id,
           title: display.name,
-          viewerUrl: previewUrl,
+          viewerUrl: outputTargetUrl,
           displayWidth,
           displayHeight,
         });
@@ -413,7 +306,7 @@ export function DeveloperHtmlDisplayCard({
       }
     }
 
-    window.open(previewUrl, "_blank", "noopener,noreferrer");
+    window.open(browserFullscreenUrl, "_blank", "noopener,noreferrer");
   }
 
   function handlePreviewOpenChange(open: boolean) {
@@ -442,6 +335,15 @@ export function DeveloperHtmlDisplayCard({
         ? "Copy failed"
         : "Copy Local URL";
 
+  const pinnedViewerSummary = buildPinnedViewerDisplaySummary({
+    id: display.id,
+    name: display.name,
+    displayKey: display.displayKey,
+    url: localDisplayUrl,
+    width: displayWidth,
+    height: displayHeight,
+  });
+
   return (
     <Card>
       <div className="space-y-4">
@@ -449,10 +351,20 @@ export function DeveloperHtmlDisplayCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-sm font-semibold text-foreground">{display.name}</h4>
-              <DisplayVersionBadge
-                versionNumber={activeVersionNumber}
-                createdAt={activeVersionCreatedAt}
-              />
+              <div className="flex items-center gap-1">
+                <DisplayVersionBadge
+                  versionNumber={activeVersionNumber}
+                  createdAt={activeVersionCreatedAt}
+                />
+                {enabled ? (
+                  <DisplayPinButton
+                    displayId={display.id}
+                    enabled={enabled}
+                    archived={display.archived}
+                    displaySummary={pinnedViewerSummary}
+                  />
+                ) : null}
+              </div>
             </div>
             <p className="mt-1 text-xs text-muted">
               {display.description ?? "Custom HTML display"}
@@ -481,16 +393,6 @@ export function DeveloperHtmlDisplayCard({
                   displayEnabled={enabled}
                   displayName={display.name}
                   onlineViewer={onlineViewer}
-                />
-              </DisplayCardControlRow>
-              <DisplayCardControlRow label="Refresh Rate">
-                <DisplayRefreshRateSelect
-                  valueMs={refreshRateMs}
-                  disabled={refreshRateSaving}
-                  showLabel={false}
-                  onChange={(nextRefreshRateMs) =>
-                    void handleRefreshRateChange(nextRefreshRateMs)
-                  }
                 />
               </DisplayCardControlRow>
             </DisplayCardControls>

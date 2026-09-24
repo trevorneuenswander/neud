@@ -269,7 +269,10 @@ export function HostedDisplayViewerClient({
     createInitialDiagnostics,
   );
 
-  const showDebugPanel = shouldShowHostedViewerDebugPanel(debugSearch);
+  const showDebugPanel =
+    !isFullscreenOutput &&
+    !embedded &&
+    shouldShowHostedViewerDebugPanel(debugSearch);
   const pollIntervalMs = normalizeDisplayRefreshRateMs(bundle?.display.refresh_rate_ms);
 
   useEffect(() => {
@@ -1177,7 +1180,9 @@ export function HostedDisplayViewerClient({
       <HostedFullscreenOutputShell active={isFullscreenOutput}>
         <div className={isFullscreenOutput ? "min-h-screen bg-transparent text-foreground" : undefined}>
           {debugBlock}
-          <Card className="mx-auto max-w-2xl p-8 text-center text-sm text-muted">{error}</Card>
+          {isFullscreenOutput ? null : (
+            <Card className="mx-auto max-w-2xl p-8 text-center text-sm text-muted">{error}</Card>
+          )}
         </div>
       </HostedFullscreenOutputShell>
     );
@@ -1188,9 +1193,11 @@ export function HostedDisplayViewerClient({
       <HostedFullscreenOutputShell active={isFullscreenOutput}>
         <div className={isFullscreenOutput ? "min-h-screen bg-transparent text-foreground" : undefined}>
           {debugBlock}
-          <Card className="mx-auto max-w-2xl p-8 text-center text-sm text-muted">
-            Loading display…
-          </Card>
+          {isFullscreenOutput ? null : (
+            <Card className="mx-auto max-w-2xl p-8 text-center text-sm text-muted">
+              Loading display…
+            </Card>
+          )}
         </div>
       </HostedFullscreenOutputShell>
     );
@@ -1215,7 +1222,7 @@ export function HostedDisplayViewerClient({
             <p>{statusNotice.message}</p>
           </div>
         ) : null}
-        {error && bundleRef.current ? (
+        {error && bundleRef.current && !isFullscreenOutput ? (
           <div className={statusNoticeClassName}>
             <p className="font-medium text-foreground">Viewer refresh issue</p>
             <p>{error}</p>

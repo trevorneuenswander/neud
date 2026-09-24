@@ -27,7 +27,7 @@ export default async function UsersPage() {
     return (
       <div className="space-y-8">
         <PageHeader
-          title="Users"
+          title="Users and Access"
           description="Manage teams, users, project assignments, and invitations for your NEUD workspace."
         />
         <DesktopCloudAccessManagementClient />
@@ -65,7 +65,7 @@ export default async function UsersPage() {
         />
       </PageSection>
 
-      <PageSection title="Users">
+      <PageSection title="Users and Access">
         {users.length > 0 ? (
           <UsersTable
             users={users}

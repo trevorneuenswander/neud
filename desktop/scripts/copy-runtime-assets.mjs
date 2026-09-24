@@ -10,6 +10,22 @@ const __dirname = path.dirname(__filename);
 const desktopRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(desktopRoot, "..");
 
+function copyIfChanged(fromPath, toPath) {
+  if (!fs.existsSync(fromPath)) {
+    return false;
+  }
+  if (fs.existsSync(toPath)) {
+    const srcStat = fs.statSync(fromPath);
+    const dstStat = fs.statSync(toPath);
+    if (srcStat.size === dstStat.size && srcStat.mtimeMs <= dstStat.mtimeMs) {
+      return false;
+    }
+  }
+  fs.mkdirSync(path.dirname(toPath), { recursive: true });
+  fs.copyFileSync(fromPath, toPath);
+  return true;
+}
+
 function copyMigrations() {
   const sourceDir = path.join(desktopRoot, "src", "database", "migrations");
   const targetDir = path.join(desktopRoot, "dist", "database", "migrations");
@@ -20,15 +36,22 @@ function copyMigrations() {
   }
 
   fs.mkdirSync(targetDir, { recursive: true });
+  let copied = 0;
   for (const file of fs.readdirSync(sourceDir)) {
     if (file.endsWith(".sql")) {
       const fromPath = path.join(sourceDir, file);
       const toPath = path.join(targetDir, file);
-      fs.copyFileSync(fromPath, toPath);
+      if (copyIfChanged(fromPath, toPath)) {
+        copied += 1;
+      }
     }
   }
 
-  console.log(`Copied SQL migrations to ${targetDir}`);
+  console.log(
+    copied > 0
+      ? `Copied SQL migrations to ${targetDir} (${copied} updated)`
+      : `SQL migrations up to date at ${targetDir}`,
+  );
 }
 
 function collectWasmCandidates() {
@@ -76,8 +99,10 @@ function copySqlWasm() {
   const targetDir = path.join(desktopRoot, "dist", "database", "assets");
   const target = path.join(targetDir, "sql-wasm.wasm");
 
-  fs.mkdirSync(targetDir, { recursive: true });
-  fs.copyFileSync(source, target);
+  if (!copyIfChanged(source, target)) {
+    console.log(`sql-wasm.wasm up to date at ${target}`);
+    return;
+  }
 
   console.log(`Copied sql-wasm.wasm from ${source}`);
   console.log(`Copied sql-wasm.wasm to ${target}`);

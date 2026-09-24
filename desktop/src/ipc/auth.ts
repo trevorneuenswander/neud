@@ -3,6 +3,10 @@ import type { AppSettingsRepository } from "../repositories/app-settings-reposit
 import type { AuthLicenseManager } from "../services/auth-license-manager";
 import type { SupabaseUserSessionService } from "../services/supabase-user-session";
 import {
+  extractSupabaseProjectRef,
+  type SupabasePublicConfig,
+} from "../services/supabase-public-config";
+import {
   CLOUD_SESSION_DIAGNOSTICS_KEY,
   createDefaultCloudSessionDiagnostics,
   type CloudSessionDiagnostics,
@@ -73,6 +77,7 @@ export function registerAuthIpc(
     forceSignOut?: () => Promise<{ ok: boolean }>;
     userSession?: SupabaseUserSessionService;
     settings?: AppSettingsRepository;
+    supabasePublicConfig?: SupabasePublicConfig | null;
   },
 ) {
   registerIpcHandler("neud:auth:getStatus", () => auth.getStatus());
@@ -121,11 +126,15 @@ export function registerAuthIpc(
     };
 
     if (cloudSession) {
+      const issuerProjectRef = options?.supabasePublicConfig?.supabaseUrl
+        ? extractSupabaseProjectRef(options.supabasePublicConfig.supabaseUrl)
+        : null;
       storeResult = options?.userSession?.storeSession({
         userId: parsed.userId,
         accessToken: cloudSession.accessToken,
         refreshToken: cloudSession.refreshToken,
         expiresAt: cloudSession.expiresAt,
+        issuerProjectRef,
       }) ?? storeResult;
     }
 

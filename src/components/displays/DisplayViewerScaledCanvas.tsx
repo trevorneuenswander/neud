@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { DISPLAY_GRAPHIC_OUTPUT_BACKGROUND } from "@/lib/displays/display-graphic-output-shell";
 import { buildDisplayViewerMeasurements } from "@/lib/displays/display-viewer-measurements";
 
 type DisplayViewerScaledCanvasProps = {
@@ -9,14 +10,20 @@ type DisplayViewerScaledCanvasProps = {
   backgroundColor?: string;
   children: ReactNode;
   className?: string;
+  /** Dev viewport overlay (top-left). Off for pinned/graphic-only viewers. */
+  showViewportDiagnostics?: boolean;
+  /** Scale up to fill viewport (fullscreen window-fit). Default caps at native 1:1. */
+  allowUpscale?: boolean;
 };
 
 export function DisplayViewerScaledCanvas({
   displayWidth,
   displayHeight,
-  backgroundColor = "#ffffff",
+  backgroundColor = DISPLAY_GRAPHIC_OUTPUT_BACKGROUND,
   children,
   className,
+  showViewportDiagnostics,
+  allowUpscale = false,
 }: DisplayViewerScaledCanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -35,6 +42,7 @@ export function DisplayViewerScaledCanvas({
         viewportHeight,
         displayWidth,
         displayHeight,
+        allowUpscale,
       });
       setScale(measurements.scale);
     };
@@ -43,16 +51,21 @@ export function DisplayViewerScaledCanvas({
     const observer = new ResizeObserver(updateScale);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [displayHeight, displayWidth]);
+  }, [allowUpscale, displayHeight, displayWidth]);
 
   const measurements = buildDisplayViewerMeasurements({
     viewportWidth: viewportSize.width,
     viewportHeight: viewportSize.height,
     displayWidth,
     displayHeight,
+    allowUpscale,
   });
   const { scaledWidth, scaledHeight } = measurements;
-  const showDiagnostics = process.env.NODE_ENV === "development";
+  const showDiagnostics =
+    showViewportDiagnostics ??
+    (process.env.NODE_ENV === "development" &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("displayViewerDebug") === "1");
 
   return (
     <div
@@ -93,6 +106,7 @@ export function DisplayViewerScaledCanvas({
           height: scaledHeight,
           position: "relative",
           flex: "0 0 auto",
+          background: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND,
         }}
       >
         <div
@@ -104,6 +118,7 @@ export function DisplayViewerScaledCanvas({
             transformOrigin: "top left",
             position: "absolute",
             inset: "0 auto auto 0",
+            background: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND,
           }}
         >
           {children}

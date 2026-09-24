@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { resolveHostedNavActiveState } from "@/lib/portal/hosted-navigation";
+import {
+  SIDEBAR_PRIMARY_NAV_ROW_CLASS,
+  sidebarPrimaryNavActiveClass,
+  sidebarPrimaryNavInactiveClass,
+} from "@/lib/portal/sidebar-nav-item-classes";
 
 type SidebarNavItemProps = {
   href: string;
@@ -45,10 +50,8 @@ export function SidebarNavItem({
       onClick={onNavigate}
       aria-current={isActive ? "page" : undefined}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      className={`flex h-10 cursor-pointer items-center rounded-md px-3 text-sm font-medium transition-colors ${
-        isActive
-          ? "bg-primary/15 text-foreground"
-          : "text-muted hover:bg-surface-raised hover:text-foreground"
+      className={`${SIDEBAR_PRIMARY_NAV_ROW_CLASS} ${
+        isActive ? sidebarPrimaryNavActiveClass : sidebarPrimaryNavInactiveClass
       }`}
     >
       {label}

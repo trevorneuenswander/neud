@@ -37,7 +37,8 @@ test("invite API resolves session with getClaims like requireUser", () => {
   const auth = read("src/lib/auth/authorization.ts");
   assert.match(session, /getClaims\(\)/);
   assert.match(auth, /getClaims\(\)/);
-  assert.match(verify, /resolveHostedRouteSession/);
+  assert.match(verify, /resolveTrustedAccessCaller/);
+  assert.match(session, /resolveHostedRouteSession/);
   assert.doesNotMatch(verify, /getUser\(\)/);
 });
 
@@ -71,7 +72,8 @@ test("forbidden remains distinct from authentication_required", () => {
 
 test("desktop trusted access API distinguishes auth from offline", () => {
   const trusted = read("desktop/src/services/desktop-trusted-access-api-client.ts");
-  assert.match(trusted, /if \(!client\) \{\s*throw new Error\("Sign in to manage access\."\)/);
+  assert.match(trusted, /getCloudAccessToken/);
+  assert.match(trusted, /TrustedAccessRequestError/);
   assert.match(trusted, /response\.status === 401/);
 });
 

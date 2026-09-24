@@ -64,6 +64,13 @@ const USER_REFERENCE_UPDATES: UserReferenceTarget[] = [
     primaryKey: ["user_id", "project_id", "display_id"],
     preferNewerOnConflict: true,
   },
+  {
+    table: "user_pinned_viewer_preferences",
+    column: "user_id",
+    uniqueWith: ["project_id"],
+    primaryKey: ["user_id", "project_id"],
+    preferNewerOnConflict: true,
+  },
   { table: "teams", column: "created_by_user_id" },
   { table: "project_team_assignments", column: "created_by_user_id" },
   { table: "team_memberships", column: "created_by_user_id" },

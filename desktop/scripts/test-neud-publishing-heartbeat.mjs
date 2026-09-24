@@ -17,6 +17,7 @@ test("PublishingManager renews lease on heartbeat when canonical data is unchang
   assert.match(manager, /shouldMaintainPublisherLease/);
   assert.match(manager, /if \(unchanged\)/);
   assert.match(manager, /"heartbeat"/);
+  assert.match(manager, /await this\.syncProject\(project\.id, "heartbeat"\)/);
 });
 
 test("PublishingManager separates snapshot publication from lease heartbeat", () => {

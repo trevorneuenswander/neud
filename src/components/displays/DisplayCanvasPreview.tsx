@@ -12,6 +12,11 @@ import {
   type DesktopPreviewDiagnostics,
   type DesktopPreviewFailureStage,
 } from "@/lib/displays/desktop-preview-stream-ticker-layout";
+import {
+  applyGraphicOnlyIframeTransparency,
+  scheduleGraphicOnlyIframeTransparency,
+} from "@/lib/displays/apply-graphic-only-iframe-transparency";
+import { MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE } from "@/lib/displays/display-preview-checkerboard-style";
 
 export type DisplayCanvasPreviewProps = {
   displayWidth?: number;
@@ -32,15 +37,44 @@ export type DisplayCanvasPreviewProps = {
   previewOpen?: boolean;
   enableStreamTickerLayoutRefresh?: boolean;
   iframeRevisionId?: string | null;
+  /** Hide the management size/preview label (pinned live viewer). */
+  showSizeLabel?: boolean;
+  /** Management graphic preview without border/labels (pinned live viewer uses checkerboard backing). */
+  graphicOnly?: boolean;
+  /**
+   * transform: scale native iframe (management previews).
+   * layout: size iframe to the preview cell so the display scales once internally (pinned ticker sharpness).
+   */
+  previewScaleMode?: "transform" | "layout";
 };
 
-function buildPreviewUrl(viewerUrl: string, revisionId?: string | null): string {
+function buildPreviewUrl(
+  viewerUrl: string,
+  revisionId?: string | null,
+  options?: { pinnedPreview?: boolean; outputShell?: boolean },
+): string {
+  const pinnedPreview = options?.pinnedPreview === true;
+  const outputShell = options?.outputShell === true;
+  const previewSample =
+    pinnedPreview && typeof window !== "undefined"
+      ? Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1)))
+      : null;
   try {
     const url = new URL(
       viewerUrl,
       typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1",
     );
-    url.searchParams.set("preview", "1");
+    if (outputShell) {
+      url.searchParams.delete("preview");
+    } else {
+      url.searchParams.set("preview", "1");
+    }
+    if (pinnedPreview) {
+      url.searchParams.set("pinnedPreview", "1");
+      if (previewSample != null) {
+        url.searchParams.set("previewSample", String(previewSample));
+      }
+    }
     if (revisionId) {
       url.searchParams.set("revision", revisionId);
     }
@@ -50,7 +84,29 @@ function buildPreviewUrl(viewerUrl: string, revisionId?: string | null): string 
     const revisionSuffix = revisionId
       ? `&revision=${encodeURIComponent(revisionId)}`
       : "";
-    return `${viewerUrl}${separator}preview=1${revisionSuffix}`;
+    const pinnedSuffix = pinnedPreview
+      ? `&pinnedPreview=1${
+          previewSample != null ? `&previewSample=${encodeURIComponent(String(previewSample))}` : ""
+        }`
+      : "";
+    if (outputShell) {
+      const params = new URLSearchParams();
+      if (pinnedPreview) {
+        params.set("pinnedPreview", "1");
+        if (previewSample != null) {
+          params.set("previewSample", String(previewSample));
+        }
+      }
+      if (revisionId) {
+        params.set("revision", revisionId);
+      }
+      const qs = params.toString();
+      if (!qs) {
+        return viewerUrl;
+      }
+      return `${viewerUrl}${viewerUrl.includes("?") ? "&" : "?"}${qs}`;
+    }
+    return `${viewerUrl}${separator}preview=1${pinnedSuffix}${revisionSuffix}`;
   }
 }
 
@@ -73,11 +129,16 @@ export function DisplayCanvasPreview({
   previewOpen = true,
   enableStreamTickerLayoutRefresh = false,
   iframeRevisionId = null,
+  showSizeLabel = true,
+  graphicOnly = false,
+  previewScaleMode = "transform",
 }: DisplayCanvasPreviewProps) {
+  const usePinnedNativeResolution = graphicOnly;
   const containerRef = useRef<HTMLDivElement>(null);
   const internalIframeRef = useRef<HTMLIFrameElement>(null);
   const resolvedIframeRef = iframeRef ?? internalIframeRef;
   const [scale, setScale] = useState(0.2);
+  const [layoutFrame, setLayoutFrame] = useState({ width: 0, height: 0 });
   const previewLayoutReadyRef = useRef(false);
   const oneTimeLayoutRefreshSentRef = useRef(false);
   const iframeLoadedRef = useRef(false);
@@ -163,10 +224,14 @@ export function DisplayCanvasPreview({
         firstFailureStageRef.current = "none";
       }
       publishDiagnostics();
+      if (graphicOnly) {
+        scheduleGraphicOnlyIframeTransparency(iframe);
+      }
       return true;
     },
     [
       enableStreamTickerLayoutRefresh,
+      graphicOnly,
       onBridgeAck,
       previewOpen,
       publishDiagnostics,
@@ -239,6 +304,13 @@ export function DisplayCanvasPreview({
     recordFailureStage,
   ]);
 
+  const reapplyGraphicOnlyTransparency = useCallback(() => {
+    if (!graphicOnly) {
+      return;
+    }
+    scheduleGraphicOnlyIframeTransparency(resolvedIframeRef.current);
+  }, [graphicOnly, resolvedIframeRef]);
+
   useEffect(() => {
     if (!onBridgeAck) {
       return;
@@ -255,6 +327,7 @@ export function DisplayCanvasPreview({
       canonicalPayloadDeliveredRef.current = true;
       publishDiagnostics();
       attemptLayoutRefreshOnce("bridge_ack");
+      reapplyGraphicOnlyTransparency();
       onBridgeAck?.();
     }
 
@@ -265,6 +338,7 @@ export function DisplayCanvasPreview({
     displayId,
     onBridgeAck,
     publishDiagnostics,
+    reapplyGraphicOnlyTransparency,
   ]);
 
   useEffect(() => {
@@ -274,7 +348,20 @@ export function DisplayCanvasPreview({
     const updateScale = () => {
       const widthScale = node.clientWidth / displayWidth;
       const heightScale = node.clientHeight / displayHeight;
-      setScale(Math.min(widthScale, heightScale, 1));
+      const fitScale = Math.min(widthScale, heightScale, 1);
+      if (usePinnedNativeResolution) {
+        setLayoutFrame({ width: 0, height: 0 });
+        setScale(fitScale);
+      } else if (previewScaleMode === "layout") {
+        setLayoutFrame({
+          width: Math.max(1, Math.round(displayWidth * fitScale)),
+          height: Math.max(1, Math.round(displayHeight * fitScale)),
+        });
+        setScale(1);
+      } else {
+        setLayoutFrame({ width: 0, height: 0 });
+        setScale(fitScale);
+      }
       if (enableStreamTickerLayoutRefresh && previewOpen) {
         notifyPreviewLayoutReady();
       }
@@ -291,7 +378,9 @@ export function DisplayCanvasPreview({
     enableStreamTickerLayoutRefresh,
     notifyPreviewLayoutReady,
     previewOpen,
+    previewScaleMode,
     publishDiagnostics,
+    usePinnedNativeResolution,
   ]);
 
   useEffect(() => {
@@ -300,15 +389,18 @@ export function DisplayCanvasPreview({
 
   const handleIframeLoad = useCallback(() => {
     iframeLoadedRef.current = true;
+    reapplyGraphicOnlyTransparency();
     publishDiagnostics();
     notifyPreviewLayoutReady();
     attemptLayoutRefreshOnce("iframe_load");
+    reapplyGraphicOnlyTransparency();
     onIframeLoad?.();
   }, [
     attemptLayoutRefreshOnce,
     notifyPreviewLayoutReady,
     onIframeLoad,
     publishDiagnostics,
+    reapplyGraphicOnlyTransparency,
   ]);
 
   if (!hasActiveRevision) {
@@ -319,45 +411,72 @@ export function DisplayCanvasPreview({
     );
   }
 
-  const scaledWidth = displayWidth * scale;
-  const scaledHeight = displayHeight * scale;
+  const useLayoutFrame =
+    previewScaleMode === "layout" &&
+    !usePinnedNativeResolution &&
+    layoutFrame.width > 0 &&
+    layoutFrame.height > 0;
+  const scaledWidth = useLayoutFrame ? layoutFrame.width : displayWidth * scale;
+  const scaledHeight = useLayoutFrame ? layoutFrame.height : displayHeight * scale;
+  const iframeWidth = useLayoutFrame ? layoutFrame.width : displayWidth;
+  const iframeHeight = useLayoutFrame ? layoutFrame.height : displayHeight;
   const sizeLabel = label ?? `Preview · ${displayWidth}×${displayHeight}`;
 
+  const checkerboardStyle = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE;
+
+  const transparentShellStyle = {
+    background: "transparent",
+    backgroundColor: "transparent",
+  } as const;
+
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">{sizeLabel}</p>
+    <div className={showSizeLabel ? "space-y-2" : "min-w-0 max-w-full"}>
+      {showSizeLabel ? (
+        <p className="text-xs font-medium uppercase tracking-wide text-muted">{sizeLabel}</p>
+      ) : null}
       <div
         ref={containerRef}
-        className="relative overflow-hidden rounded-md border border-border"
+        data-pinned-display-window={graphicOnly ? "" : undefined}
+        className={
+          graphicOnly
+            ? "relative max-h-full max-w-full overflow-hidden"
+            : "relative max-h-full max-w-full overflow-hidden rounded-md border border-border"
+        }
         style={{
           aspectRatio: `${displayWidth} / ${displayHeight}`,
-          backgroundColor: "#d9d9d9",
-          backgroundImage:
-            "linear-gradient(45deg, #cfcfcf 25%, transparent 25%), linear-gradient(-45deg, #cfcfcf 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #cfcfcf 75%), linear-gradient(-45deg, transparent 75%, #cfcfcf 75%)",
-          backgroundSize: "20px 20px",
-          backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+          ...checkerboardStyle,
         }}
       >
         <div
-          className="absolute left-1/2 top-1/2"
+          className="absolute left-1/2 top-1/2 overflow-hidden"
           style={{
             width: scaledWidth,
             height: scaledHeight,
             transform: "translate(-50%, -50%)",
+            ...transparentShellStyle,
           }}
         >
           <iframe
             key={iframeKey}
             ref={resolvedIframeRef}
             title={`${title} preview`}
-            src={srcDoc ? undefined : viewerUrl ? buildPreviewUrl(viewerUrl) : undefined}
+            src={
+              srcDoc
+                ? undefined
+                : viewerUrl
+                  ? buildPreviewUrl(viewerUrl, iframeRevisionId, {
+                      pinnedPreview: graphicOnly,
+                      outputShell: graphicOnly,
+                    })
+                  : undefined
+            }
             srcDoc={srcDoc}
             sandbox={sandbox}
             className="border-0 bg-transparent"
             style={{
-              width: `${displayWidth}px`,
-              height: `${displayHeight}px`,
-              transform: `scale(${scale})`,
+              width: `${iframeWidth}px`,
+              height: `${iframeHeight}px`,
+              transform: useLayoutFrame ? undefined : `scale(${scale})`,
               transformOrigin: "top left",
               pointerEvents: iframePointerEvents,
               background: "transparent",

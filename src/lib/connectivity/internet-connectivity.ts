@@ -1,7 +1,7 @@
-export type InternetConnectivityTone = "success" | "destructive";
+export type InternetConnectivityTone = "success" | "destructive" | "warning";
 
 export type InternetConnectivityPresentation = {
-  label: "Online" | "Offline";
+  label: "Online" | "Offline" | "Sign In";
   tone: InternetConnectivityTone;
   detail?: string;
   lastCheckedAt?: string;

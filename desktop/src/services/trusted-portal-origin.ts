@@ -2,6 +2,38 @@ import { readNeudEnv } from "../env/neud-env";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 
+export type TrustedPortalOriginCategory =
+  | "localhost_dev"
+  | "vercel_preview"
+  | "production"
+  | "unknown";
+
+export function classifyTrustedPortalOriginCategory(origin: string): TrustedPortalOriginCategory {
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    if (LOCAL_HOSTS.has(host)) {
+      return "localhost_dev";
+    }
+    if (host.endsWith(".vercel.app") || host.includes("vercel.app")) {
+      return "vercel_preview";
+    }
+    if (host === "neud.io" || host.endsWith(".neud.io")) {
+      return "production";
+    }
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export function trustedPortalOriginHost(origin: string): string | null {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return null;
+  }
+}
+
 export type TrustedPortalOriginResolution =
   | { ok: true; origin: string }
   | { ok: false; code: string; message: string };
@@ -32,7 +64,14 @@ export function resolveTrustedPortalOrigin(options?: {
         message: "NEUD_TRUSTED_PORTAL_ORIGIN must be a valid http(s) origin.",
       };
     }
-    return { ok: true, origin };
+    if (
+      options?.allowLocalDevFallback &&
+      classifyTrustedPortalOriginCategory(origin) === "production"
+    ) {
+      // Local dev should talk to the local Next server unless Preview is configured explicitly.
+    } else {
+      return { ok: true, origin };
+    }
   }
 
   if (options?.allowLocalDevFallback) {

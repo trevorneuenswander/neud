@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   bagLiveStateToPreviewData,
+  pickAuthoritativeScraperPreview,
   pickLegacyPreviewFields,
 } from "@/lib/bag/live-state-preview";
 import type { BagLiveStateEnvelope } from "@/lib/bag/types";
@@ -148,13 +149,18 @@ export function BagLiveStateJsonPreview({
   }, [pollWhileActive, projectId]);
 
   const effectivePreview = useMemo(() => {
-    const scraperRecord =
-      envelope?.automaticState != null
-        ? (bagLiveStateToPreviewData(envelope.automaticState) ??
-          (fallbackSnapshot ? pickLegacyPreviewFields(fallbackSnapshot) : null))
-        : fallbackSnapshot
-          ? pickLegacyPreviewFields(fallbackSnapshot)
-          : null;
+    const liveAutomaticPreview = bagLiveStateToPreviewData(
+      envelope?.automaticState ??
+        (envelope?.state?.mode === "automatic" ? envelope.state : null) ??
+        null,
+    );
+    const engineSnapshotPreview = fallbackSnapshot
+      ? pickLegacyPreviewFields(fallbackSnapshot)
+      : null;
+    const scraperRecord = pickAuthoritativeScraperPreview(
+      liveAutomaticPreview,
+      engineSnapshotPreview,
+    );
 
     const submittedState = envelope?.localControllerSubmitted ?? null;
     const resolved = resolveEffectiveDisplayData({

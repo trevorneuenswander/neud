@@ -95,24 +95,50 @@
     ? config.displayInfo
     : {};
   var projectId = typeof displayInfo.projectId === "string" ? displayInfo.projectId : null;
+  var localApiBase = String(config.localApiBase || "http://127.0.0.1:8070").replace(/\/$/, "");
+  var displayBridgeEventsUrl =
+    typeof config.displayBridgeEventsUrl === "string"
+      ? config.displayBridgeEventsUrl
+      : projectId
+        ? localApiBase +
+          "/api/projects/" +
+          encodeURIComponent(projectId) +
+          "/display-bridge/events"
+        : null;
   var liveEventsUrl =
     typeof config.liveEventsUrl === "string"
       ? config.liveEventsUrl
       : projectId
-        ? String(config.localApiBase || "http://127.0.0.1:8070").replace(/\/$/, "") +
+        ? localApiBase +
           "/api/projects/" +
           encodeURIComponent(projectId) +
           "/bag/live/events"
         : null;
 
   var isEmbedded = window.parent && window.parent !== window;
+  var RECOVERY_POLL_MS = 60000;
   var pollTimer = null;
   var activeRequest = null;
   var eventSource = null;
+  var displayBridgeEventSource = null;
+  var lastAppliedContentHash = null;
   var bridgeReady = false;
   var runtimeStarted = false;
   var latestSnapshot = null;
   var latestRevision = null;
+  var fetchInFlight = false;
+  var pendingFetch = false;
+  var displayChangeListenersAttached = false;
+  var runtimeDiagnostics = {
+    displayUpdateMode: "event-driven",
+    initialFetchCount: 0,
+    changeEventsReceived: 0,
+    dataFetchesTriggeredByEvent: 0,
+    coalescedEvents: 0,
+    pollTimerActive: false,
+    lastChangeEventAt: null,
+    lastAppliedAt: null,
+  };
 
   function reportError(message, error) {
     if (typeof console !== "undefined" && typeof console.error === "function") {
@@ -146,6 +172,8 @@
       window.clearInterval(pollTimer);
       pollTimer = null;
     }
+    runtimeDiagnostics.pollTimerActive = false;
+    pendingFetch = false;
     if (activeRequest) {
       activeRequest.abort();
       activeRequest = null;
@@ -154,20 +182,54 @@
       eventSource.close();
       eventSource = null;
     }
+    if (displayBridgeEventSource) {
+      displayBridgeEventSource.close();
+      displayBridgeEventSource = null;
+    }
   }
 
   window.__NEUD_RUNTIME_STOP__ = stopPolling;
+
+  function startRecoveryWatchdog() {
+    if (pollTimer || !dataUrl || window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {
+      return;
+    }
+    pollTimer = window.setInterval(function () {
+      if (!fetchInFlight) {
+        void fetchLatest();
+      }
+    }, RECOVERY_POLL_MS);
+    runtimeDiagnostics.pollTimerActive = false;
+  }
+
+  function scheduleFetch(fromEvent) {
+    if (!dataUrl || window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {
+      return;
+    }
+    if (fromEvent) {
+      runtimeDiagnostics.changeEventsReceived += 1;
+      runtimeDiagnostics.dataFetchesTriggeredByEvent += 1;
+      runtimeDiagnostics.lastChangeEventAt = new Date().toISOString();
+    }
+    if (fetchInFlight) {
+      pendingFetch = true;
+      runtimeDiagnostics.coalescedEvents += 1;
+      return;
+    }
+    void fetchLatest();
+  }
 
   function resumePolling() {
     window.__NEUD_DISPLAY_DATA_DISCONNECTED__ = false;
     if (!dataUrl || !bridgeReady) {
       return;
     }
-    stopPolling();
-    void fetchLatest();
-    if (!pollTimer && dataUrl && !window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {
-      pollTimer = window.setInterval(fetchLatest, pollIntervalMs);
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
     }
+    scheduleFetch(false);
+    startRecoveryWatchdog();
   }
 
   window.__NEUD_RUNTIME_RESUME__ = resumePolling;
@@ -292,13 +354,96 @@
     deliverLatestSnapshot();
     if (!runtimeStarted) {
       runtimeStarted = true;
-      if (!isEmbedded && liveEventsUrl && typeof EventSource !== "undefined") {
+      attachDisplayChangeListeners();
+      if (
+        displayBridgeEventsUrl &&
+        typeof EventSource !== "undefined" &&
+        !window.__NEUD_DISPLAY_DATA_DISCONNECTED__
+      ) {
+        startDisplayBridgeEvents();
+      } else if (!isEmbedded && liveEventsUrl && typeof EventSource !== "undefined") {
         startLiveEvents();
       } else if (dataUrl) {
-        void fetchLatest();
-        pollTimer = window.setInterval(fetchLatest, pollIntervalMs);
+        runtimeDiagnostics.initialFetchCount += 1;
+        scheduleFetch(false);
+        startRecoveryWatchdog();
       }
     }
+  }
+
+  function shouldHandleDisplayDataChanged(payload) {
+    if (!payload || typeof payload !== "object") {
+      return false;
+    }
+    if (payload.displayId && displayInfo.displayId && payload.displayId !== displayInfo.displayId) {
+      return false;
+    }
+    if (payload.projectId && displayInfo.projectId && payload.projectId !== displayInfo.projectId) {
+      return false;
+    }
+    return true;
+  }
+
+  function shouldSkipBridgeNotification(payload) {
+    if (!payload || payload.revision == null) {
+      return false;
+    }
+    if (latestRevision == null) {
+      return false;
+    }
+    if (payload.revision > latestRevision) {
+      return false;
+    }
+    if (payload.revision < latestRevision) {
+      return true;
+    }
+    if (
+      payload.contentHash &&
+      lastAppliedContentHash &&
+      payload.contentHash !== lastAppliedContentHash
+    ) {
+      return false;
+    }
+    return payload.revision === latestRevision;
+  }
+
+  function handleDisplayDataChanged(payload) {
+    if (!shouldHandleDisplayDataChanged(payload)) {
+      return;
+    }
+    if (shouldSkipBridgeNotification(payload)) {
+      runtimeDiagnostics.coalescedEvents += 1;
+      return;
+    }
+    scheduleFetch(true);
+  }
+
+  function attachDisplayChangeListeners() {
+    if (displayChangeListenersAttached) {
+      return;
+    }
+    displayChangeListenersAttached = true;
+    window.addEventListener("message", function (event) {
+      if (!isAllowedMessageOrigin(event.origin)) {
+        return;
+      }
+      var msg = event.data;
+      if (msg && typeof msg === "object" && msg.type === "neud-display-data-changed") {
+        handleDisplayDataChanged(msg);
+      }
+    });
+    try {
+      var dataChannel = new BroadcastChannel("neud-display-connection");
+      dataChannel.onmessage = function (event) {
+        var msg = event.data;
+        if (msg && typeof msg === "object" && msg.type === "neud-display-data-changed") {
+          handleDisplayDataChanged(msg);
+        }
+      };
+      window.addEventListener("beforeunload", function () {
+        dataChannel.close();
+      });
+    } catch (_) {}
   }
 
   async function fetchLatest() {
@@ -307,6 +452,7 @@
       return;
     }
 
+    fetchInFlight = true;
     activeRequest && activeRequest.abort();
     activeRequest = new AbortController();
     try {
@@ -339,21 +485,37 @@
       }
       reportError("data fetch failed", error);
     } finally {
+      fetchInFlight = false;
       activeRequest = null;
+      if (pendingFetch) {
+        pendingFetch = false;
+        void fetchLatest();
+      }
     }
   }
 
   function applyPayload(payload) {
+    if (
+      payload.revision != null &&
+      latestRevision != null &&
+      payload.revision < latestRevision
+    ) {
+      return;
+    }
     var snapshot = resolveCanonicalSnapshot(payload);
     if (!snapshot) {
       return;
     }
     latestSnapshot = snapshot;
     latestRevision = payload.revision != null ? payload.revision : null;
+    if (payload.contentHash && typeof payload.contentHash === "string") {
+      lastAppliedContentHash = payload.contentHash;
+    }
     if (!bridgeReady) {
       debugLog("initial snapshot retained until readiness");
       return;
     }
+    runtimeDiagnostics.lastAppliedAt = new Date().toISOString();
     publishSnapshot(snapshot, {
       projectId: displayInfo.projectId || null,
       displayId: displayInfo.displayId || null,
@@ -363,6 +525,53 @@
       revision: latestRevision,
       enabled: payload.enabled !== false,
     });
+  }
+
+  window.__NEUD_RUNTIME_DIAGNOSTICS__ = function () {
+    return Object.assign({}, runtimeDiagnostics);
+  };
+
+  function startDisplayBridgeEvents() {
+    if (!displayBridgeEventsUrl || window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {
+      return;
+    }
+    try {
+      displayBridgeEventSource = new EventSource(displayBridgeEventsUrl);
+      displayBridgeEventSource.addEventListener("neud-display-data-changed", function (event) {
+        try {
+          handleDisplayDataChanged(JSON.parse(event.data));
+        } catch (error) {
+          scheduleFetch(true);
+        }
+      });
+      displayBridgeEventSource.addEventListener("neud-display-bridge.sync", function (event) {
+        try {
+          var syncPayload = JSON.parse(event.data);
+          if (shouldHandleDisplayDataChanged(syncPayload)) {
+            scheduleFetch(false);
+          }
+        } catch (error) {
+          scheduleFetch(false);
+        }
+      });
+      displayBridgeEventSource.onerror = function () {
+        debugLog("display bridge events disconnected; recovery watchdog active");
+        startRecoveryWatchdog();
+      };
+      debugLog("display bridge events connected");
+      if (dataUrl) {
+        runtimeDiagnostics.initialFetchCount += 1;
+        scheduleFetch(false);
+        startRecoveryWatchdog();
+      }
+    } catch (error) {
+      reportError("display bridge events unavailable", error);
+      if (dataUrl) {
+        runtimeDiagnostics.initialFetchCount += 1;
+        scheduleFetch(false);
+        startRecoveryWatchdog();
+      }
+    }
   }
 
   function startLiveEvents() {
@@ -382,11 +591,8 @@
         }
       });
       eventSource.onerror = function () {
-        debugLog("live events disconnected; polling fallback active");
-        if (!pollTimer && dataUrl) {
-          void fetchLatest();
-          pollTimer = window.setInterval(fetchLatest, pollIntervalMs);
-        }
+        debugLog("live events disconnected; recovery watchdog active");
+        startRecoveryWatchdog();
       };
       debugLog("live events connected");
       if (dataUrl) {
@@ -395,8 +601,10 @@
     } catch (error) {
       reportError("live events unavailable", error);
       if (dataUrl) {
-        void fetchLatest();
-        pollTimer = window.setInterval(fetchLatest, pollIntervalMs);
+        runtimeDiagnostics.initialFetchCount += 1;
+        scheduleFetch(false);
+        startRecoveryWatchdog();
+        attachDisplayChangeListeners();
       }
     }
   }

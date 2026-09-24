@@ -109,4 +109,8 @@ export class TeamMembershipsRepository {
       .prepare("DELETE FROM team_memberships WHERE team_id = ? AND user_id = ?")
       .run(teamId, userId);
   }
+
+  removeAllForUser(userId: string): void {
+    this.db.prepare("DELETE FROM team_memberships WHERE user_id = ?").run(userId);
+  }
 }

@@ -83,6 +83,34 @@ export function useHostedDisplayBundleStatus({
       return;
     }
 
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (mode === "private" && !session?.access_token) {
+      setStatus({
+        ...resolveHostedDisplayStatusBadge({
+          publisherOnline: null,
+          sourceOffline: null,
+          sourceConnected: null,
+          canonicalDataPresent: null,
+          pollError: true,
+          hasLoadedBundle: false,
+          viewerRpcCode: "authentication_required",
+          display,
+        }),
+        publisherOnline: null,
+        sourceOffline: null,
+        sourceConnected: null,
+        canonicalDataPresent: null,
+        viewerRpcCode: "authentication_required",
+        htmlPresent: null,
+        pollError: true,
+        refreshIssue: false,
+      });
+      return;
+    }
+
     const { data, error } = await supabase.rpc("get_online_display_viewer_bundle", {
       p_project_slug: projectSlug,
       p_display_slug: displaySlug,
@@ -169,7 +197,7 @@ export function useHostedDisplayBundleStatus({
       pollError,
       refreshIssue: false,
     });
-  }, [display, displaySlug, enabled, projectSlug, supabase]);
+  }, [display, displaySlug, enabled, mode, projectSlug, supabase]);
 
   useEffect(() => {
     if (!enabled) {
@@ -177,13 +205,24 @@ export function useHostedDisplayBundleStatus({
     }
 
     void poll();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mode === "private" && session?.access_token) {
+        void poll();
+      }
+    });
+
     const intervalMs = normalizeDisplayRefreshRateMs(refreshRateMs ?? undefined);
     const interval = window.setInterval(() => {
       void poll();
     }, intervalMs);
 
-    return () => window.clearInterval(interval);
-  }, [enabled, poll, refreshRateMs]);
+    return () => {
+      subscription.unsubscribe();
+      window.clearInterval(interval);
+    };
+  }, [enabled, mode, poll, refreshRateMs, supabase.auth]);
 
   return status;
 }

@@ -5,8 +5,12 @@ import type {
   CloudTeamRole,
 } from "./types";
 
-/** Canonical NEUD team identity — matched by normalized name or slug. */
-export const NEUD_TEAM_IDENTIFIERS = ["neud"] as const;
+import {
+  isProtectedNeudTeam,
+  NEUD_TEAM_IDENTIFIERS,
+} from "../../../shared/access-management/is-protected-neud-team";
+
+export { NEUD_TEAM_IDENTIFIERS };
 
 export type DisplayTeamRole = "Owner" | "Admin" | "Member";
 
@@ -164,9 +168,7 @@ function normalize(value: string): string {
 }
 
 export function isNeudTeam(team: { name: string; slug?: string }): boolean {
-  const name = normalize(team.name);
-  const slug = normalize(team.slug ?? "");
-  return NEUD_TEAM_IDENTIFIERS.some((id) => id === name || id === slug);
+  return isProtectedNeudTeam(team);
 }
 
 export function findNeudTeam(directory: Pick<AccessManagementDirectory, "teams">) {

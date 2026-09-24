@@ -26,7 +26,7 @@ test("session refresh classifies transient network failures separately from inva
 
 test("SupabaseUserSessionService preserves encrypted session file on invalid refresh token", () => {
   const session = read("desktop/src/services/supabase-user-session.ts");
-  assert.match(session, /refreshInFlight/);
+  assert.match(session, /refreshQueueTail/);
   assert.match(session, /markReauthenticationRequired/);
   assert.match(session, /refreshSession\(\{\s*refresh_token:/);
   assert.doesNotMatch(

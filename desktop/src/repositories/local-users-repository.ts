@@ -389,4 +389,8 @@ export class LocalUsersRepository {
       .run(isActive ? 1 : 0, now, userId);
     return this.getById(userId);
   }
+
+  deleteById(userId: string): void {
+    this.db.prepare("DELETE FROM local_users WHERE id = ?").run(userId);
+  }
 }

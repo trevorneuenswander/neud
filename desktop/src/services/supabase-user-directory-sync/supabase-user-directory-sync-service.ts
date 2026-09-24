@@ -229,6 +229,21 @@ export class SupabaseUserDirectorySyncService {
     }
 
     if (this.syncInProgress) {
+      if (reason === "startup" || reason === "login") {
+        return (
+          this.lastResult ?? {
+            status: "offline",
+            startedAt: new Date().toISOString(),
+            usersFetched: 0,
+            usersCreated: 0,
+            usersUpdated: 0,
+            usersLinked: 0,
+            usersUnchanged: 0,
+            usersMarkedUnavailable: 0,
+            errors: [],
+          }
+        );
+      }
       return (
         this.lastResult ?? {
           status: "offline",

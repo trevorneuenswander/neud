@@ -13,8 +13,16 @@ function getLogFilePath(): string {
   return logFilePath;
 }
 
+function shouldWriteStartupCheckpoint(): boolean {
+  return (
+    isPackagedDesktopRuntime() ||
+    process.env.NEUD_DEBUG_STARTUP === "1" ||
+    process.env.NEUD_DEBUG === "1"
+  );
+}
+
 export function logStartupCheckpoint(message: string, metadata: Record<string, unknown> = {}) {
-  if (!isPackagedDesktopRuntime()) {
+  if (!shouldWriteStartupCheckpoint()) {
     return;
   }
 

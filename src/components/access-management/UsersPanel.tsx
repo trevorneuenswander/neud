@@ -1,12 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FormField } from "@/components/ui/FormField";
 import { DataTableCell, DataTableRow } from "@/components/ui/DataTable";
 import { AccessManagementTable } from "@/components/access-management/AccessManagementTable";
-import { USER_COLUMN_WIDTHS_WITH_DETAILS } from "@/lib/access-management/table-layout";
+import { USER_COLUMN_WIDTHS } from "@/lib/access-management/table-layout";
 import type { AccessManagementDirectory } from "@/lib/access-management/types";
 import {
   countDirectProjectAccess,
@@ -16,18 +16,28 @@ import {
   resolveUserAccessScope,
   summarizeTeamRolesForUser,
 } from "@/lib/access-management/role-model";
+import { AccessUserDeleteButton } from "@/components/access-management/AccessUserDeleteButton";
 import { getAccessManagementUserDetailsHref } from "@/lib/access-management/routes";
 import { useAccessManagementSurface } from "@/lib/access-management/use-access-management-tab-state";
 
 type UsersPanelProps = {
   directory: Pick<
     AccessManagementDirectory,
-    "users" | "teamMemberships" | "projectMembers" | "teams" | "projects"
+    "users" | "teamMemberships" | "projectMembers" | "teams" | "projects" | "projectTeams"
   >;
   showUserDetailsLinks?: boolean;
+  currentUserId?: string | null;
+  isOnline?: boolean;
+  onDirectoryRefresh?: () => Promise<unknown>;
 };
 
-export function UsersPanel({ directory, showUserDetailsLinks = false }: UsersPanelProps) {
+export function UsersPanel({
+  directory,
+  showUserDetailsLinks = false,
+  currentUserId = null,
+  isOnline = true,
+  onDirectoryRefresh,
+}: UsersPanelProps) {
   const [query, setQuery] = useState("");
   const surface = useAccessManagementSurface();
 
@@ -51,7 +61,7 @@ export function UsersPanel({ directory, showUserDetailsLinks = false }: UsersPan
         <EmptyState title="No users found" description="Try a different search term." />
       ) : (
         <AccessManagementTable
-          columnWidths={USER_COLUMN_WIDTHS_WITH_DETAILS}
+          columnWidths={USER_COLUMN_WIDTHS}
           headers={[
             "User",
             "Teams",
@@ -59,7 +69,7 @@ export function UsersPanel({ directory, showUserDetailsLinks = false }: UsersPan
             "Project Access",
             "Scope",
             "Status",
-            "Details",
+            "Actions",
           ]}
         >
           {filtered.map((user) => {
@@ -68,11 +78,27 @@ export function UsersPanel({ directory, showUserDetailsLinks = false }: UsersPan
             const projectAccessCount = countDirectProjectAccess(user.id, directory);
             const scope = resolveUserAccessScope(user.id, directory);
             const primaryTeams = listActiveTeamNamesForUser(user.id, directory);
+            const displayName = user.fullName?.trim() || "—";
+            const detailsHref = showUserDetailsLinks
+              ? getAccessManagementUserDetailsHref(user.id, surface, {
+                  returnTab: "users",
+                })
+              : null;
 
             return (
               <DataTableRow key={user.id}>
                 <DataTableCell>
-                  <div className="truncate font-medium">{user.fullName || "—"}</div>
+                  {detailsHref ? (
+                    <Link
+                      href={detailsHref}
+                      className="block truncate font-medium text-foreground hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                      aria-label={`View ${displayName} user details`}
+                    >
+                      {displayName}
+                    </Link>
+                  ) : (
+                    <div className="truncate font-medium">{displayName}</div>
+                  )}
                   <div className="truncate text-sm text-muted">{user.email || "—"}</div>
                 </DataTableCell>
                 <DataTableCell className="whitespace-normal text-sm">
@@ -85,16 +111,17 @@ export function UsersPanel({ directory, showUserDetailsLinks = false }: UsersPan
                 <DataTableCell className="whitespace-normal text-sm">{scope}</DataTableCell>
                 <DataTableCell>{user.accountStatus}</DataTableCell>
                 <DataTableCell>
-                  {showUserDetailsLinks ? (
-                    <Button
-                      href={getAccessManagementUserDetailsHref(user.id, surface, {
-                        returnTab: "users",
-                      })}
-                      variant="secondary"
-                      size="sm"
-                    >
-                      Open
-                    </Button>
+                  {currentUserId && onDirectoryRefresh ? (
+                    <AccessUserDeleteButton
+                      actorUserId={currentUserId}
+                      targetUserId={user.id}
+                      targetFullName={displayName}
+                      directory={directory}
+                      disabled={!isOnline}
+                      onDeleted={async () => {
+                        await onDirectoryRefresh();
+                      }}
+                    />
                   ) : (
                     "—"
                   )}

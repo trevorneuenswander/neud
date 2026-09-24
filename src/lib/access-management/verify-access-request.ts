@@ -1,44 +1,38 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  logHostedRouteSessionDiagnostics,
-  resolveHostedRouteSession,
-} from "@/lib/auth/hosted-route-session";
+import { logHostedRouteSessionDiagnostics } from "@/lib/auth/hosted-route-session";
 import { requestHasSupabaseAuthCookies } from "@/lib/supabase/route-handler";
+import { resolveTrustedAccessCaller } from "@/lib/access-management/resolve-trusted-access-caller";
 
 export type VerifiedAccessRequest =
-  | { ok: true; userId: string; supabase: SupabaseClient }
+  | { ok: true; userId: string; supabase: SupabaseClient; authSource: "cookie" | "bearer" }
   | { ok: false; status: number; code: string };
 
 export async function verifyAuthenticatedAccessRequest(
   request: Request,
 ): Promise<VerifiedAccessRequest> {
-  const authHeader = request.headers.get("authorization");
-  const bearerToken = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice("Bearer ".length).trim()
-    : null;
-
-  const session = await resolveHostedRouteSession(request, { bearerToken });
+  const caller = await resolveTrustedAccessCaller(request);
   const hasAuthCookies = requestHasSupabaseAuthCookies(request);
 
   logHostedRouteSessionDiagnostics({
     runtime: "hosted-web",
-    authMethod: session.ok ? session.authMethod : session.authMethod,
+    authMethod: caller.ok ? caller.authSource : caller.authSource,
     hasAuthCookies,
-    authenticatedUserResolved: session.ok,
-    userId: session.ok ? session.userId : null,
-    claimsError: session.ok ? null : session.claimsError,
-    stage: session.ok ? "session.resolved" : "session.missing",
+    authenticatedUserResolved: caller.ok,
+    userId: caller.ok ? caller.userId : null,
+    claimsError: caller.ok ? null : caller.claimsError,
+    stage: caller.ok ? "session.resolved" : "session.missing",
   });
 
-  if (!session.ok) {
-    return { ok: false, status: 401, code: session.code };
+  if (!caller.ok) {
+    return { ok: false, status: caller.status, code: caller.code };
   }
 
   return {
     ok: true,
-    userId: session.userId,
-    supabase: session.supabase,
+    userId: caller.userId,
+    supabase: caller.supabase,
+    authSource: caller.authSource,
   };
 }

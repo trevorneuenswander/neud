@@ -1,4 +1,5 @@
 import { ProjectLayoutFrame } from "@/components/projects/ProjectLayoutFrame";
+import { PinnedViewerProvider } from "@/lib/displays/pinned-viewer-context";
 import { ProjectEngineSessionRoot } from "@/components/projects/ProjectEngineSessionRoot";
 import { ProjectAccessStatePanel } from "@/components/projects/ProjectAccessStatePanel";
 import { resolveProjectAccess } from "@/lib/projects/authorization";
@@ -69,17 +70,22 @@ export default async function ProjectLayout({
 
   return (
     <ProjectEngineSessionRoot engineId={engineId}>
-      <ProjectLayoutFrame
-        slug={access.project.slug}
-        projectType={access.project.project_type}
-        engineId={engineId}
-        canManageSettings={access.canManageSettings}
-        projectRole={access.projectRole}
-        showStatusControls={showStatusControls}
-        initialDataSource="webpage-scraper"
+      <PinnedViewerProvider
+        projectId={access.project.id}
+        projectSlug={access.project.slug}
       >
-        {children}
-      </ProjectLayoutFrame>
+        <ProjectLayoutFrame
+          slug={access.project.slug}
+          projectType={access.project.project_type}
+          engineId={engineId}
+          canManageSettings={access.canManageSettings}
+          projectRole={access.projectRole}
+          showStatusControls={showStatusControls}
+          initialDataSource="webpage-scraper"
+        >
+          {children}
+        </ProjectLayoutFrame>
+      </PinnedViewerProvider>
     </ProjectEngineSessionRoot>
   );
 }

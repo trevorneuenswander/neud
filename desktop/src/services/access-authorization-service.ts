@@ -23,6 +23,11 @@ import {
   resolveAuthenticatedProfile,
   type ResolvedAuthenticatedProfile,
 } from "./resolve-authenticated-profile";
+import {
+  canViewUserDetailsInDirectory,
+  type UserDetailsDirectory,
+} from "../access/can-view-user-details";
+import { canDeleteUserInDirectory } from "../access/can-delete-user";
 
 export class AccessAuthorizationService {
   constructor(
@@ -167,17 +172,27 @@ export class AccessAuthorizationService {
   getVisibleProjectTeams(
     context: AuthorizationContext,
     projectId: string,
+    options?: {
+      cloudDirectory?: UserDetailsDirectory | null;
+      projectSlug?: string | null;
+    },
   ): Array<{ id: string; name: string }> {
-    const assignedTeamIds = this.projectTeams.getTeamIdsForProject(projectId);
+    let assignedTeamIds = this.projectTeams.getTeamIdsForProject(projectId);
+    if (assignedTeamIds.length === 0 && options?.cloudDirectory) {
+      assignedTeamIds = this.resolveCloudProjectTeamIds(
+        projectId,
+        options.cloudDirectory,
+        options.projectSlug,
+      );
+    }
     if (assignedTeamIds.length === 0) {
       return [];
     }
 
     if (context.isPlatformOwner) {
       return assignedTeamIds
-        .map((teamId) => this.teams.getById(teamId))
-        .filter((team): team is NonNullable<typeof team> => team !== null)
-        .map((team) => ({ id: team.id, name: team.name }))
+        .map((teamId) => this.resolveProjectTeamLabel(teamId, options?.cloudDirectory))
+        .filter((team): team is { id: string; name: string } => team !== null)
         .sort((left, right) => left.name.localeCompare(right.name));
     }
 
@@ -192,10 +207,55 @@ export class AccessAuthorizationService {
     }
 
     return [...visibleTeamIds]
-      .map((teamId) => this.teams.getById(teamId))
-      .filter((team): team is NonNullable<typeof team> => team !== null)
-      .map((team) => ({ id: team.id, name: team.name }))
+      .map((teamId) => this.resolveProjectTeamLabel(teamId, options?.cloudDirectory))
+      .filter((team): team is { id: string; name: string } => team !== null)
       .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private resolveProjectTeamLabel(
+    teamId: string,
+    cloudDirectory?: UserDetailsDirectory | null,
+  ): { id: string; name: string } | null {
+    const local = this.teams.getById(teamId);
+    if (local) {
+      return { id: local.id, name: local.name };
+    }
+    const cloudTeam = cloudDirectory?.teams?.find((entry) => entry.id === teamId);
+    if (cloudTeam?.name) {
+      return { id: teamId, name: cloudTeam.name };
+    }
+    return null;
+  }
+
+  private resolveCloudProjectTeamIds(
+    projectId: string,
+    cloudDirectory: UserDetailsDirectory,
+    projectSlug?: string | null,
+  ): string[] {
+    const projectIds = new Set<string>([projectId]);
+    const normalizedSlug = projectSlug?.trim() ?? "";
+    if (normalizedSlug && cloudDirectory.projects) {
+      for (const project of cloudDirectory.projects) {
+        if (project.slug === normalizedSlug) {
+          projectIds.add(project.id);
+        }
+      }
+      const localProject = this.projects.getById(projectId);
+      if (localProject?.slug) {
+        for (const project of cloudDirectory.projects) {
+          if (project.slug === localProject.slug) {
+            projectIds.add(project.id);
+          }
+        }
+      }
+    }
+    const teamIds = new Set<string>();
+    for (const assignment of cloudDirectory.projectTeams) {
+      if (projectIds.has(assignment.projectId)) {
+        teamIds.add(assignment.teamId);
+      }
+    }
+    return [...teamIds];
   }
 
   getAccessibleProjects(userId?: string | null): LocalProject[] {
@@ -646,12 +706,32 @@ export class AccessAuthorizationService {
       });
   }
 
-  canViewUserDetails(actorUserId: string, targetUserId: string): boolean {
+  resolveDirectoryUserId(userId: string): string {
+    const trimmed = userId.trim();
+    if (!trimmed) {
+      return trimmed;
+    }
+    const byAuth = this.users.resolveByAuthUserId(trimmed);
+    if (byAuth?.supabaseUserId?.trim()) {
+      return byAuth.supabaseUserId.trim();
+    }
+    if (byAuth?.id) {
+      return byAuth.id;
+    }
+    const local = this.users.getById(trimmed);
+    if (local?.supabaseUserId?.trim()) {
+      return local.supabaseUserId.trim();
+    }
+    return local?.id ?? trimmed;
+  }
+
+  canViewUserDetails(
+    actorUserId: string,
+    targetUserId: string,
+    options?: { cloudDirectory?: UserDetailsDirectory | null },
+  ): boolean {
     if (!actorUserId || !targetUserId) {
       return false;
-    }
-    if (actorUserId === targetUserId) {
-      return Boolean(this.getAuthorizationContext(actorUserId));
     }
 
     const actorContext = this.getAuthorizationContext(actorUserId);
@@ -659,9 +739,29 @@ export class AccessAuthorizationService {
       return false;
     }
 
-    const targetUser = this.users.getById(targetUserId);
+    const actorDirectoryId = this.resolveDirectoryUserId(actorUserId);
+    const targetDirectoryId = this.resolveDirectoryUserId(targetUserId);
+
+    if (actorDirectoryId === targetDirectoryId) {
+      return true;
+    }
+
+    const cloudDirectory = options?.cloudDirectory ?? null;
+    if (cloudDirectory) {
+      if (
+        canViewUserDetailsInDirectory(actorDirectoryId, targetDirectoryId, cloudDirectory)
+      ) {
+        return true;
+      }
+    }
+
+    const targetUser =
+      this.users.getById(targetUserId) ??
+      this.users.resolveByAuthUserId(targetUserId);
     if (!targetUser) {
-      return false;
+      return actorContext.isPlatformOwner && Boolean(cloudDirectory?.users.some(
+        (entry) => entry.id === targetDirectoryId,
+      ));
     }
 
     if (actorContext.isPlatformOwner) {
@@ -680,10 +780,24 @@ export class AccessAuthorizationService {
       return false;
     }
 
-    const targetMemberships = this.teamMemberships.listForUser(targetUserId);
+    const targetMemberships = this.teamMemberships.listForUser(targetUser.id);
     return targetMemberships.some(
       (membership) => membership.isActive && adminTeamIds.has(membership.teamId),
     );
+  }
+
+  canDeleteUserDetails(
+    actorUserId: string,
+    targetUserId: string,
+    options?: { cloudDirectory?: UserDetailsDirectory | null },
+  ): boolean {
+    const cloudDirectory = options?.cloudDirectory ?? null;
+    if (!cloudDirectory) {
+      return false;
+    }
+    const actorDirectoryId = this.resolveDirectoryUserId(actorUserId);
+    const targetDirectoryId = this.resolveDirectoryUserId(targetUserId);
+    return canDeleteUserInDirectory(actorDirectoryId, targetDirectoryId, cloudDirectory);
   }
 
   listViewableUserIds(actorUserId: string): string[] {

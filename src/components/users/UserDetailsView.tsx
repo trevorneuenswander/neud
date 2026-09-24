@@ -34,7 +34,10 @@ function formatTeamValue(teamName: string | null | undefined): string {
   return trimmed ? trimmed : "Not provided";
 }
 
-export function UserDetailsView({ profile, backHref = "/users?tab=users" }: UserDetailsViewProps) {
+export function UserDetailsView({
+  profile,
+  backHref = "/users?tab=users",
+}: UserDetailsViewProps) {
   const email = formatContactValue(profile.email);
   const phone = formatContactValue(profile.phone);
   const team = formatTeamValue(profile.teamName);

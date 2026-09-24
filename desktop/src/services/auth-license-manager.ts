@@ -159,6 +159,10 @@ export class AuthLicenseManager {
     };
   }
 
+  isConnectionOnline(): boolean {
+    return this.connectionOnline;
+  }
+
   setConnectionOnline(isOnline: boolean): void {
     this.connectionOnline = isOnline;
     if (!isOnline) {

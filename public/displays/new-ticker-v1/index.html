@@ -225,7 +225,14 @@
 
     function resizeStage() {
       core.scaleStage(stage);
+      if (core.PINNED_PREVIEW) {
+        core.restartMarqueesInRoot(stage);
+      }
     }
+
+    window.__neudRefreshStreamTickerLayout = function refreshStreamTickerLayout() {
+      resizeStage();
+    };
 
     window.addEventListener("resize", resizeStage);
     resizeStage();

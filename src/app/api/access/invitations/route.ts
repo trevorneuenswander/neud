@@ -1,13 +1,18 @@
 import { z } from "zod";
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
   checkInvitationRateLimit,
   generateInvitationToken,
   hashInvitationToken,
   invitationExpiresAt,
 } from "@/lib/access-management/invitation-server";
-import { verifyAuthenticatedAccessRequest } from "@/lib/access-management/verify-access-request";
+import { resolveTrustedAccessCallerWithAuthDiagnostics } from "@/lib/access-management/resolve-trusted-access-caller";
+import {
+  ACCESS_INVITATIONS_CREATE_ROUTE_MARKER,
+  TRUSTED_ACCESS_CONTRACT_VERSION,
+} from "@/lib/access-management/trusted-access-routes";
+import { sendAuthAdminInviteEmail } from "@/lib/access-management/send-auth-admin-invite";
 import { logHostedRouteSessionDiagnostics } from "@/lib/auth/hosted-route-session";
+import { getSiteOrigin } from "@/lib/auth/site-origin";
 import { requestHasSupabaseAuthCookies } from "@/lib/supabase/route-handler";
 
 const inviteSchema = z.object({
@@ -26,19 +31,48 @@ const inviteSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const verified = await verifyAuthenticatedAccessRequest(request);
-  if (!verified.ok) {
+  const { caller, diagnostics } = await resolveTrustedAccessCallerWithAuthDiagnostics(request);
+  const hasAuthCookies = requestHasSupabaseAuthCookies(request);
+  const routeMarker = {
+    route: ACCESS_INVITATIONS_CREATE_ROUTE_MARKER,
+    contractVersion: TRUSTED_ACCESS_CONTRACT_VERSION,
+  };
+
+  if (!caller.ok) {
     logHostedRouteSessionDiagnostics({
       runtime: "hosted-web",
-      authMethod: request.headers.get("authorization") ? "bearer" : "cookie",
-      hasAuthCookies: requestHasSupabaseAuthCookies(request),
+      authMethod: caller.authSource,
+      hasAuthCookies,
       authenticatedUserResolved: false,
       userId: null,
-      claimsError: verified.code,
+      claimsError: caller.claimsError,
       stage: "invite.authentication_required",
     });
-    return Response.json({ ok: false, code: verified.code }, { status: verified.status });
+    return Response.json(
+      {
+        ok: false,
+        code: caller.code,
+        ...routeMarker,
+        postAuthorizationHeaderPresent: diagnostics.postAuthorizationHeaderPresent,
+        postBearerParsed: diagnostics.postBearerParsed,
+        postBearerLengthPresent: diagnostics.postBearerLengthPresent,
+        postGetUserAttempted: diagnostics.postGetUserAttempted,
+        postGetUserSucceeded: diagnostics.postGetUserSucceeded,
+        postGetUserErrorCode: diagnostics.postGetUserErrorCode,
+        postGetUserSafeCategory: diagnostics.postGetUserSafeCategory,
+        postCallerResolved: diagnostics.postCallerResolved,
+        postAuthSource: diagnostics.postAuthSource,
+      },
+      { status: caller.status },
+    );
   }
+
+  const verified = {
+    ok: true as const,
+    userId: caller.userId,
+    supabase: caller.supabase,
+    authSource: caller.authSource,
+  };
 
   if (!checkInvitationRateLimit(`invite:${verified.userId}`)) {
     return Response.json({ ok: false, code: "forbidden" }, { status: 429 });
@@ -79,17 +113,53 @@ export async function POST(request: Request) {
     );
   }
 
-  const admin = createAdminClient();
-  const invite = await admin.auth.admin.inviteUserByEmail(body.email, {
-    data: { invitation_token: rawToken },
+  const invitationId = (data as { invitation_id?: string }).invitation_id ?? null;
+  if (!invitationId) {
+    return Response.json({ ok: false, code: "invalid_request" }, { status: 400 });
+  }
+
+  const requestSiteOrigin = await getSiteOrigin();
+  const emailResult = await sendAuthAdminInviteEmail({
+    email: body.email,
+    invitationToken: rawToken,
+    invitationId,
+    callerSupabase: verified.supabase,
+    requestSiteOrigin,
   });
 
-  if (invite.error) {
-    return Response.json({ ok: false, code: "invalid_request" }, { status: 400 });
+  if (!emailResult.ok) {
+    logHostedRouteSessionDiagnostics(
+      {
+        runtime: "hosted-web",
+        authMethod: request.headers.get("authorization") ? "bearer" : "cookie",
+        hasAuthCookies: requestHasSupabaseAuthCookies(request),
+        authenticatedUserResolved: true,
+        userId: verified.userId,
+        claimsError: emailResult.invitationEmailDiagnostics.authAdminInviteErrorCode,
+        stage: "invite.auth_admin_invite_failed",
+      },
+      {
+        teamId: body.teamId ?? null,
+        emailFailureStage: emailResult.invitationEmailDiagnostics.firstInvitationEmailFailureStage,
+        invitationRevokedAfterFailure:
+          emailResult.invitationEmailDiagnostics.invitationRevokedAfterFailure,
+      },
+    );
+    return Response.json(
+      {
+        ok: false,
+        code: emailResult.responseCode,
+        message: emailResult.safeMessage,
+        ...emailResult.invitationEmailDiagnostics,
+      },
+      { status: 400 },
+    );
   }
 
   return Response.json({
     ok: true,
-    invitationId: (data as { invitation_id?: string }).invitation_id ?? null,
+    invitationId,
+    ...routeMarker,
+    ...emailResult.invitationEmailDiagnostics,
   });
 }

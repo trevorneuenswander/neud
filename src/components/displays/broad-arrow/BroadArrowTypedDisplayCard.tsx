@@ -18,9 +18,17 @@ import {
 import { ViewOnlineButton } from "@/components/displays/ViewOnlineButton";
 import { useOnlineViewerSettings } from "@/lib/displays/use-online-viewer-settings";
 import { NoDrag } from "@/components/displays/NoDrag";
-import { DisplayRefreshRateSelect } from "@/components/displays/DisplayRefreshRateSelect";
 import { DisplaySizeSelect } from "@/components/displays/DisplaySizeSelect";
+import { DisplayPinButton } from "@/components/displays/DisplayPinButton";
 import { DisplayVersionBadge } from "@/components/displays/DisplayVersionBadge";
+import {
+  requestPinnedViewerRefresh,
+  requestPinnedViewerUnpin,
+} from "@/lib/displays/pinned-viewer-context";
+import {
+  buildPinnedViewerDisplaySummary,
+  localUnpinDisplayIfPinned,
+} from "@/lib/local/pinned-viewer-api";
 import { BroadArrowTypedDisplayPreview } from "@/components/displays/broad-arrow/BroadArrowTypedDisplayPreview";
 import { useDisplayInlinePreview } from "@/lib/displays/display-inline-preview-context";
 import {
@@ -29,10 +37,10 @@ import {
 } from "@/lib/displays/display-connection-client";
 import { useBroadArrowDisplayData } from "@/lib/displays/broad-arrow/useBroadArrowDisplayData";
 import type { BroadArrowRendererKey } from "@/lib/displays/broad-arrow/renderer-keys";
-import { buildProjectDisplayOutputPath, buildProjectDisplayPreviewPath } from "@/lib/local/developer-tools-api";
+import { buildProjectDisplayOutputPath } from "@/lib/local/developer-tools-api";
+import { buildDisplayWindowFitPath } from "@/lib/displays/display-view-mode";
 import { localSetDeveloperDisplayEnabled } from "@/lib/local/developer-tools-api";
-import { localSetDisplayRefreshRate, localSetDisplaySize } from "@/lib/local/displays-api";
-import { normalizeDisplayRefreshRateMs } from "@/lib/displays/refresh-rate";
+import { localSetDisplaySize } from "@/lib/local/displays-api";
 import { normalizeDisplaySize } from "@/lib/displays/display-size";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { getDesktopAPI } from "@/lib/desktop/client";
@@ -111,21 +119,17 @@ export function BroadArrowTypedDisplayCard({
   onDuplicated,
 }: BroadArrowTypedDisplayCardProps) {
   const initialSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
-  const pollMs = normalizeDisplayRefreshRateMs(initialRefreshRateMs);
   const outputUrl =
     typeof window !== "undefined"
       ? buildProjectDisplayOutputPath(projectId, display.slug, {
-          poll: pollMs,
           origin: window.location.origin,
         })
-      : buildProjectDisplayOutputPath(projectId, display.slug, { poll: pollMs });
+      : buildProjectDisplayOutputPath(projectId, display.slug);
 
   const [enabled, setEnabled] = useState(display.enabled);
-  const [refreshRateMs, setRefreshRateMs] = useState(pollMs);
   const [displayWidth, setDisplayWidth] = useState(initialSize.displayWidth);
   const [displayHeight, setDisplayHeight] = useState(initialSize.displayHeight);
   const [saving, setSaving] = useState(false);
-  const [refreshRateSaving, setRefreshRateSaving] = useState(false);
   const [displaySizeSaving, setDisplaySizeSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
@@ -138,10 +142,6 @@ export function BroadArrowTypedDisplayCard({
   useEffect(() => {
     setEnabled(display.enabled);
   }, [display.enabled]);
-
-  useEffect(() => {
-    setRefreshRateMs(normalizeDisplayRefreshRateMs(initialRefreshRateMs));
-  }, [initialRefreshRateMs]);
 
   useEffect(() => {
     const nextSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
@@ -162,6 +162,7 @@ export function BroadArrowTypedDisplayCard({
     notifyDisplayConnectionChanged(display.id, nextEnabled);
 
     if (!nextEnabled && shouldUseLocalDataClient()) {
+      requestPinnedViewerUnpin(display.id);
       const desktop = getDesktopAPI();
       if (desktop?.displays?.closePreview) {
         void desktop.displays.closePreview({
@@ -182,38 +183,19 @@ export function BroadArrowTypedDisplayCard({
       );
       setEnabled(result.display.enabled);
       notifyDisplayConnectionChanged(display.id, result.display.enabled);
+      if (!result.display.enabled && shouldUseLocalDataClient()) {
+        await localUnpinDisplayIfPinned(projectSlug, projectId, display.id);
+        requestPinnedViewerRefresh();
+      }
     } catch (error) {
       setEnabled(previousEnabled);
       notifyDisplayConnectionChanged(display.id, previousEnabled);
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to update display state.",
       );
+      requestPinnedViewerRefresh();
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleRefreshRateChange(nextRefreshRateMs: number) {
-    const previousRefreshRateMs = refreshRateMs;
-    setRefreshRateMs(nextRefreshRateMs);
-    setErrorMessage(null);
-    if (!shouldUseLocalDataClient()) return;
-
-    setRefreshRateSaving(true);
-    try {
-      const result = await localSetDisplayRefreshRate(
-        projectSlug,
-        display.id,
-        nextRefreshRateMs,
-      );
-      setRefreshRateMs(normalizeDisplayRefreshRateMs(result.refreshRateMs));
-    } catch (error) {
-      setRefreshRateMs(previousRefreshRateMs);
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to update refresh rate.",
-      );
-    } finally {
-      setRefreshRateSaving(false);
     }
   }
 
@@ -254,8 +236,11 @@ export function BroadArrowTypedDisplayCard({
 
   function handleViewFullscreen() {
     if (typeof window === "undefined") return;
-    const previewUrl = buildProjectDisplayPreviewPath(projectId, display.slug, {
-      poll: refreshRateMs,
+    const outputTargetUrl = outputUrl;
+    const browserFullscreenUrl = buildDisplayWindowFitPath({
+      targetUrl: outputTargetUrl,
+      displayWidth,
+      displayHeight,
       origin: window.location.origin,
     });
 
@@ -266,7 +251,7 @@ export function BroadArrowTypedDisplayCard({
           projectId,
           displayId: display.id,
           title: display.name,
-          viewerUrl: previewUrl,
+          viewerUrl: outputTargetUrl,
           displayWidth,
           displayHeight,
         });
@@ -274,7 +259,7 @@ export function BroadArrowTypedDisplayCard({
       }
     }
 
-    window.open(previewUrl, "_blank", "noopener,noreferrer");
+    window.open(browserFullscreenUrl, "_blank", "noopener,noreferrer");
   }
 
   const dataConnectionLabel = getDataConnectionLabel({
@@ -292,6 +277,16 @@ export function BroadArrowTypedDisplayCard({
         ? "Copy failed"
         : "Copy Local URL";
 
+  const pinnedViewerSummary = buildPinnedViewerDisplaySummary({
+    id: display.id,
+    name: display.name,
+    displayKey: display.displayKey,
+    url: outputUrl,
+    width: displayWidth,
+    height: displayHeight,
+    settings: { rendererKey },
+  });
+
   return (
     <Card>
       <div className="space-y-4">
@@ -299,10 +294,20 @@ export function BroadArrowTypedDisplayCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-sm font-semibold text-foreground">{display.name}</h4>
-              <DisplayVersionBadge
-                versionNumber={activeVersionNumber}
-                createdAt={activeVersionCreatedAt}
-              />
+              <div className="flex items-center gap-1">
+                <DisplayVersionBadge
+                  versionNumber={activeVersionNumber}
+                  createdAt={activeVersionCreatedAt}
+                />
+                {enabled ? (
+                  <DisplayPinButton
+                    displayId={display.id}
+                    enabled={enabled}
+                    archived={display.archived}
+                    displaySummary={pinnedViewerSummary}
+                  />
+                ) : null}
+              </div>
               <span className="rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                 TypeScript
               </span>
@@ -334,16 +339,6 @@ export function BroadArrowTypedDisplayCard({
                   displayEnabled={enabled}
                   displayName={display.name}
                   onlineViewer={onlineViewer}
-                />
-              </DisplayCardControlRow>
-              <DisplayCardControlRow label="Refresh Rate">
-                <DisplayRefreshRateSelect
-                  valueMs={refreshRateMs}
-                  disabled={refreshRateSaving}
-                  showLabel={false}
-                  onChange={(nextRefreshRateMs) =>
-                    void handleRefreshRateChange(nextRefreshRateMs)
-                  }
                 />
               </DisplayCardControlRow>
             </DisplayCardControls>

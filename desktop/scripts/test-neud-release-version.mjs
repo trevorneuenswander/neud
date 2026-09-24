@@ -15,7 +15,7 @@ function readJson(relativePath) {
 }
 
 function createVersionApi() {
-  const BUILD_APP_VERSION = "0.1.4";
+  const BUILD_APP_VERSION = "0.2.0";
 
   function stripChannelSuffix(version, channel) {
     const pattern = new RegExp(`[-.]?${channel}.*$`, "i");
@@ -87,8 +87,8 @@ function createVersionApi() {
 
 const versionApi = createVersionApi();
 
-test("0.1.4 formats as Alpha 0.1.4", () => {
-  assert.equal(versionApi.getDisplayVersion("0.1.4"), "Alpha 0.1.4");
+test("0.2.0 formats as Alpha 0.2.0", () => {
+  assert.equal(versionApi.getDisplayVersion("0.2.0"), "Alpha 0.2.0");
 });
 
 test("alpha suffix does not duplicate Alpha prefix", () => {
@@ -97,18 +97,22 @@ test("alpha suffix does not duplicate Alpha prefix", () => {
 });
 
 test("missing runtime data does not render Alpha undefined", () => {
-  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.1.4");
-  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.1.4");
+  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.2.0");
+  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.2.0");
   assert.ok(!versionApi.getDisplayVersion("").includes("undefined"));
   assert.ok(!versionApi.getDisplayVersion("").includes("null"));
 });
 
-test("canonical package metadata stays at 0.1.4 in root and desktop packages", () => {
+test("0.1.4 still formats as Alpha 0.1.4 (latest published baseline)", () => {
+  assert.equal(versionApi.getDisplayVersion("0.1.4"), "Alpha 0.1.4");
+});
+
+test("canonical package metadata stays at 0.2.0 in root and desktop packages", () => {
   const rootPkg = readJson("package.json");
   const desktopPkg = readJson("desktop/package.json");
 
-  assert.equal(rootPkg.version, "0.1.4");
-  assert.equal(desktopPkg.version, "0.1.4");
+  assert.equal(rootPkg.version, "0.2.0");
+  assert.equal(desktopPkg.version, "0.2.0");
   assert.equal(rootPkg.version, desktopPkg.version);
 });
 
@@ -192,12 +196,26 @@ test("version hook resolves desktop bridge then falls back to build label", () =
 
 test("release versioning policy is documented", () => {
   const doc = readSrc("docs/release-versioning.md");
+  const milestones = readSrc("docs/release-milestones.md");
   const githubRelease = readSrc("docs/github-release.md");
   assert.match(doc, /Alpha MAJOR\.MINOR\.PATCH/);
   assert.match(doc, /package\.json/);
   assert.match(doc, /getCanonicalReleaseVersion\(\)/);
   assert.match(doc, /Do not add automatic version bumps/);
+  assert.match(doc, /Latest published release.*v0\.1\.4/);
+  assert.match(milestones, /Current release candidate.*v0\.2\.0/);
+  assert.match(milestones, /v0\.1\.4 → v0\.2\.0/);
+  assert.match(milestones, /v0\.3\.0.*LAN-accessible/);
+  assert.match(milestones, /v0\.4\.0.*modular project packages/);
+  assert.doesNotMatch(milestones, /LAN-accessible[\s\S]*ships in v0\.2\.0/i);
   assert.match(githubRelease, /NEUD-Setup-latest-x64\.exe/);
+});
+
+test("authoritative package versions are not 0.1.5", () => {
+  const rootPkg = readJson("package.json");
+  const desktopPkg = readJson("desktop/package.json");
+  assert.notEqual(rootPkg.version, "0.1.5");
+  assert.notEqual(desktopPkg.version, "0.1.5");
 });
 
 test("electron-builder publish metadata matches GitHub repository", () => {

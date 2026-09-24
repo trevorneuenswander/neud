@@ -24,7 +24,9 @@ test("stream display specs define bid and ticker slugs without renderer keys", (
 test("stream displays import service is idempotent and revision-aware", () => {
   const service = read("desktop/src/services/broad-arrow-stream-displays-import-service.ts");
   assert.match(service, /getBySlug\(projectId, spec\.slug\)/);
-  assert.match(service, /publishedHash === sourceHash/);
+  assert.match(service, /hashBundledDisplayContentIdentity/);
+  assert.match(service, /findByResourceAndSourceHash/);
+  assert.match(service, /duplicateRevisionPrevented/);
   assert.match(service, /transformStreamBidHtmlForServing/);
   assert.match(service, /transformStreamTickerHtmlForServing/);
   assert.match(service, /buildStreamDisplayRevisionName/);

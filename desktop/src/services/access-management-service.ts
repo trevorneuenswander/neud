@@ -6,8 +6,19 @@ import type { ProjectMembershipsRepository } from "../repositories/project-membe
 import type { ProjectTeamAssignmentsRepository } from "../repositories/project-team-assignments-repository";
 import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { LocalInvitationsRepository } from "../repositories/local-invitations-repository";
-import type { TeamRole, ProjectAccessRole, ProjectAccessPath } from "./access-types";
+import type {
+  TeamRole,
+  ProjectAccessRole,
+  ProjectAccessPath,
+  PlatformRole,
+} from "./access-types";
 import { normalizeProjectIsActive } from "../projects/project-permissions";
+import {
+  syncCloudProjectTeamAssignmentsToLocal,
+  type CloudAccessLocalSyncDiagnostics,
+} from "./cloud-access-local-sync";
+import type { UserDetailsDirectory } from "../access/can-view-user-details";
+import { isProtectedNeudTeam } from "../access/is-protected-neud-team";
 
 type ActivityRecorder = (input: {
   type: string;
@@ -91,11 +102,27 @@ export class AccessManagementService {
           .listAll()
           .filter((invitation) => adminTeamIds.has(invitation.teamId));
 
+    const projectTeams = allProjects.flatMap((project) =>
+      this.projectTeams.getTeamIdsForProject(project.id).map((teamId) => ({
+        projectId: project.id,
+        teamId,
+      })),
+    );
+    const projectMembers = allProjects.flatMap((project) =>
+      this.projectMemberships.listForProject(project.id).map((membership) => ({
+        projectId: project.id,
+        userId: membership.userId,
+        role: membership.accessRole,
+      })),
+    );
+
     return {
       context,
       teams,
       users,
       projects,
+      projectTeams,
+      projectMembers,
       invitations: invitations.filter((invitation) => invitation.status === "pending"),
     };
   }
@@ -754,13 +781,157 @@ export class AccessManagementService {
     };
   }
 
-  getUserDetails(actorUserId: string, targetUserId: string) {
-    if (!this.authorization.canViewUserDetails(actorUserId, targetUserId)) {
+  async deleteUser(
+    actorUserId: string,
+    targetUserId: string,
+    options: {
+      cloudDirectory: UserDetailsDirectory | null;
+      trustedDelete: (targetId: string) => Promise<{ ok: boolean; code?: string }>;
+      refreshCloudDirectory: () => Promise<void>;
+    },
+  ) {
+    if (
+      !this.authorization.canDeleteUserDetails(actorUserId, targetUserId, {
+        cloudDirectory: options.cloudDirectory,
+      })
+    ) {
+      throw new Error("You do not have permission to delete this user.");
+    }
+
+    const target =
+      this.users.getById(targetUserId) ?? this.users.resolveByAuthUserId(targetUserId);
+    if (!target) {
+      throw new Error("User not found.");
+    }
+
+    const cloudResult = await options.trustedDelete(
+      target.supabaseUserId?.trim() || target.id,
+    );
+    if (!cloudResult.ok) {
+      const code = cloudResult.code ?? "unknown";
+      if (code === "owner_protected") {
+        throw new Error("The sole Owner account cannot be deleted.");
+      }
+      if (code === "user_not_found") {
+        throw new Error("User not found.");
+      }
+      if (code === "permission_denied") {
+        throw new Error("You do not have permission to delete this user.");
+      }
+      if (code === "auth_admin_delete_failed") {
+        throw new Error("Unable to delete the user's authentication account.");
+      }
+      throw new Error("User deletion failed.");
+    }
+
+    this.teamMemberships.removeAllForUser(target.id);
+    this.projectMemberships.removeAllForUser(target.id);
+    this.invitations.deleteByEmail(target.email);
+    this.users.deleteById(target.id);
+
+    this.recordActivity({
+      type: "user.deleted",
+      message: `Deleted user ${target.fullName}.`,
+      userAction: `Deleted user ${target.fullName}.`,
+      metadata: {
+        deletedUserId: target.id,
+        deletedUserEmail: target.email,
+        deletedUserName: target.fullName,
+      },
+    });
+
+    await options.refreshCloudDirectory();
+    return { ok: true as const };
+  }
+
+  async deleteTeam(
+    actorUserId: string,
+    teamId: string,
+    options: {
+      cloudDirectory: UserDetailsDirectory | null;
+      trustedDelete: (targetTeamId: string) => Promise<{ ok: boolean; code?: string }>;
+      refreshCloudDirectory: () => Promise<void>;
+    },
+  ) {
+    const team = this.teams.getById(teamId);
+    if (!team) {
+      throw new Error("Team not found.");
+    }
+    if (isProtectedNeudTeam(team)) {
+      throw new Error("The NEUD team cannot be deleted.");
+    }
+
+    const cloudResult = await options.trustedDelete(teamId);
+    if (!cloudResult.ok) {
+      const code = cloudResult.code ?? "unknown";
+      if (code === "team_contains_protected_users") {
+        throw new Error("This team includes protected users and cannot be deleted.");
+      }
+      if (code === "neud_team_protected" || code === "owner_team_protected") {
+        throw new Error("The NEUD team cannot be deleted.");
+      }
+      if (code === "permission_denied") {
+        throw new Error("You do not have permission to delete this team.");
+      }
+      if (code === "team_not_found") {
+        throw new Error("Team not found.");
+      }
+      throw new Error("Team deletion failed.");
+    }
+
+    const memberIds = this.teamMemberships.listForTeam(teamId).map((entry) => entry.userId);
+    for (const memberId of memberIds) {
+      this.teamMemberships.remove(teamId, memberId);
+      this.projectMemberships.removeAllForUser(memberId);
+      const member = this.users.getById(memberId);
+      if (member) {
+        this.invitations.deleteByEmail(member.email);
+        this.users.deleteById(member.id);
+      }
+    }
+
+    for (const project of this.projects.list()) {
+      if (this.projectTeams.isAssigned(project.id, teamId)) {
+        this.projectTeams.remove(project.id, teamId);
+      }
+    }
+
+    this.teams.deleteById(teamId);
+    this.recordActivity({
+      type: "team.deleted",
+      message: `Deleted team ${team.name}.`,
+      userAction: `Deleted team ${team.name}.`,
+      metadata: {
+        teamId: team.id,
+        teamName: team.name,
+        deletedUserCount: memberIds.length,
+      },
+    });
+
+    await options.refreshCloudDirectory();
+    return { ok: true as const, deletedUserCount: memberIds.length };
+  }
+
+  getUserDetails(
+    actorUserId: string,
+    targetUserId: string,
+    options?: { cloudDirectory?: UserDetailsDirectory | null },
+  ) {
+    if (!this.authorization.canViewUserDetails(actorUserId, targetUserId, options)) {
       throw new Error("You do not have permission to view this user.");
     }
 
-    const user = this.users.getById(targetUserId);
+    const user =
+      this.users.getById(targetUserId) ??
+      this.users.resolveByAuthUserId(targetUserId);
     if (!user) {
+      const cloudDetails = this.buildUserDetailsFromCloudDirectory(
+        targetUserId,
+        options?.cloudDirectory ?? null,
+      );
+      if (cloudDetails) {
+        return cloudDetails;
+      }
       throw new Error("User not found.");
     }
 
@@ -825,6 +996,93 @@ export class AccessManagementService {
         lastSupabaseSyncAt: user.lastSupabaseSyncAt,
       },
       teams,
+      projects,
+    };
+  }
+
+  private buildUserDetailsFromCloudDirectory(
+    targetUserId: string,
+    directory: UserDetailsDirectory | null,
+  ) {
+    if (!directory) {
+      return null;
+    }
+    const directoryUserId = this.authorization.resolveDirectoryUserId(targetUserId);
+    const cloudUser = directory.users.find((entry) => entry.id === directoryUserId);
+    if (!cloudUser) {
+      return null;
+    }
+
+    const teamMemberships = directory.teamMemberships.filter(
+      (membership) => membership.userId === directoryUserId,
+    );
+    const teams = teamMemberships
+      .map((membership) => {
+        const team = directory.teams.find((entry) => entry.id === membership.teamId);
+        if (!team) {
+          return null;
+        }
+        return {
+          id: team.id,
+          name: team.name,
+          role: membership.role,
+          isActive: true,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      .sort((left, right) => left.name.localeCompare(right.name));
+
+    const projects = (directory.projects ?? [])
+      .map((project) => {
+        const direct = directory.projectMembers.find(
+          (entry) => entry.projectId === project.id && entry.userId === directoryUserId,
+        );
+        const assignedTeam = directory.projectTeams.find(
+          (entry) => entry.projectId === project.id,
+        );
+        const team = assignedTeam
+          ? directory.teams.find((entry) => entry.id === assignedTeam.teamId)
+          : null;
+        const teamMembership = assignedTeam
+          ? directory.teamMemberships.find(
+              (entry) =>
+                entry.teamId === assignedTeam.teamId && entry.userId === directoryUserId,
+            )
+          : null;
+        const role = direct?.role ?? teamMembership?.role ?? null;
+        if (!role) {
+          return null;
+        }
+        return {
+          id: project.id,
+          slug: project.slug,
+          name: project.name,
+          teamName: team?.name ?? null,
+          role,
+          accessSource: direct ? "Direct" : `Team: ${team?.name ?? "Team"}`,
+          isActive: true,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    const primaryTeam = teams[0] ?? null;
+
+    return {
+      user: {
+        id: directoryUserId,
+        fullName: cloudUser.fullName || cloudUser.email || directoryUserId,
+        email: cloudUser.email,
+        phone: null,
+        profileTeam: primaryTeam?.name ?? cloudUser.team ?? null,
+        platformRole: (
+          (cloudUser.platformRole ?? "user").toLowerCase() === "owner" ? "owner" : "user"
+        ) satisfies PlatformRole,
+        isActive: cloudUser.accountStatus === "active",
+        supabaseUserId: directoryUserId,
+        supabaseAccountAvailable: true,
+        lastSupabaseSyncAt: null,
+      },
+      teams: teams.slice(1),
       projects,
     };
   }
@@ -904,6 +1162,22 @@ export class AccessManagementService {
       }
     }
     return [...names].sort((left, right) => left.localeCompare(right));
+  }
+
+  syncCloudDirectoryProjectTeams(input: {
+    projectTeams: Array<{ projectId?: string; teamId?: string }>;
+    cloudProjects?: Array<{ id?: string; slug?: string }>;
+    teamMemberships: Array<{ teamId?: string; userId?: string; role?: string }>;
+    actorUserId: string | null;
+  }): CloudAccessLocalSyncDiagnostics {
+    return syncCloudProjectTeamAssignmentsToLocal({
+      projects: this.projects,
+      projectTeams: this.projectTeams,
+      cloudProjectTeams: input.projectTeams,
+      cloudProjects: input.cloudProjects,
+      teamMemberships: input.teamMemberships,
+      actorUserId: input.actorUserId,
+    });
   }
 }
 

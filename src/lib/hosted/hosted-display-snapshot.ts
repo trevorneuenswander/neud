@@ -18,7 +18,11 @@ export type HostedDisplayCardDisplay = {
 
 export function toHostedDisplayStatusInput(
   display: HostedDisplayCardDisplay,
-  options?: { authorized?: boolean; displayExists?: boolean },
+  options?: {
+    authorized?: boolean;
+    displayExists?: boolean;
+    portalSessionPresent?: boolean;
+  },
 ): HostedDisplayStatusInput {
   return {
     displayExists: options?.displayExists ?? true,
@@ -30,6 +34,8 @@ export function toHostedDisplayStatusInput(
     publishError: display.online_publish_error,
     publisherOnline: null,
     authorized: options?.authorized ?? true,
+    portalSessionPresent: options?.portalSessionPresent ?? false,
+    authenticatedViewerAuthorized: options?.authorized ?? null,
   };
 }
 

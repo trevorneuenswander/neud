@@ -199,8 +199,10 @@ export async function readLocalBroadArrowState(repoRoot) {
   const runtimeAvailable = runtimeStatus && typeof runtimeStatus === "object";
   const publishingRuntimeStatus = parseSetting("publishing.runtimeStatus");
   const sharedCloudAuth = parseSetting("sharedCloudAuth.diagnostics");
+  const trustedAccessDiagnostics = parseSetting("trustedAccess.diagnostics");
   const publishingRuntimeAvailable =
     publishingRuntimeStatus && typeof publishingRuntimeStatus === "object";
+  const neudInstanceId = parseSetting("neud.instanceId");
   const publishingRuntime = publishingRuntimeAvailable
     ? {
         initialized: Boolean(publishingRuntimeStatus.initialized),
@@ -214,6 +216,13 @@ export async function readLocalBroadArrowState(repoRoot) {
         lastHeartbeatErrorCode: publishingRuntimeStatus.lastHeartbeatErrorCode ?? null,
         lastStartReason: publishingRuntimeStatus.lastStartReason ?? null,
         lastStopReason: publishingRuntimeStatus.lastStopReason ?? null,
+        heartbeatRpcAttempted: publishingRuntimeStatus.heartbeatRpcAttempted ?? null,
+        heartbeatRpcName: publishingRuntimeStatus.heartbeatRpcName ?? null,
+        heartbeatRpcSucceeded: publishingRuntimeStatus.heartbeatRpcSucceeded ?? null,
+        heartbeatRpcErrorCode: publishingRuntimeStatus.heartbeatRpcErrorCode ?? null,
+        heartbeatRpcSafeMessage: publishingRuntimeStatus.heartbeatRpcSafeMessage ?? null,
+        heartbeatResponseValid: publishingRuntimeStatus.heartbeatResponseValid ?? null,
+        heartbeatVerifiedInCloud: publishingRuntimeStatus.heartbeatVerifiedInCloud ?? null,
         updatedAt: publishingRuntimeStatus.updatedAt ?? null,
         source: "persisted_sqlite",
       }
@@ -347,7 +356,9 @@ export async function readLocalBroadArrowState(repoRoot) {
     lastCloudErrorCode: displaySyncRuntime.lastCloudErrorCode,
     displaySyncRuntime,
     publishingRuntime,
+    neudInstanceId,
     sharedCloudAuth,
+    trustedAccessDiagnostics,
     invalidStateDisplayCount: displayDiagnostics.filter((entry) => entry.invalidStateDetected)
       .length,
     pendingActivityEvents,

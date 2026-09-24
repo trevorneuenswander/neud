@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { PageSection } from "@/components/portal/PageSection";
+import {
+  dashboardConnectionLabel,
+  profileIndicatorLabel,
+} from "@/lib/auth/account-connection-state";
 import type { DesktopAuthStatusResponse } from "@/lib/auth/desktop-auth-status";
 import { localGetAuthStatus, localVerifyOnlineSession } from "@/lib/local/auth-api";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
@@ -97,8 +101,19 @@ export function DashboardAuthenticationStatus() {
         value: authenticationLabel(auth.mode),
       },
       {
-        label: "Connection Status",
-        value: status.connectionStatus === "connected" ? "Connected" : "Offline",
+        label: "Network Status",
+        value: status.networkReachable ? "Connected" : "Offline",
+      },
+      {
+        label: "Cloud Connection",
+        value: dashboardConnectionLabel(
+          status.dashboardConnectionState ??
+            (status.connectionStatus === "connected" ? "connected" : "offline"),
+        ),
+      },
+      {
+        label: "Profile Indicator",
+        value: profileIndicatorLabel(status.profileIndicatorState ?? "sign_in"),
       },
       {
         label: "Last Online Authentication",

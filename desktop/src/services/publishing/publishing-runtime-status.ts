@@ -19,6 +19,14 @@ export type PublishingRuntimeStatus = {
   heartbeatTimerCreatedAt: string | null;
   firstHeartbeatAttemptAt: string | null;
   firstHeartbeatResult: string | null;
+  heartbeatRpcAttempted: boolean;
+  heartbeatRpcName: string | null;
+  heartbeatRpcSucceeded: boolean;
+  heartbeatRpcErrorCode: string | null;
+  heartbeatRpcSafeMessage: string | null;
+  heartbeatResponseValid: boolean;
+  heartbeatVerifiedInCloud: boolean;
+  lastLeaseRpcAt: string | null;
   updatedAt: string;
 };
 
@@ -44,6 +52,14 @@ export function createDefaultPublishingRuntimeStatus(
     heartbeatTimerCreatedAt: null,
     firstHeartbeatAttemptAt: null,
     firstHeartbeatResult: null,
+    heartbeatRpcAttempted: false,
+    heartbeatRpcName: null,
+    heartbeatRpcSucceeded: false,
+    heartbeatRpcErrorCode: null,
+    heartbeatRpcSafeMessage: null,
+    heartbeatResponseValid: false,
+    heartbeatVerifiedInCloud: false,
+    lastLeaseRpcAt: null,
     updatedAt: new Date().toISOString(),
     ...overrides,
   };

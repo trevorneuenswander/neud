@@ -1,3 +1,4 @@
+import type { AuctionDayFilter } from "../bag/auction-day-from-lot";
 import {
   mapSnapshotToLowerTickerFeed,
   type LowerTickerFeedPayload,
@@ -16,13 +17,16 @@ export type BroadArrowBridgeDisplayData = {
 
 export function normalizeBroadArrowDisplayData(
   snapshot: Record<string, unknown> | null | undefined,
+  options?: { streamTickerDayFilter?: AuctionDayFilter },
 ): BroadArrowBridgeDisplayData | null {
   if (!snapshot || typeof snapshot !== "object") {
     return null;
   }
 
   const pylonFeed = mapSnapshotToPylonFeed(snapshot);
-  const tickerFeed = mapSnapshotToLowerTickerFeed(snapshot);
+  const tickerFeed = mapSnapshotToLowerTickerFeed(snapshot, {
+    dayFilter: options?.streamTickerDayFilter ?? "all",
+  });
 
   return {
     pylon: pylonFeed.auctionDisplay,

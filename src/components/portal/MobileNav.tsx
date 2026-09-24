@@ -8,8 +8,9 @@ import {
   useRef,
 } from "react";
 import { usePathname } from "next/navigation";
-import { SidebarNavItem } from "@/components/portal/SidebarNavItem";
+import { SidebarNavigation } from "@/components/portal/SidebarNavigation";
 import type { NavItem } from "@/lib/portal/navigation";
+import type { ProjectListItem } from "@/lib/projects/types";
 
 type MobileNavContextValue = {
   open: () => void;
@@ -19,6 +20,8 @@ const MobileNavContext = createContext<MobileNavContextValue | null>(null);
 
 type MobileNavProviderProps = {
   navItems: NavItem[];
+  initialSidebarProjects?: ProjectListItem[];
+  initialViewerMode?: boolean;
   userPanel: React.ReactNode;
   branding: React.ReactNode;
   children: React.ReactNode;
@@ -26,6 +29,8 @@ type MobileNavProviderProps = {
 
 export function MobileNavProvider({
   navItems,
+  initialSidebarProjects,
+  initialViewerMode,
   userPanel,
   branding,
   children,
@@ -99,15 +104,12 @@ export function MobileNavProvider({
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Main">
-          {navItems.map((item) => (
-            <SidebarNavItem
-              key={item.href}
-              href={item.href}
-              label={item.label}
-              activeMatch={item.activeMatch}
-              onNavigate={closeDrawer}
-            />
-          ))}
+          <SidebarNavigation
+            navItems={navItems}
+            initialSidebarProjects={initialSidebarProjects}
+            initialViewerMode={initialViewerMode}
+            onNavigate={closeDrawer}
+          />
         </nav>
 
         <div className="border-t border-border px-3 py-4">{userPanel}</div>

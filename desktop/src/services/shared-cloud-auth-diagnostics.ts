@@ -10,6 +10,7 @@ export type SharedCloudAuthFailureStage =
   | "session_persist_failed"
   | "client_creation_failed"
   | "set_session_failed"
+  | "project_ref_mismatch"
   | "dependent_service_not_notified"
   | "none";
 
@@ -23,11 +24,24 @@ export type SharedCloudAuthDiagnostics = {
   accessTokenExpired: boolean;
   refreshAttemptedAt: string | null;
   refreshHttpAttempted: boolean;
+  refreshHttpStatus: number | null;
+  refreshSupabaseErrorCode: string | null;
+  refreshSupabaseErrorName: string | null;
+  refreshSafeMessage: string | null;
   refreshResult: "success" | "failure" | "not_attempted" | "still_fresh";
   refreshErrorCode: string | null;
   refreshErrorCategory: string | null;
   refreshTokenRotated: boolean;
+  refreshTokenChangedAfterSuccess: boolean;
+  responseContainedSession: boolean;
+  responseContainedAccessToken: boolean;
+  responseContainedRefreshToken: boolean;
   refreshedSessionPersisted: boolean;
+  configuredSupabaseProjectRef: string | null;
+  storedSessionIssuerProjectRef: string | null;
+  projectRefsMatch: boolean | null;
+  configSource: string | null;
+  publicConfigPresent: boolean;
   authenticatedClientCreated: boolean;
   setSessionSucceeded: boolean;
   authenticatedClientReady: boolean;
@@ -38,6 +52,15 @@ export type SharedCloudAuthDiagnostics = {
   lastRefreshResult: "success" | "failure" | "not_attempted" | "still_fresh";
   lastRefreshErrorCode: string | null;
   firstSharedCloudFailureStage: SharedCloudAuthFailureStage;
+  firstRefreshFailureStage: string | null;
+  runtimeKind: string | null;
+  nodeVersion: string | null;
+  electronVersion: string | null;
+  nativeWebSocketAvailable: boolean | null;
+  configuredWebSocketTransport: string | null;
+  supabaseClientFactory: string | null;
+  realtimeEnabled: boolean | null;
+  authRefreshTransportReady: boolean | null;
   sessionNotificationFired: boolean;
   sessionServiceInstanceIdHash: string | null;
   updatedAt: string;
@@ -56,11 +79,24 @@ export function createDefaultSharedCloudAuthDiagnostics(
     accessTokenExpired: false,
     refreshAttemptedAt: null,
     refreshHttpAttempted: false,
+    refreshHttpStatus: null,
+    refreshSupabaseErrorCode: null,
+    refreshSupabaseErrorName: null,
+    refreshSafeMessage: null,
     refreshResult: "not_attempted",
     refreshErrorCode: null,
     refreshErrorCategory: null,
     refreshTokenRotated: false,
+    refreshTokenChangedAfterSuccess: false,
+    responseContainedSession: false,
+    responseContainedAccessToken: false,
+    responseContainedRefreshToken: false,
     refreshedSessionPersisted: false,
+    configuredSupabaseProjectRef: null,
+    storedSessionIssuerProjectRef: null,
+    projectRefsMatch: null,
+    configSource: null,
+    publicConfigPresent: false,
     authenticatedClientCreated: false,
     setSessionSucceeded: false,
     authenticatedClientReady: false,
@@ -71,6 +107,15 @@ export function createDefaultSharedCloudAuthDiagnostics(
     lastRefreshResult: "not_attempted",
     lastRefreshErrorCode: null,
     firstSharedCloudFailureStage: "none",
+    firstRefreshFailureStage: null,
+    runtimeKind: null,
+    nodeVersion: null,
+    electronVersion: null,
+    nativeWebSocketAvailable: null,
+    configuredWebSocketTransport: null,
+    supabaseClientFactory: null,
+    realtimeEnabled: null,
+    authRefreshTransportReady: null,
     sessionNotificationFired: false,
     sessionServiceInstanceIdHash: null,
     updatedAt: new Date().toISOString(),

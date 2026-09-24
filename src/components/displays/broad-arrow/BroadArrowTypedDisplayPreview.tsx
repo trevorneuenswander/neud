@@ -13,6 +13,8 @@ type BroadArrowTypedDisplayPreviewProps = {
   displayHeight?: number;
   enabled?: boolean;
   label?: string;
+  showSizeLabel?: boolean;
+  graphicOnly?: boolean;
 };
 
 export function BroadArrowTypedDisplayPreview({
@@ -22,6 +24,8 @@ export function BroadArrowTypedDisplayPreview({
   displayHeight = 1080,
   enabled = true,
   label,
+  showSizeLabel = true,
+  graphicOnly = false,
 }: BroadArrowTypedDisplayPreviewProps) {
   const { data } = useBroadArrowDisplayData(projectId);
   const Renderer = resolveBroadArrowDisplayRenderer(rendererKey);
@@ -35,6 +39,8 @@ export function BroadArrowTypedDisplayPreview({
       displayWidth={displayWidth}
       displayHeight={displayHeight}
       label={label}
+      showSizeLabel={showSizeLabel}
+      graphicOnly={graphicOnly}
     >
       <Renderer data={data} enabled={enabled} />
     </BroadArrowDisplayCanvas>

@@ -14,6 +14,13 @@
   const params = new URLSearchParams(global.location.search);
   const DEMO_MODE = params.get("demo") === "1";
   const LAYOUT_GUIDES = params.get("layoutGuides") === "1";
+  const PINNED_PREVIEW = params.get("pinnedPreview") === "1";
+  const PREVIEW_SAMPLE = Math.min(
+    2,
+    Math.max(1, +(params.get("previewSample") || global.devicePixelRatio || 1) || 1),
+  );
+  let pinnedPreviewViewportLayoutW = 0;
+  let pinnedPreviewViewportLayoutH = 0;
   const displayConfig = global.__NEUD_DISPLAY_CONFIG__ || {};
   const POLL_MS = Math.max(
     250,
@@ -70,10 +77,65 @@
     return rect.width || el.scrollWidth || 1e-6;
   }
 
+  function syncPinnedPreviewViewportMeta() {
+    if (!PINNED_PREVIEW) {
+      return;
+    }
+    const liveSample = Math.min(
+      2,
+      Math.max(
+        1,
+        +(global.devicePixelRatio || PREVIEW_SAMPLE || 1) || 1,
+      ),
+    );
+    const layoutW = Math.max(1, Math.round(CANVAS_W * liveSample));
+    const layoutH = Math.max(1, Math.round(CANVAS_H * liveSample));
+    if (
+      pinnedPreviewViewportLayoutW === layoutW &&
+      pinnedPreviewViewportLayoutH === layoutH
+    ) {
+      return;
+    }
+    pinnedPreviewViewportLayoutW = layoutW;
+    pinnedPreviewViewportLayoutH = layoutH;
+    let meta = global.document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = global.document.createElement("meta");
+      meta.setAttribute("name", "viewport");
+      global.document.head.appendChild(meta);
+    }
+    meta.setAttribute(
+      "content",
+      `width=${layoutW}, height=${layoutH}, initial-scale=1`,
+    );
+  }
+
   function scaleStage(stageEl) {
-    const scale = Math.min(global.innerWidth / CANVAS_W, global.innerHeight / CANVAS_H);
-    const offsetX = (global.innerWidth - CANVAS_W * scale) / 2;
-    const offsetY = (global.innerHeight - CANVAS_H * scale) / 2;
+    if (PINNED_PREVIEW) {
+      syncPinnedPreviewViewportMeta();
+    }
+
+    const viewportW = global.innerWidth || CANVAS_W;
+    const viewportH = global.innerHeight || CANVAS_H;
+    const scale = Math.min(viewportW / CANVAS_W, viewportH / CANVAS_H);
+    const offsetX = (viewportW - CANVAS_W * scale) / 2;
+    const offsetY = (viewportH - CANVAS_H * scale) / 2;
+
+    if (PINNED_PREVIEW) {
+      stageEl.style.transformOrigin = "top left";
+      stageEl.style.width = `${CANVAS_W}px`;
+      stageEl.style.height = `${CANVAS_H}px`;
+      stageEl.style.zoom = "";
+      stageEl.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+      global.__NEUD_PINNED_PREVIEW_SCALE__ = scale;
+      return;
+    }
+
+    stageEl.style.zoom = "";
+    stageEl.style.width = "";
+    stageEl.style.height = "";
+    stageEl.style.left = "";
+    stageEl.style.top = "";
     stageEl.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
   }
 
@@ -167,10 +229,29 @@
         t0 = now;
         return;
       }
-      inner.style.transform = `translate3d(${-sAt(elapsed)}px,0,0)`;
+      let offsetX = -sAt(elapsed);
+      if (PINNED_PREVIEW) {
+        const dpr = global.devicePixelRatio || 1;
+        offsetX = Math.round(offsetX * dpr) / dpr;
+      }
+      inner.style.transform = `translate3d(${offsetX}px,0,0)`;
     }
 
     global.requestAnimationFrame(tick);
+  }
+
+  function restartMarqueesInRoot(root) {
+    if (!root || typeof root.querySelectorAll !== "function") {
+      return;
+    }
+    root.querySelectorAll(".title-scroll").forEach((container) => {
+      cancelLoop(container);
+      const inner = container.querySelector(".inner");
+      if (inner) {
+        inner.style.transform = "translate3d(0,0,0)";
+      }
+      global.requestAnimationFrame(() => startMarquee(container));
+    });
   }
 
   function transitionText(el, newText) {
@@ -281,10 +362,17 @@
 
     if (global.NEUDDisplayConnection && ENDPOINT) {
       let poller;
+      const displayInfo =
+        displayConfig.displayInfo && typeof displayConfig.displayInfo === "object"
+          ? displayConfig.displayInfo
+          : {};
       poller = global.NEUDDisplayConnection.createDisplayDataPoller({
         displayId,
         dataUrl: ENDPOINT,
         pollMs: POLL_MS,
+        projectId: displayInfo.projectId,
+        localApiBase: displayConfig.localApiBase,
+        displayBridgeEventsUrl: displayConfig.displayBridgeEventsUrl,
         onPayload: (json, revision) => onPayload(json, revision),
         onDisconnected: () => {
           poller.stopPolling();
@@ -393,6 +481,8 @@
     PHOTO_TRANSITION_MS,
     DEMO_MODE,
     LAYOUT_GUIDES,
+    PINNED_PREVIEW,
+    PREVIEW_SAMPLE,
     reducedMotion,
     escapeHTML,
     hasBidValue,
@@ -400,6 +490,7 @@
     formatLotLabel,
     cancelLoop,
     scaleStage,
+    restartMarqueesInRoot,
     startMarquee,
     transitionText,
     transitionTitle,

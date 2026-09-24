@@ -247,10 +247,25 @@ export type UserDetailsApiResponse = {
   };
   teams: UserDetailsProfile["teams"];
   projects: UserDetailsProfile["projects"];
+  canDeleteUser?: boolean;
 };
 
 export async function localGetUserDetails(userId: string) {
   return localFetch<UserDetailsApiResponse>(
     `/api/access/users/${encodeURIComponent(userId)}`,
+  );
+}
+
+export async function localDeletePlatformUser(userId: string) {
+  return localFetch<{ ok: boolean }>(
+    `/api/access/users/${encodeURIComponent(userId)}/delete`,
+    { method: "POST" },
+  );
+}
+
+export async function localDeletePlatformTeam(teamId: string) {
+  return localFetch<{ ok: boolean; deletedUserCount?: number }>(
+    `/api/access/teams/${encodeURIComponent(teamId)}/delete`,
+    { method: "POST" },
   );
 }

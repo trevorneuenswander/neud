@@ -1,17 +1,26 @@
 import { SidebarBranding } from "@/components/portal/SidebarBranding";
-import { SidebarNavItem } from "@/components/portal/SidebarNavItem";
+import { SidebarNavigation } from "@/components/portal/SidebarNavigation";
 import { SidebarDownloadLinkSection } from "@/components/portal/SidebarDownloadLinkSection";
 import { SidebarUserPanel } from "@/components/portal/SidebarUserPanel";
 import type { NavItem } from "@/lib/portal/navigation";
+import type { ProjectListItem } from "@/lib/projects/types";
 import type { Profile } from "@/types/database";
 
 type SidebarProps = {
   navItems: NavItem[];
   profile: Profile;
   profileHref?: string;
+  initialSidebarProjects?: ProjectListItem[];
+  initialViewerMode?: boolean;
 };
 
-export function Sidebar({ navItems, profile, profileHref }: SidebarProps) {
+export function Sidebar({
+  navItems,
+  profile,
+  profileHref,
+  initialSidebarProjects,
+  initialViewerMode,
+}: SidebarProps) {
   const noDragStyle = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 
   return (
@@ -27,14 +36,11 @@ export function Sidebar({ navItems, profile, profileHref }: SidebarProps) {
         className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3 py-2 motion-reduce:overflow-y-visible"
         aria-label="Main"
       >
-        {navItems.map((item) => (
-          <SidebarNavItem
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            activeMatch={item.activeMatch}
-          />
-        ))}
+        <SidebarNavigation
+          navItems={navItems}
+          initialSidebarProjects={initialSidebarProjects}
+          initialViewerMode={initialViewerMode}
+        />
       </nav>
 
       <SidebarDownloadLinkSection />

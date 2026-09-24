@@ -132,4 +132,8 @@ export class ProjectMembershipsRepository {
   removeAllForProject(projectId: string): void {
     this.db.prepare("DELETE FROM project_memberships WHERE project_id = ?").run(projectId);
   }
+
+  removeAllForUser(userId: string): void {
+    this.db.prepare("DELETE FROM project_memberships WHERE user_id = ?").run(userId);
+  }
 }

@@ -25,6 +25,21 @@
     );
   }
 
+  function overlayStreamTickerFeedNext(resolved, payload) {
+    var feed = isRecord(payload.streamTickerFeed) ? payload.streamTickerFeed : null;
+    if (feed && Array.isArray(feed.next)) {
+      return Object.assign({}, resolved, { next: feed.next });
+    }
+
+    var broadArrow = isRecord(payload.broadArrowDisplay) ? payload.broadArrowDisplay : null;
+    var ticker = broadArrow && isRecord(broadArrow.ticker) ? broadArrow.ticker : null;
+    if (ticker && Array.isArray(ticker.next)) {
+      return Object.assign({}, resolved, { next: ticker.next });
+    }
+
+    return resolved;
+  }
+
   function resolveDisplayRuntimeSnapshot(payload) {
     if (!isRecord(payload)) {
       return null;
@@ -68,11 +83,11 @@
       if (isRecord(payload.snapshot) && isRecord(payload.snapshot.current)) {
         merged.current = payload.snapshot.current;
       }
-      return merged;
+      return overlayStreamTickerFeedNext(merged, payload);
     }
 
     if (hasCanonicalDisplayFields(candidate)) {
-      return candidate;
+      return overlayStreamTickerFeedNext(candidate, payload);
     }
 
     return null;

@@ -54,6 +54,7 @@ const migrationFiles = [
   "049_display_enabled_activity_events.sql",
   "050_activity_sync_allowlist_extensions.sql",
   "051_project_marked_activity_events.sql",
+  "053_user_team_deleted_activity_events.sql",
 ];
 
 async function main() {

@@ -51,6 +51,33 @@ export function bagLiveStateToPreviewData(state: BagLiveState | null): BagSnapsh
   };
 }
 
+function previewTimestamp(data: BagSnapshotData | null | undefined): number {
+  if (!data?.updatedAt) {
+    return 0;
+  }
+  const parsed = Date.parse(data.updatedAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Prefer the newest scraper canonical snapshot between live-state and engine snapshot. */
+export function pickAuthoritativeScraperPreview(
+  liveStatePreview: BagSnapshotData | null,
+  engineSnapshotPreview: BagSnapshotData | null,
+): BagSnapshotData | null {
+  if (!liveStatePreview && !engineSnapshotPreview) {
+    return null;
+  }
+  if (!liveStatePreview) {
+    return engineSnapshotPreview;
+  }
+  if (!engineSnapshotPreview) {
+    return liveStatePreview;
+  }
+  return previewTimestamp(engineSnapshotPreview) >= previewTimestamp(liveStatePreview)
+    ? engineSnapshotPreview
+    : liveStatePreview;
+}
+
 export function pickLegacyPreviewFields(data: BagSnapshotData): BagSnapshotData {
   return {
     prev: data.prev ?? null,

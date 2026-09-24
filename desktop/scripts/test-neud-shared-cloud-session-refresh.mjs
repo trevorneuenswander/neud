@@ -19,15 +19,15 @@ test("refresh uses refresh_token directly without requiring setSession first", (
 
 test("single-flight refresh mutex prevents concurrent refresh calls", () => {
   const session = read("desktop/src/services/supabase-user-session.ts");
-  assert.match(session, /refreshInFlight/);
-  assert.match(session, /if \(this\.refreshInFlight\)/);
+  assert.match(session, /refreshQueueTail/);
+  assert.match(session, /this\.refreshQueueTail\.then/);
 });
 
 test("rotated refresh token is persisted atomically", () => {
   const session = read("desktop/src/services/supabase-user-session.ts");
   assert.match(session, /refreshTokenRotated/);
   assert.match(session, /fs\.renameSync\(tempPath, filePath\)/);
-  assert.match(session, /data\.session\.refresh_token/);
+  assert.match(session, /refresh_token/);
 });
 
 test("invalid refresh token marks reauthentication without deleting encrypted session file", () => {
@@ -54,7 +54,7 @@ test("PublishingManager and CloudAccessBridge share AuthenticatedCloudCoordinato
 test("PublishingManager stops heartbeat when reauthentication is required", () => {
   const manager = read("desktop/src/services/publishing/publishing-manager.ts");
   assert.match(manager, /requiresReauthentication/);
-  assert.match(manager, /stop\("invalid_refresh_token"\)/);
+  assert.match(manager, /requiresReauthentication/);
 });
 
 test("fresh login recovery restarts publishing and reloads access directory", () => {

@@ -26,6 +26,15 @@ export type ScrapeRunMetadata = {
   auctionTableFound?: boolean | null;
   loginRouteRemaining?: boolean | null;
   auctionDisplayFound?: boolean | null;
+  liveFeedMode?: string | null;
+  liveFeedHealth?: string | null;
+  lastLivePatchAt?: string | null;
+  lastBackgroundMergeAt?: string | null;
+  catalogMatchFound?: boolean | null;
+  photosAvailableForCurrentLot?: boolean | null;
+  currentPhotoCount?: number | null;
+  allStateViewsAgree?: boolean | null;
+  firstStateDivergenceStage?: string | null;
 };
 
 export type EngineDisplayState = "Running" | "Idle" | "Stopped" | "Stopping" | "Error";

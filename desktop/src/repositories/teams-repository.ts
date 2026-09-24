@@ -156,4 +156,8 @@ export class TeamsRepository {
       .get(teamId) as { count: number };
     return row.count;
   }
+
+  deleteById(teamId: string): void {
+    this.db.prepare("DELETE FROM teams WHERE id = ?").run(teamId);
+  }
 }

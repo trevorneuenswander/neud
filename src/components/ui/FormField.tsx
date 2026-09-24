@@ -2,7 +2,7 @@ type FormFieldProps = {
   id: string;
   label: string;
   name: string;
-  type?: "email" | "password" | "text";
+  type?: "email" | "password" | "text" | "tel";
   autoComplete?: string;
   required?: boolean;
   disabled?: boolean;

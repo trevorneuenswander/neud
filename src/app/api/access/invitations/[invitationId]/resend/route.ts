@@ -1,4 +1,3 @@
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ACCESS_MANAGEMENT_DIRECTORY_RPC_NAME,
   ACCESS_MANAGEMENT_DIRECTORY_RPC_PARAMS,
@@ -9,7 +8,9 @@ import {
   hashInvitationToken,
   invitationExpiresAt,
 } from "@/lib/access-management/invitation-server";
+import { sendAuthAdminInviteEmail } from "@/lib/access-management/send-auth-admin-invite";
 import { verifyAuthenticatedAccessRequest } from "@/lib/access-management/verify-access-request";
+import { getSiteOrigin } from "@/lib/auth/site-origin";
 
 type RouteContext = {
   params: Promise<{ invitationId: string }>;
@@ -55,10 +56,26 @@ export async function POST(_request: Request, context: RouteContext) {
       : [];
   const invitation = invitations.find((entry) => entry.id === invitationId);
   if (invitation?.email) {
-    const admin = createAdminClient();
-    await admin.auth.admin.inviteUserByEmail(invitation.email, {
-      data: { invitation_token: rawToken },
+    const requestSiteOrigin = await getSiteOrigin();
+    const emailResult = await sendAuthAdminInviteEmail({
+      email: invitation.email,
+      invitationToken: rawToken,
+      invitationId,
+      callerSupabase: verified.supabase,
+      requestSiteOrigin,
+      revokeInvitationOnFailure: false,
     });
+    if (!emailResult.ok) {
+      return Response.json(
+        {
+          ok: false,
+          code: emailResult.responseCode,
+          message: emailResult.safeMessage,
+          ...emailResult.invitationEmailDiagnostics,
+        },
+        { status: 400 },
+      );
+    }
   }
 
   return Response.json({ ok: true });

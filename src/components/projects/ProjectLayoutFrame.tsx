@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { PinnedDisplayViewerArea } from "@/components/displays/PinnedDisplayViewerArea";
 import { ProjectTopMenuBar } from "@/components/projects/ProjectTopMenuBar";
 import type { ProjectDataType } from "@/lib/projects/constants";
 import type { DisplayDataSource } from "@/lib/displays/display-data-source";
@@ -27,7 +28,8 @@ export function ProjectLayoutFrame({
   children,
 }: ProjectLayoutFrameProps) {
   return (
-    <div className="project-layout-root flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="project-layout-root flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PinnedDisplayViewerArea />
       <ProjectTopMenuBar
         slug={slug}
         projectType={projectType}

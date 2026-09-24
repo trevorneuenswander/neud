@@ -14,6 +14,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import type { AccessManagementActions } from "@/lib/access-management/actions";
 import type { AccessManagementDirectory, CloudTeamRole } from "@/lib/access-management/types";
 import { accessManagementErrorMessage } from "@/lib/access-management/errors";
+import { AccessTeamDeleteButton } from "@/components/access-management/AccessTeamDeleteButton";
+import { ACCESS_TABLE_ACTION_BUTTON_CLASS } from "@/lib/access-management/table-action-buttons";
 import {
   ASSIGNABLE_TEAM_ROLES,
   canManageTeam,
@@ -31,6 +33,7 @@ type TeamsPanelProps = {
   isOnline?: boolean;
   actions?: Pick<
     AccessManagementActions,
+    | "refresh"
     | "createTeam"
     | "updateTeam"
     | "archiveTeam"
@@ -246,10 +249,12 @@ export function TeamsPanel({
                   <StatusBadge status={team.isActive ? "approved" : "rejected"} />
                 </DataTableCell>
                 <DataTableCell>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-nowrap items-center justify-end gap-2">
                     <Button
                       type="button"
+                      size="sm"
                       variant="secondary"
+                      className={ACCESS_TABLE_ACTION_BUTTON_CLASS}
                       disabled={busy}
                       onClick={() => toggleExpanded(team.id)}
                     >
@@ -258,7 +263,9 @@ export function TeamsPanel({
                     {canManageThisTeam ? (
                       <Button
                         type="button"
+                        size="sm"
                         variant="secondary"
+                        className={ACCESS_TABLE_ACTION_BUTTON_CLASS}
                         disabled={busy}
                         onClick={() => {
                           setSelectedTeamId(team.id);
@@ -267,6 +274,37 @@ export function TeamsPanel({
                       >
                         Manage
                       </Button>
+                    ) : null}
+                    {currentUserId && actions?.refresh ? (
+                      <AccessTeamDeleteButton
+                        actorUserId={currentUserId}
+                        teamId={team.id}
+                        teamName={team.name}
+                        directory={{
+                          users: users.map((user) => ({
+                            id: user.id,
+                            email: user.email,
+                            platformRole: user.platformRole,
+                            fullName: user.fullName,
+                          })),
+                          teams: teams.map((entry) => ({
+                            id: entry.id,
+                            name: entry.name,
+                            slug: entry.slug,
+                          })),
+                          teamMemberships: teamMemberships.map((entry) => ({
+                            teamId: entry.teamId,
+                            userId: entry.userId,
+                            role: entry.role,
+                          })),
+                          projectMembers: directory.projectMembers,
+                          projectTeams: directory.projectTeams,
+                        }}
+                        disabled={!isOnline || busy}
+                        onDeleted={async () => {
+                          await actions.refresh!();
+                        }}
+                      />
                     ) : null}
                   </div>
                 </DataTableCell>

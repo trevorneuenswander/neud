@@ -294,6 +294,9 @@ export function buildDisplayRuntimeScript(
   let runtimeStarted = false;
   let latestSnapshot = null;
   let latestRevision = null;
+  let fetchInFlight = false;
+  let pendingFetch = false;
+  const RECOVERY_POLL_MS = 60000;
 
   function readPollIntervalMs() {
     try {
@@ -425,9 +428,25 @@ export function buildDisplayRuntimeScript(
     deliverLatestSnapshot();
     if (!runtimeStarted) {
       runtimeStarted = true;
-      void publishLatest();
-      pollTimer = window.setInterval(publishLatest, pollIntervalMs);
+      schedulePublishLatest(false);
+      pollTimer = window.setInterval(function () {
+        if (!fetchInFlight) {
+          void publishLatest();
+        }
+      }, RECOVERY_POLL_MS);
     }
+  }
+
+  function schedulePublishLatest(fromEvent) {
+    if (window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {
+      stopPolling();
+      return;
+    }
+    if (fetchInFlight) {
+      pendingFetch = true;
+      return;
+    }
+    void publishLatest();
   }
 
   async function publishLatest() {
@@ -436,6 +455,7 @@ export function buildDisplayRuntimeScript(
       return;
     }
 
+    fetchInFlight = true;
     activeRequest?.abort();
     activeRequest = new AbortController();
     try {
@@ -489,7 +509,12 @@ export function buildDisplayRuntimeScript(
         return;
       }
     } finally {
+      fetchInFlight = false;
       activeRequest = null;
+      if (pendingFetch) {
+        pendingFetch = false;
+        void publishLatest();
+      }
     }
   }
 
@@ -507,8 +532,35 @@ export function buildDisplayRuntimeScript(
     ) {
       debugLog("[NEUD Display] display ready handshake received");
       markBridgeReady();
+      return;
+    }
+    if (
+      msg &&
+      typeof msg === "object" &&
+      msg.type === "neud-display-data-changed" &&
+      (!msg.displayId || msg.displayId === displayInfo.displayId)
+    ) {
+      void publishLatest();
     }
   });
+
+  try {
+    const dataChannel = new BroadcastChannel("neud-display-connection");
+    dataChannel.onmessage = function (event) {
+      const msg = event.data;
+      if (
+        msg &&
+        typeof msg === "object" &&
+        msg.type === "neud-display-data-changed" &&
+        (!msg.displayId || msg.displayId === displayInfo.displayId)
+      ) {
+        void publishLatest();
+      }
+    };
+    window.addEventListener("beforeunload", function () {
+      dataChannel.close();
+    });
+  } catch (_) {}
   window.addEventListener("beforeunload", stopPolling);
 
   if (document.readyState === "loading") {
@@ -628,12 +680,18 @@ export function buildDisplayConfigScript(input: {
   debug?: boolean;
   pollIntervalMs?: number;
 }): string {
+  const localApiBase = (input.localApiBase ?? "http://127.0.0.1:8070").replace(/\/$/, "");
+  const projectId =
+    typeof input.displayInfo?.projectId === "string" ? input.displayInfo.projectId : null;
   const config: Record<string, unknown> = {
     dataUrl: input.dataUrl,
     displayInfo: input.displayInfo,
-    localApiBase: input.localApiBase ?? "http://127.0.0.1:8070",
+    localApiBase,
     debug: input.debug === true,
   };
+  if (projectId) {
+    config.displayBridgeEventsUrl = `${localApiBase}/api/projects/${encodeURIComponent(projectId)}/display-bridge/events`;
+  }
   if (typeof input.pollIntervalMs === "number" && input.pollIntervalMs >= 250) {
     config.pollIntervalMs = input.pollIntervalMs;
   }

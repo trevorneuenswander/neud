@@ -51,7 +51,10 @@ function visibilityBadgeClassName(visibility: "private" | "public"): string {
 }
 
 function toStatusInput(display: HostedDisplayCardDisplay): HostedDisplayStatusInput {
-  return toHostedDisplayStatusInput(display);
+  return toHostedDisplayStatusInput(display, {
+    authorized: true,
+    portalSessionPresent: true,
+  });
 }
 
 export function HostedDisplayCard({

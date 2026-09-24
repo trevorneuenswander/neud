@@ -11,18 +11,17 @@ function readSrc(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-test("display card stops polling when data connection is disabled", () => {
+test("display card avoids steady-state management polling", () => {
   const card = readSrc("src/components/displays/DisplayCard.tsx");
-  assert.match(card, /if \(!shouldUseLocalDataClient\(\) \|\| !enabled\)/);
-  assert.match(card, /\[display\.dataPath, enabled, hasLivePayload, hasLiveSnapshot\]/);
-  assert.match(card, /stopPolling\(\)/);
-  assert.match(card, /response\.status === 409/);
+  assert.doesNotMatch(card, /pollDataEndpoint/);
+  assert.doesNotMatch(card, /setInterval\(\(\) => \{/);
+  assert.match(card, /notifyDisplayConnectionChanged/);
 });
 
 test("display card preview iframe only mounts when enabled", () => {
   const card = readSrc("src/components/displays/DisplayCard.tsx");
   const preview = readSrc("src/components/displays/DisplayPreviewPanel.tsx");
-  assert.match(preview, /if \(!enabled\)/);
+  assert.match(preview, /if \(!enabled && !keepPreviewWhenDisabled\)/);
   assert.match(preview, /Display data is disconnected/);
   assert.match(card, /enabled=\{enabled\}/);
 });
@@ -59,10 +58,10 @@ test("local API skips viewer heartbeat for disabled platform displays", () => {
   assert.match(api, /sendDisabledPlatformDisplayData/);
   assert.match(api, /sendJsonNoStore\(response, 409/);
   assert.match(api, /dataConnected: false/);
-  assert.match(api, /if \(!this\.data\.isPylonDisplayEnabled\(\)\)/);
-  assert.match(api, /if \(!this\.data\.isLowerTickerDisplayEnabled\(\)\)/);
-  assert.match(api, /if \(!this\.data\.isNewBidDisplayEnabled\(\)\)/);
-  assert.match(api, /if \(!this\.data\.isNewTickerDisplayEnabled\(\)\)/);
+  assert.match(api, /isPylonDisplayEnabled\(\)/);
+  assert.match(api, /isLowerTickerDisplayEnabled\(\)/);
+  assert.match(api, /isNewBidDisplayEnabled\(\)/);
+  assert.match(api, /isNewTickerDisplayEnabled\(\)/);
 
   const pylonBlock = api.slice(
     api.indexOf('url.pathname === "/api/displays/pylon/data"'),
@@ -70,7 +69,7 @@ test("local API skips viewer heartbeat for disabled platform displays", () => {
   );
   assert.match(
     pylonBlock,
-    /if \(!this\.data\.isPylonDisplayEnabled\(\)\) \{\s*this\.logDisplayDataRequest\(request, "pylon", false\);\s*return this\.sendDisabledPlatformDisplayData/,
+    /isPylonDisplayEnabled\(\)[\s\S]{0,120}sendDisabledPlatformDisplayData/,
   );
   assert.match(pylonBlock, /this\.touchDisplayViewer\(request, "platform", "pylon"\)/);
 });
@@ -100,8 +99,8 @@ test("display card closes preview and broadcasts on disconnect", () => {
   assert.match(card, /closePreview/);
   assert.match(card, /enabled=\{enabled\}/);
   assert.match(card, /setBridgeReady\(false\)/);
-  assert.match(card, /AbortController/);
-  assert.match(card, /response\.status === 409/);
+  assert.doesNotMatch(card, /pollDataEndpoint/);
+  assert.match(card, /notifyDisplayConnectionChanged/);
 });
 
 test("display enable toggle does not stop scraper engine", () => {
@@ -124,6 +123,6 @@ test("custom developer display data route checks enabled before heartbeat", () =
     customBlock,
     /if \(!viewerState\.enabled && !previewMode\) \{\s*return sendJsonNoStore/,
   );
-  assert.match(customBlock, /enabled: viewerState\.enabled/);
-  assert.match(customBlock, /dataConnected: viewerState\.enabled/);
+  assert.match(customBlock, /enabled: previewMode \? true : viewerState\.enabled/);
+  assert.match(customBlock, /dataConnected = previewMode \|\| viewerState\.enabled/);
 });

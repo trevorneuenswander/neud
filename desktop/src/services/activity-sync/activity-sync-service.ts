@@ -60,6 +60,7 @@ export class ActivitySyncService {
   private ensureHostedProjectForSync:
     | ((projectId: string) => Promise<EnsureHostedProjectForSyncResult>)
     | null = null;
+  private serviceStarted = false;
 
   constructor(
     private readonly cloud: AuthenticatedCloudCoordinator,
@@ -88,6 +89,10 @@ export class ActivitySyncService {
   }
 
   start(): void {
+    if (this.serviceStarted) {
+      return;
+    }
+    this.serviceStarted = true;
     this.logActivitySync("service.start");
     void this.refreshOnlineState();
     this.periodicTimer = setInterval(() => {
@@ -115,6 +120,7 @@ export class ActivitySyncService {
   }
 
   stop(): void {
+    this.serviceStarted = false;
     this.logActivitySync("service.stop");
     const channel = this.realtimeChannel;
     this.realtimeChannel = null;
@@ -313,7 +319,14 @@ export class ActivitySyncService {
   }
 
   async syncNow(reason = "manual"): Promise<void> {
-    if (this.syncInProgress) return;
+    if (this.syncInProgress) {
+      if (reason === "startup" || reason === "startup-restore" || reason === "login") {
+        return;
+      }
+    }
+    if (this.syncInProgress) {
+      return;
+    }
 
     if (!this.cloud.isCloudConfigured()) {
       this.logActivitySync(`sync.skip reason=${reason} stage=cloud_config_missing`);

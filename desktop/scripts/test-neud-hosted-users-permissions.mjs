@@ -26,9 +26,11 @@ test("shared access panels support search and scoped directories", () => {
   const usersPanel = read("src/components/access-management/UsersPanel.tsx");
   const projectPanel = read("src/components/access-management/ProjectAccessPanel.tsx");
   assert.match(usersPanel, /Search users/);
-  assert.match(projectPanel, /Project access/);
+  assert.match(projectPanel, /User Access/);
   assert.match(projectPanel, /Access Source/);
-  assert.match(projectPanel, /Assigned teams/);
+  assert.match(projectPanel, /Assigned Teams/);
+  assert.match(projectPanel, /ACCESS_TABLE_ACTION_BUTTON_CLASS/);
+  assert.match(read("src/lib/access-management/table-action-buttons.ts"), /ACCESS_ACTIONS_COLUMN_WIDTH/);
 });
 
 test("cloud access directory RPC remains source for hosted users page", () => {

@@ -60,12 +60,38 @@ type OnlineViewerActivityRecorder = (input: {
   metadata?: Record<string, unknown>;
 }) => void;
 
+const STARTUP_COALESCE_SYNC_REASONS = new Set([
+  "startup",
+  "startup-restore",
+  "deferred",
+  "follow-up",
+  "reconcile",
+  "auth-recovered",
+]);
+
+function isDisplaySyncDebugEnabled(): boolean {
+  return (
+    process.env.NEUD_DEBUG_DISPLAY_SYNC === "1" ||
+    process.env.NEUD_DEBUG === "1"
+  );
+}
+
+function isDisplaySyncStartupTraceEnabled(): boolean {
+  return (
+    process.env.NEUD_DEBUG_DISPLAY_SYNC === "1" ||
+    process.env.NEUD_DEBUG_STARTUP === "1"
+  );
+}
+
 export class DisplaySyncService {
   private initialized = false;
   private running = false;
   private online = false;
   private syncInProgress = false;
   private syncFollowUpRequested = false;
+  private syncFollowUpHadWork = false;
+  private activeSyncReason: string | null = null;
+  private syncPassPendingBaseline = 0;
   private syncRequestedWhileUnavailable = false;
   private lastSyncError: string | null = null;
   private lastCloudErrorCode: string | null = null;
@@ -135,17 +161,24 @@ export class DisplaySyncService {
     authenticatedSessionAvailable?: boolean;
     lastUnavailableReason?: string | null;
   }): void {
+    const wasAuthenticated = this.cloud.isAuthenticatedCloudSessionAvailable();
     if (input.publicCloudConfigAvailable !== undefined) {
       this.publicCloudConfigAvailable = input.publicCloudConfigAvailable;
     }
     if (input.lastUnavailableReason !== undefined) {
       this.lastUnavailableReason = input.lastUnavailableReason;
     }
+    const nowAuthenticated =
+      input.authenticatedSessionAvailable ??
+      this.cloud.isAuthenticatedCloudSessionAvailable();
     this.persistRuntimeStatus({
-      authenticatedSessionAvailable:
-        input.authenticatedSessionAvailable ??
-        this.cloud.isAuthenticatedCloudSessionAvailable(),
+      authenticatedSessionAvailable: nowAuthenticated,
     });
+    if (!wasAuthenticated && nowAuthenticated && this.running) {
+      this.lastUnavailableReason = null;
+      this.replayDeferredSyncIfNeeded();
+      void this.syncNow("auth-recovered");
+    }
   }
 
   private resolveSyncUnavailableReason(): DisplaySyncUnavailableReason {
@@ -234,6 +267,18 @@ export class DisplaySyncService {
   }
 
   requestSync(reason = "manual"): void {
+    if (this.syncInProgress) {
+      if (
+        this.activeSyncReason === "startup" &&
+        reason === "mutation" &&
+        this.getPendingQueueCount() <= this.syncPassPendingBaseline
+      ) {
+        this.logFollowUpDecision("requestSync", reason, "coalesced_mutation_baseline");
+        return;
+      }
+      this.recordFollowUpTrigger("requestSync", reason);
+      return;
+    }
     if (!this.running) {
       this.syncRequestedWhileUnavailable = true;
       if (process.env.NODE_ENV !== "production") {
@@ -325,7 +370,26 @@ export class DisplaySyncService {
       ...overrides,
       updatedAt: new Date().toISOString(),
     };
+    const previous = this.settings.get<DisplaySyncRuntimeStatus | null>(
+      DISPLAY_SYNC_RUNTIME_STATUS_KEY,
+      null,
+    );
+    if (
+      previous &&
+      this.displaySyncRuntimeStatusEquivalent(previous, status)
+    ) {
+      return;
+    }
     this.settings.set(DISPLAY_SYNC_RUNTIME_STATUS_KEY, status);
+  }
+
+  private displaySyncRuntimeStatusEquivalent(
+    previous: DisplaySyncRuntimeStatus,
+    next: DisplaySyncRuntimeStatus,
+  ): boolean {
+    const previousCopy = { ...previous, updatedAt: null };
+    const nextCopy = { ...next, updatedAt: null };
+    return JSON.stringify(previousCopy) === JSON.stringify(nextCopy);
   }
 
   subscribe(listener: DisplaySyncListener): () => void {
@@ -496,7 +560,15 @@ export class DisplaySyncService {
       return;
     }
     if (this.syncInProgress) {
-      this.syncFollowUpRequested = true;
+      if (
+        STARTUP_COALESCE_SYNC_REASONS.has(reason) &&
+        this.activeSyncReason &&
+        STARTUP_COALESCE_SYNC_REASONS.has(this.activeSyncReason)
+      ) {
+        this.logFollowUpDecision("syncNow", reason, "coalesced_startup_overlap");
+        return;
+      }
+      this.recordFollowUpTrigger("syncNow", reason);
       this.persistRuntimeStatus();
       return;
     }
@@ -550,6 +622,11 @@ export class DisplaySyncService {
     }
 
     this.syncInProgress = true;
+    this.activeSyncReason = reason;
+    this.syncFollowUpHadWork = false;
+    if (reason === "startup") {
+      this.syncPassPendingBaseline = this.getPendingQueueCount();
+    }
     this.lastSyncReason = reason;
     this.recordSyncAttempt("running");
     this.persistRuntimeStatus();
@@ -615,7 +692,9 @@ export class DisplaySyncService {
             this.queue.countByState("pending") + this.queue.countByState("failed"),
         });
       }
-      console.debug(`[DisplaySync] completed reason=${reason} result=${syncResult}`);
+      if (isDisplaySyncDebugEnabled()) {
+        console.debug(`[DisplaySync] completed reason=${reason} result=${syncResult}`);
+      }
       if (syncResult === "partial" && this.lastPassResult.remainingEligible > 0) {
         this.scheduleRetry();
       }
@@ -639,9 +718,19 @@ export class DisplaySyncService {
       this.persistRuntimeStatus();
       this.emitState();
       if (this.syncFollowUpRequested) {
+        const runFollowUp = this.syncFollowUpHadWork && this.shouldRunFollowUpPass();
+        this.logFollowUpDecision(
+          "syncNow",
+          reason,
+          runFollowUp ? "follow_up_scheduled" : "follow_up_suppressed_no_eligible_work",
+        );
         this.syncFollowUpRequested = false;
-        void this.syncNow("follow-up");
+        this.syncFollowUpHadWork = false;
+        if (runFollowUp) {
+          void this.syncNow("follow-up");
+        }
       }
+      this.activeSyncReason = null;
     }
   }
 
@@ -656,7 +745,57 @@ export class DisplaySyncService {
         });
       }
     }
+    if (this.syncInProgress && this.activeSyncReason === "startup") {
+      this.logFollowUpDecision("reconcileLocalDisplays", "reconcile", "defer_to_active_startup");
+      return;
+    }
     await this.syncNow("reconcile");
+  }
+
+  private getPendingQueueCount(): number {
+    return this.queue.countByState("pending") + this.queue.countByState("failed");
+  }
+
+  private shouldRunFollowUpPass(): boolean {
+    if (this.getPendingQueueCount() > 0) {
+      return true;
+    }
+    if (this.lastPassResult.remainingEligible > 0) {
+      return true;
+    }
+    if (this.lastPassResult.remainingDelayedRetry > 0) {
+      return true;
+    }
+    return false;
+  }
+
+  private recordFollowUpTrigger(source: "requestSync" | "syncNow", reason: string): void {
+    this.syncFollowUpRequested = true;
+    this.syncFollowUpHadWork = true;
+    this.logFollowUpDecision(source, reason, "follow_up_flagged");
+  }
+
+  private logFollowUpDecision(
+    source: string,
+    reason: string,
+    decision: string,
+  ): void {
+    if (!isDisplaySyncStartupTraceEnabled()) {
+      return;
+    }
+    console.debug("[DisplaySync] follow_up_decision", {
+      at: new Date().toISOString(),
+      source,
+      reason,
+      decision,
+      activeSyncReason: this.activeSyncReason,
+      syncInProgress: this.syncInProgress,
+      pendingQueueCount: this.getPendingQueueCount(),
+      syncPassPendingBaseline: this.syncPassPendingBaseline,
+      syncFollowUpRequested: this.syncFollowUpRequested,
+      syncFollowUpHadWork: this.syncFollowUpHadWork,
+      lastPassRemainingEligible: this.lastPassResult.remainingEligible,
+    });
   }
 
   private scheduleUpload(): void {

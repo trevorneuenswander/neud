@@ -78,7 +78,25 @@ test("data-source activity label is human-readable", () => {
 
 test("invalid unknown event types remain rejected locally before upload", () => {
   const service = read("desktop/src/services/activity-sync/activity-sync-service.ts");
-  assert.match(service, /isActivitySyncAllowedEventType\(record\.type\)/);
+  assert.match(service, /isActivitySyncAllowedEventType\(activeRecord\.type\)/);
+});
+
+test("user.deleted and team.deleted are allowlisted locally and in migration 053", () => {
+  const allowlist = read("src/lib/activity/sync-allowlist.ts");
+  const desktopAllowlist = read("desktop/src/lib/activity/sync-allowlist.ts");
+  assert.match(allowlist, /"user\.deleted"/);
+  assert.match(allowlist, /"team\.deleted"/);
+  assert.match(desktopAllowlist, /"user\.deleted"/);
+  assert.match(desktopAllowlist, /"team\.deleted"/);
+  const migration = read("supabase/migrations/053_user_team_deleted_activity_events.sql");
+  assert.match(migration, /'user\.deleted'/);
+  assert.match(migration, /'team\.deleted'/);
+  const apply = read("scripts/live-validation/apply-migrations.mjs");
+  assert.match(apply, /053_user_team_deleted_activity_events\.sql/);
+  const normalize = read("src/lib/activity/normalize.ts");
+  assert.match(normalize, /"user\.deleted": "User deleted"/);
+  assert.match(normalize, /"team\.deleted": "Team deleted"/);
+  assert.match(normalize, /access-management/);
 });
 
 test("offline state is distinct from forbidden allowlist failures", () => {

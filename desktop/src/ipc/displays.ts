@@ -117,6 +117,67 @@ export function registerDisplaysIpc(input: {
       databasePath: input.data.getDatabasePath(),
     };
   });
+
+  registerIpcHandler("neud:displays:getPinnedViewer", (_event, projectId: unknown) => {
+    if (!input.auth.isAccessAllowed()) {
+      throw new Error("Sign in to load pinned viewer.");
+    }
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required.");
+    }
+    return input.data.getPinnedViewerState(projectId.trim());
+  });
+
+  registerIpcHandler("neud:displays:unpinIfPinned", (_event, payload: unknown) => {
+    if (!input.auth.isAccessAllowed()) {
+      throw new Error("Sign in to update pinned viewer.");
+    }
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid unpin payload.");
+    }
+    const record = payload as Record<string, unknown>;
+    const projectId = typeof record.projectId === "string" ? record.projectId.trim() : "";
+    const displayId = typeof record.displayId === "string" ? record.displayId.trim() : "";
+    if (!projectId || !displayId) {
+      throw new Error("Project and display are required.");
+    }
+    input.data.unpinDisplayIfPinned(projectId, displayId);
+    return input.data.getPinnedViewerState(projectId);
+  });
+
+  registerIpcHandler("neud:displays:togglePin", (_event, payload: unknown) => {
+    if (!input.auth.isAccessAllowed()) {
+      throw new Error("Sign in to pin displays.");
+    }
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid pin payload.");
+    }
+    const record = payload as Record<string, unknown>;
+    const projectId = typeof record.projectId === "string" ? record.projectId.trim() : "";
+    const displayId = typeof record.displayId === "string" ? record.displayId.trim() : "";
+    if (!projectId || !displayId) {
+      throw new Error("Project and display are required.");
+    }
+    input.data.togglePinnedDisplay(projectId, displayId);
+    return input.data.getPinnedViewerState(projectId);
+  });
+
+  registerIpcHandler("neud:displays:setPinnedViewerHeight", (_event, payload: unknown) => {
+    if (!input.auth.isAccessAllowed()) {
+      throw new Error("Sign in to resize pinned viewer.");
+    }
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid pinned viewer height payload.");
+    }
+    const record = payload as Record<string, unknown>;
+    const projectId = typeof record.projectId === "string" ? record.projectId.trim() : "";
+    const viewerHeightPx = Number(record.viewerHeightPx);
+    if (!projectId || !Number.isFinite(viewerHeightPx)) {
+      throw new Error("Project and viewer height are required.");
+    }
+    input.data.setPinnedViewerHeight(projectId, viewerHeightPx);
+    return input.data.getPinnedViewerState(projectId);
+  });
 }
 
 export function shutdownDisplayPreviewWindows() {
