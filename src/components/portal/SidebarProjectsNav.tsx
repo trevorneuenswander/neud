@@ -22,17 +22,19 @@ import {
 } from "@/lib/portal/sidebar-nav-item-classes";
 
 type SidebarProjectsNavProps = {
+  projectsHref?: string;
   initialProjects?: ProjectListItem[];
   initialViewerMode?: boolean;
   onNavigate?: () => void;
 };
 
-function resolveProjectsNavActive(pathname: string): boolean {
+function resolveProjectsNavActive(pathname: string, projectsHref: string): boolean {
   const normalized = pathname.split("?")[0]?.split("#")[0] ?? pathname;
-  return normalized === "/projects" || isProjectWorkspacePath(normalized);
+  return normalized === projectsHref || isProjectWorkspacePath(normalized);
 }
 
 export function SidebarProjectsNav({
+  projectsHref = "/projects",
   initialProjects,
   initialViewerMode,
   onNavigate,
@@ -44,7 +46,7 @@ export function SidebarProjectsNav({
     initialViewerMode,
   });
   const activeSlug = extractProjectSlugFromPathname(pathname);
-  const parentActive = resolveProjectsNavActive(pathname);
+  const parentActive = resolveProjectsNavActive(pathname, projectsHref);
   const inProjectWorkspace = isProjectWorkspacePath(
     pathname.split("?")[0]?.split("#")[0] ?? pathname,
   );
@@ -83,7 +85,7 @@ export function SidebarProjectsNav({
     <div className="space-y-0.5" style={noDragStyle}>
       <div className="flex h-10 items-stretch gap-0.5">
         <Link
-          href="/projects"
+          href={projectsHref}
           onClick={onNavigate}
           aria-current={parentActive && !activeSlug ? "page" : undefined}
           className={`${SIDEBAR_PRIMARY_NAV_ROW_CLASS} min-w-0 flex-1 ${
@@ -134,7 +136,7 @@ export function SidebarProjectsNav({
             if (!slug) {
               return null;
             }
-            const href = buildProjectLandingHref(slug, viewerMode);
+            const href = buildProjectLandingHref(slug, viewerMode, projectsHref);
             const isActive = activeSlug === slug;
             return (
               <li key={project.id}>

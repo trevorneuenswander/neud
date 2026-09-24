@@ -70,5 +70,9 @@ export function formatPlatformRole(role: string): string {
 }
 
 export function isProjectWorkspacePath(pathname: string): boolean {
-  return /^\/projects\/(?!new$)[^/]+(?:\/.*)?$/.test(pathname);
+  const normalized = pathname.split("?")[0]?.split("#")[0] ?? pathname;
+  if (/^\/projects\/(?!new$)[^/]+(?:\/.*)?$/.test(normalized)) {
+    return true;
+  }
+  return /^\/portal\/projects\/(?!new$)[^/]+(?:\/.*)?$/.test(normalized);
 }

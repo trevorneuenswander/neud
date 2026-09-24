@@ -26,7 +26,7 @@ function activeItems(pathname) {
   const items = [
     { href: "/portal", label: "Dashboard" },
     { href: "/portal/projects", label: "Projects" },
-    { href: "/portal/users", label: "Users" },
+    { href: "/portal/users", label: "Users and Access" },
     { href: "/portal/activity", label: "Activity" },
     { href: "/portal/settings", label: "Settings" },
     { href: "/download", label: "Download" },
@@ -74,7 +74,9 @@ test("nested project routes keep Projects active", () => {
 });
 
 test("/portal/users, activity, and settings activate one section each", () => {
-  assert.deepEqual(activeItems("/portal/users").map((item) => item.label), ["Users"]);
+  assert.deepEqual(activeItems("/portal/users").map((item) => item.label), [
+    "Users and Access",
+  ]);
   assert.deepEqual(activeItems("/portal/activity").map((item) => item.label), ["Activity"]);
   assert.deepEqual(activeItems("/portal/settings").map((item) => item.label), ["Settings"]);
 });

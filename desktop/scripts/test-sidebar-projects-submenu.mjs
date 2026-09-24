@@ -18,8 +18,9 @@ test("sidebar renders projects submenu via SidebarProjectsNav", () => {
   const sharedClasses = read("src/lib/portal/sidebar-nav-item-classes.ts");
   assert.match(sidebar, /SidebarNavigation/);
   assert.match(navigation, /SidebarProjectsNav/);
-  assert.match(navigation, /item\.href === "\/projects"/);
-  assert.match(projectsNav, /href="\/projects"/);
+  assert.match(navigation, /isProjectsNavHref\(item\.href\)/);
+  assert.match(projectsNav, /projectsHref/);
+  assert.match(projectsNav, /href=\{projectsHref\}/);
   assert.match(projectsNav, /aria-expanded/);
   assert.match(projectsNav, /Collapse projects list|Expand projects list/);
   assert.match(sharedClasses, /SIDEBAR_PRIMARY_NAV_ROW_CLASS/);
@@ -44,7 +45,9 @@ test("projects submenu reuses projects page list source", () => {
   assert.match(hook, /localGetProjectsMeta/);
   assert.match(hook, /resolveProjectsViewerMode/);
   const appShell = read("src/components/portal/AppShell.tsx");
+  const hostedShell = read("src/components/portal/HostedAppShell.tsx");
   assert.match(appShell, /getVisibleProjects/);
+  assert.match(hostedShell, /getHostedAccessibleProjects/);
   assert.doesNotMatch(hook, /setInterval/);
 });
 

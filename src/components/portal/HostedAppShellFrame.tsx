@@ -9,18 +9,21 @@ import { SidebarBranding } from "@/components/portal/SidebarBranding";
 import { SidebarUserPanel } from "@/components/portal/SidebarUserPanel";
 import { isHostedFullscreenViewerPath, HOSTED_PORTAL_PATHS } from "@/lib/routing/hosted-routes";
 import type { NavItem } from "@/lib/portal/navigation";
+import type { ProjectListItem } from "@/lib/projects/types";
 import type { Profile } from "@/types/database";
 
 type HostedAppShellFrameProps = {
   children: ReactNode;
   navItems: NavItem[];
   profile: Profile;
+  initialSidebarProjects?: ProjectListItem[];
 };
 
 export function HostedAppShellFrame({
   children,
   navItems,
   profile,
+  initialSidebarProjects,
 }: HostedAppShellFrameProps) {
   const pathname = usePathname();
 
@@ -34,9 +37,11 @@ export function HostedAppShellFrame({
         navItems={navItems}
         profile={profile}
         profileHref={HOSTED_PORTAL_PATHS.profile}
+        initialSidebarProjects={initialSidebarProjects}
       />
       <MobileNavProvider
         navItems={navItems}
+        initialSidebarProjects={initialSidebarProjects}
         userPanel={
           <SidebarUserPanel profile={profile} profileHref={HOSTED_PORTAL_PATHS.profile} />
         }
