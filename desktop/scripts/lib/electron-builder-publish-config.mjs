@@ -82,9 +82,12 @@ export {
 export function getAppUpdateYamlPath(platform = "win") {
   if (platform === "mac") {
     const macPath = getMacAppUpdateYamlPath();
-    if (macPath) {
-      return macPath;
+    if (!macPath) {
+      throw new Error(
+        "Missing NEUD.app resources for macOS app-update.yml. Run electron-builder --mac dir first.",
+      );
     }
+    return macPath;
   }
   return path.join(getWinUnpackedResourcesDir(), "app-update.yml");
 }

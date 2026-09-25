@@ -45,7 +45,8 @@ mac:
       arch:
         - arm64
   artifactName: NEUD-${version}-arm64.${ext}
-  hardenedRuntime: true
+  # Re-enable with Developer ID signing in the notarization phase (NEUD macOS Phase 2).
+  hardenedRuntime: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   gatekeeperAssess: false

@@ -23,6 +23,10 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEUD_USE_LOCAL_DATA: "1"
+      NEXT_PUBLIC_NEUD_USE_LOCAL_DATA: "1"
+      # Unsigned CI builds: do not require Developer ID certificates.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -46,8 +50,15 @@ jobs:
       - name: Static macOS packaging tests
         run: node --test desktop/scripts/test-neud-macos-packaging.mjs
 
-      - name: Build and package macOS (unsigned when signing secrets absent)
-        run: npm run package:mac
+      - name: Prefetch Chrome for Testing (darwin arm64)
+        run: npx puppeteer browsers install chrome
+        working-directory: workers/data-engine
+
+      - name: Build desktop staging (web + resources)
+        run: npm run build:desktop
+
+      - name: Package macOS arm64 (unsigned)
+        run: npm run package:mac -w @neud/desktop
 
       - name: Verify bundled browser
         run: npm run verify:mac-bundled-browser
