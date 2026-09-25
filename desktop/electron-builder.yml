@@ -36,6 +36,8 @@ extraResources:
       - "**/*"
 mac:
   category: public.app-category.developer-tools
+  # Unsigned CI / local arm64 builds (Developer ID signing is Phase 2).
+  identity: null
   icon: build/icon.icns
   target:
     - target: dmg

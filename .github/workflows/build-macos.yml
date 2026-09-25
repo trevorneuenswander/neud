@@ -73,15 +73,38 @@ jobs:
           npm run build -w @neud/desktop 2>&1 | tee /tmp/neud-build-desktop.log
           test -f desktop/dist/bootstrap.js
 
-      - name: Package macOS arm64 (unsigned)
-        run: npm run package:mac -w @neud/desktop
+      - name: Electron-pack macOS app directory
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          node scripts/ensure-macos-icon.mjs
+          npx electron-builder --mac dir --arm64 --config electron-builder.yml --publish never 2>&1 | tee /tmp/neud-electron-mac-dir.log
+          test -d release/mac-arm64/NEUD.app
+
+      - name: Verify macOS dir package
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          node scripts/ensure-packaged-app-update-config.mjs --mac
+          node scripts/verify-packaged-auto-update-config.mjs --mac
+          node scripts/verify-mac-unpacked-runtime-assets.mjs
+          node scripts/verify-packaged-cloud-config.mjs
+
+      - name: Electron-pack macOS dmg and zip
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          npx electron-builder --mac dmg zip --prepackaged release/mac-arm64 --config electron-builder.yml --publish never --arm64 2>&1 | tee /tmp/neud-electron-mac-dmg.log
+          node scripts/verify-packaged-auto-update-config.mjs --mac --require-latest-mac-yml
+          node scripts/prepare-release-artifacts-mac.mjs
 
       - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: neud-macos-build-logs
-          path: /tmp/neud-*.log
+          path: |
+            /tmp/neud-*.log
 
       - name: Verify bundled browser
         run: npm run verify:mac-bundled-browser

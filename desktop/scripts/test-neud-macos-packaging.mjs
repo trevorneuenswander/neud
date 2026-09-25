@@ -106,7 +106,8 @@ test("GitHub Actions macOS workflow is defined", () => {
   assert.match(workflow, /Build web \(standalone\)/);
   assert.match(workflow, /Stage desktop resources/);
   assert.match(workflow, /Compile desktop host/);
-  assert.match(workflow, /package:mac -w @neud\/desktop/);
+  assert.match(workflow, /Electron-pack macOS app directory/);
+  assert.match(workflow, /Electron-pack macOS dmg and zip/);
   assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY/);
 });
 
