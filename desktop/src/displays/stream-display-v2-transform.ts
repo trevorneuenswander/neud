@@ -3,6 +3,7 @@ import path from "node:path";
 
 export const STREAM_BID_BRIDGE_ANCHOR = "/*__NEUD_STREAM_BID_BRIDGE__*/";
 export const STREAM_TICKER_BRIDGE_ANCHOR = "/*__NEUD_STREAM_TICKER_BRIDGE__*/";
+export const LED_DISPLAY_QUAIL_BRIDGE_ANCHOR = "/*__NEUD_LED_DISPLAY_QUAIL_BRIDGE__*/";
 export const LEGACY_TICKER_MARQUEE_ANCHOR = "/*__NEUD_LEGACY_TICKER_MARQUEE__*/";
 
 export function readStreamBidV2BridgeScript(): string {
@@ -11,6 +12,10 @@ export function readStreamBidV2BridgeScript(): string {
 
 export function readStreamTickerV2BridgeScript(): string {
   return fs.readFileSync(path.join(__dirname, "stream-ticker-v2-bridge.js"), "utf8");
+}
+
+export function readLedDisplayQuailV2BridgeScript(): string {
+  return fs.readFileSync(path.join(__dirname, "led-display-quail-v2-bridge.js"), "utf8");
 }
 
 export function readLegacyTickerMarqueeScript(): string {
@@ -37,6 +42,20 @@ export function transformStreamBidHtmlForServing(html: string, bridgeScript?: st
     throw new Error("Stream Bid Display HTML is missing the runtime bridge anchor.");
   }
   return html.replace(STREAM_BID_BRIDGE_ANCHOR, bridge);
+}
+
+export function transformLedDisplayQuailHtmlForServing(
+  html: string,
+  bridgeScript?: string,
+): string {
+  const bridge = bridgeScript ?? readLedDisplayQuailV2BridgeScript();
+  if (!html.includes(LED_DISPLAY_QUAIL_BRIDGE_ANCHOR)) {
+    if (/led-display-quail-v2-bridge/.test(html)) {
+      return html;
+    }
+    throw new Error("LED Display (Quail) HTML is missing the runtime bridge anchor.");
+  }
+  return html.replace(LED_DISPLAY_QUAIL_BRIDGE_ANCHOR, bridge);
 }
 
 export function transformStreamTickerHtmlForServing(html: string, bridgeScript?: string): string {

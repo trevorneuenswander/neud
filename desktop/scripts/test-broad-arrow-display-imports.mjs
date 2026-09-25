@@ -25,6 +25,7 @@ function read(relativePath) {
 const EXPECTED_DISPLAYS = [
   { slug: "stream-bid-display", name: "Stream Bid Display" },
   { slug: "stream-ticker", name: "Stream Ticker" },
+  { slug: "led-display-quail", name: "LED Display (Quail)" },
   { slug: "legacy-pylon", name: "Legacy Pylon" },
   { slug: "legacy-ticker", name: "Legacy Ticker" },
 ];
@@ -91,7 +92,7 @@ test("legacy import service defines bundled legacy ticker spec", () => {
   assert.match(specs, /auction-ticker-legacy-live-v1-2026-07-26-132400\.html/);
 });
 
-test("fresh Broad Arrow install imports all four expected displays idempotently", async () => {
+test("fresh Broad Arrow install imports all expected displays idempotently", async () => {
   const paths = createTestPaths("four-displays");
   const db = await openLocalDatabase(paths);
 

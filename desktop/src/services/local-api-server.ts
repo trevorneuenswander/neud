@@ -1335,6 +1335,43 @@ export class LocalApiServer {
             this.data.unpinDisplayIfPinned(project.id, body.displayId.trim());
             return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
           }
+          if (body.action === "addToStack" && typeof body.sourceDisplayId === "string") {
+            const target = body.target;
+            if (!target || typeof target !== "object") {
+              return sendJson(response, 400, { error: "Stack target is required." });
+            }
+            const targetRecord = target as Record<string, unknown>;
+            const kind = targetRecord.kind;
+            if (kind === "display" && typeof targetRecord.displayId === "string") {
+              this.data.addPinnedDisplayToStack(project.id, {
+                sourceDisplayId: body.sourceDisplayId.trim(),
+                target: { kind: "display", displayId: targetRecord.displayId.trim() },
+              });
+            } else if (kind === "stack" && typeof targetRecord.stackId === "string") {
+              this.data.addPinnedDisplayToStack(project.id, {
+                sourceDisplayId: body.sourceDisplayId.trim(),
+                target: { kind: "stack", stackId: targetRecord.stackId.trim() },
+              });
+            } else {
+              return sendJson(response, 400, { error: "Invalid stack target." });
+            }
+            return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
+          }
+          if (
+            body.action === "removeFromStack" &&
+            typeof body.stackId === "string" &&
+            typeof body.displayId === "string"
+          ) {
+            this.data.removePinnedDisplayFromStack(project.id, {
+              stackId: body.stackId.trim(),
+              displayId: body.displayId.trim(),
+            });
+            return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
+          }
+          if (body.action === "unpinStack" && typeof body.stackId === "string") {
+            this.data.unpinPinnedViewerStack(project.id, body.stackId.trim());
+            return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
+          }
           const pinnedDisplayIds = Array.isArray(body.pinnedDisplayIds)
             ? body.pinnedDisplayIds.map(String)
             : undefined;
@@ -1351,6 +1388,7 @@ export class LocalApiServer {
             const current = this.data.getPinnedViewerState(project.id);
             this.data.savePinnedViewerPreference(project.id, {
               pinnedDisplayIds,
+              pinnedStacks: current.pinnedStacks,
               viewerHeightPx: current.viewerHeightPx,
             });
           } else {

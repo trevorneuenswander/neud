@@ -16,6 +16,9 @@ type PinnedDisplayLiveSlotProps = {
   projectId: string;
   display: PinnedViewerDisplaySummary;
   configuredBandHeightPx: number;
+  stackLayer?: boolean;
+  stackPreviewMaxWidthPx?: number;
+  onContextMenu?: (event: React.MouseEvent) => void;
 };
 
 const NAME_ROW_PX = 18;
@@ -24,7 +27,11 @@ export function PinnedDisplayLiveSlot({
   projectId,
   display,
   configuredBandHeightPx,
+  stackLayer = false,
+  stackPreviewMaxWidthPx = 0,
+  onContextMenu,
 }: PinnedDisplayLiveSlotProps) {
+  const stackOmitsCheckerboard = stackLayer;
   const rendererKey = resolveRendererKey(display.displayKey, display.settings);
   const useBroadArrowCanvas =
     rendererKey != null && isBroadArrowRendererKey(rendererKey);
@@ -40,6 +47,7 @@ export function PinnedDisplayLiveSlot({
   const loggedRef = useRef(false);
 
   useLayoutEffect(() => {
+    if (stackLayer) return;
     const region = regionRef.current;
     if (!region) return;
 
@@ -61,7 +69,7 @@ export function PinnedDisplayLiveSlot({
       observer.observe(slotRef.current);
     }
     return () => observer.disconnect();
-  }, [configuredBandHeightPx, display.height, display.width]);
+  }, [configuredBandHeightPx, display.height, display.width, stackLayer]);
 
   useEffect(() => {
     if (loggedRef.current) return;
@@ -83,6 +91,7 @@ export function PinnedDisplayLiveSlot({
         enabled
         showSizeLabel={false}
         graphicOnly
+        managementCheckerboard={stackOmitsCheckerboard ? false : undefined}
       />
     ) : (
       <DisplayCanvasPreview
@@ -97,14 +106,33 @@ export function PinnedDisplayLiveSlot({
         showSizeLabel={false}
         graphicOnly
         previewScaleMode={isStreamTicker ? "layout" : "transform"}
+        managementCheckerboard={stackOmitsCheckerboard ? false : undefined}
       />
     );
+
+  if (stackLayer) {
+    return (
+      <div className="relative flex h-full w-full items-start justify-center overflow-hidden" style={{ pointerEvents: "none" }}>
+        <div
+          className="relative h-full min-h-0 max-h-full min-w-0 overflow-hidden bg-transparent"
+          style={{
+            width: stackPreviewMaxWidthPx > 0 ? stackPreviewMaxWidthPx : "100%",
+            maxWidth: "100%",
+            pointerEvents: "none",
+          }}
+        >
+          {previewNode}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
       ref={slotRef}
       data-pinned-slot=""
       className="relative flex h-full min-h-0 min-w-0 max-w-full max-h-full flex-col items-center overflow-hidden"
+      onContextMenu={onContextMenu}
     >
       <div
         ref={regionRef}

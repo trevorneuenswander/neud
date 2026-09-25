@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_PINNED_VIEWER_HEIGHT_PX = exports.MIN_PINNED_VIEWER_HEIGHT_PX = exports.DEFAULT_PINNED_VIEWER_HEIGHT_PX = exports.MAX_PINNED_DISPLAYS = void 0;
+exports.MAX_PINNED_VIEWER_HEIGHT_PX = exports.MIN_PINNED_VIEWER_HEIGHT_PX = exports.DEFAULT_PINNED_VIEWER_HEIGHT_PX = exports.MAX_PINNED_VISIBLE_SLOTS = exports.MAX_PINNED_DISPLAYS = void 0;
 exports.clampPinnedViewerHeight = clampPinnedViewerHeight;
 exports.normalizePinnedViewerHeight = normalizePinnedViewerHeight;
 exports.parsePinnedDisplayIds = parsePinnedDisplayIds;
@@ -8,7 +8,9 @@ exports.sanitizePinnedDisplayIds = sanitizePinnedDisplayIds;
 exports.orderPinnedDisplayIds = orderPinnedDisplayIds;
 exports.canPinDisplay = canPinDisplay;
 exports.mergePinnedViewerPreferenceByUpdatedAt = mergePinnedViewerPreferenceByUpdatedAt;
+/** @deprecated Use MAX_PINNED_VISIBLE_SLOTS for visible window slot limits. */
 exports.MAX_PINNED_DISPLAYS = 4;
+exports.MAX_PINNED_VISIBLE_SLOTS = 4;
 exports.DEFAULT_PINNED_VIEWER_HEIGHT_PX = 220;
 exports.MIN_PINNED_VIEWER_HEIGHT_PX = 160;
 exports.MAX_PINNED_VIEWER_HEIGHT_PX = 720;
@@ -49,8 +51,6 @@ function parsePinnedDisplayIds(raw) {
             continue;
         seen.add(id);
         ids.push(id);
-        if (ids.length >= exports.MAX_PINNED_DISPLAYS)
-            break;
     }
     return ids;
 }
@@ -80,10 +80,12 @@ function mergePinnedViewerPreferenceByUpdatedAt(local, remote, viewportHeight) {
     const normalizedLocal = {
         ...local,
         viewerHeightPx: normalizePinnedViewerHeight(local.viewerHeightPx, viewportHeight),
+        pinnedStacks: local.pinnedStacks ?? [],
     };
     const normalizedRemote = {
         ...remote,
         viewerHeightPx: normalizePinnedViewerHeight(remote.viewerHeightPx, viewportHeight),
+        pinnedStacks: remote.pinnedStacks ?? [],
     };
     const localTime = Date.parse(normalizedLocal.updatedAt);
     const remoteTime = Date.parse(normalizedRemote.updatedAt);

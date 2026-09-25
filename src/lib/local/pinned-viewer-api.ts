@@ -1,5 +1,9 @@
 import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
 import { localFetch } from "@/lib/local/api";
+import type {
+  PinnedStackRecord,
+  VisiblePinnedSlot,
+} from "@/lib/displays/pinned-viewer-stacks";
 
 export type PinnedViewerDisplaySummary = {
   id: string;
@@ -33,10 +37,12 @@ export function buildPinnedViewerDisplaySummary(input: {
 
 export type PinnedViewerState = {
   pinnedDisplayIds: string[];
+  pinnedStacks: PinnedStackRecord[];
   viewerHeightPx: number;
   updatedAt: string;
   cloudSyncStatus: string;
   displays: PinnedViewerDisplaySummary[];
+  visibleSlots: VisiblePinnedSlot[];
   displayOrderIds: string[];
   eligible: Array<{ id: string; enabled: boolean; archived: boolean }>;
 };
@@ -94,6 +100,64 @@ export async function localSetPinnedViewerHeight(
       body: JSON.stringify({ viewerHeightPx }),
     },
   );
+}
+
+async function patchPinnedViewer(
+  projectSlug: string,
+  projectId: string,
+  body: Record<string, unknown>,
+): Promise<PinnedViewerState> {
+  const desktop = getDesktopAPI();
+  if (isDesktopEnvironment() && desktop?.displays?.patchPinnedViewer) {
+    return desktop.displays.patchPinnedViewer({ projectId, ...body }) as Promise<PinnedViewerState>;
+  }
+  return localFetch<PinnedViewerState>(
+    `/api/projects/${encodeURIComponent(projectSlug)}/viewer/pinned`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function localAddPinnedDisplayToStack(
+  projectSlug: string,
+  projectId: string,
+  input: {
+    sourceDisplayId: string;
+    target:
+      | { kind: "display"; displayId: string }
+      | { kind: "stack"; stackId: string };
+  },
+): Promise<PinnedViewerState> {
+  return patchPinnedViewer(projectSlug, projectId, {
+    action: "addToStack",
+    sourceDisplayId: input.sourceDisplayId,
+    target: input.target,
+  });
+}
+
+export async function localRemovePinnedDisplayFromStack(
+  projectSlug: string,
+  projectId: string,
+  input: { stackId: string; displayId: string },
+): Promise<PinnedViewerState> {
+  return patchPinnedViewer(projectSlug, projectId, {
+    action: "removeFromStack",
+    stackId: input.stackId,
+    displayId: input.displayId,
+  });
+}
+
+export async function localUnpinPinnedViewerStack(
+  projectSlug: string,
+  projectId: string,
+  stackId: string,
+): Promise<PinnedViewerState> {
+  return patchPinnedViewer(projectSlug, projectId, {
+    action: "unpinStack",
+    stackId,
+  });
 }
 
 export async function localUnpinDisplayIfPinned(

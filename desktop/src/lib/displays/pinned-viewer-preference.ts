@@ -1,4 +1,5 @@
 export const MAX_PINNED_DISPLAYS = 4;
+export const MAX_PINNED_VISIBLE_SLOTS = 4;
 
 export const DEFAULT_PINNED_VIEWER_HEIGHT_PX = 220;
 export const MIN_PINNED_VIEWER_HEIGHT_PX = 160;
@@ -53,7 +54,6 @@ export function parsePinnedDisplayIds(raw: unknown): string[] {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     ids.push(id);
-    if (ids.length >= MAX_PINNED_DISPLAYS) break;
   }
   return ids;
 }
@@ -91,15 +91,22 @@ export function canPinDisplay(display: PinnedViewerEligibleDisplay): boolean {
 }
 
 export function mergePinnedViewerPreferenceByUpdatedAt<
-  T extends { updatedAt: string; pinnedDisplayIds: string[]; viewerHeightPx: number },
+  T extends {
+    updatedAt: string;
+    pinnedDisplayIds: string[];
+    viewerHeightPx: number;
+    pinnedStacks?: import("./pinned-viewer-stacks").PinnedStackRecord[];
+  },
 >(local: T, remote: T, viewportHeight?: number): T {
   const normalizedLocal = {
     ...local,
     viewerHeightPx: normalizePinnedViewerHeight(local.viewerHeightPx, viewportHeight),
+    pinnedStacks: local.pinnedStacks ?? [],
   };
   const normalizedRemote = {
     ...remote,
     viewerHeightPx: normalizePinnedViewerHeight(remote.viewerHeightPx, viewportHeight),
+    pinnedStacks: remote.pinnedStacks ?? [],
   };
   const localTime = Date.parse(normalizedLocal.updatedAt);
   const remoteTime = Date.parse(normalizedRemote.updatedAt);

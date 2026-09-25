@@ -41,6 +41,8 @@ export type DisplayCanvasPreviewProps = {
   showSizeLabel?: boolean;
   /** Management graphic preview without border/labels (pinned live viewer uses checkerboard backing). */
   graphicOnly?: boolean;
+  /** When false with graphicOnly, omit checkerboard (stack overlay layers). */
+  managementCheckerboard?: boolean;
   /**
    * transform: scale native iframe (management previews).
    * layout: size iframe to the preview cell so the display scales once internally (pinned ticker sharpness).
@@ -131,6 +133,7 @@ export function DisplayCanvasPreview({
   iframeRevisionId = null,
   showSizeLabel = true,
   graphicOnly = false,
+  managementCheckerboard,
   previewScaleMode = "transform",
 }: DisplayCanvasPreviewProps) {
   const usePinnedNativeResolution = graphicOnly;
@@ -422,7 +425,8 @@ export function DisplayCanvasPreview({
   const iframeHeight = useLayoutFrame ? layoutFrame.height : displayHeight;
   const sizeLabel = label ?? `Preview · ${displayWidth}×${displayHeight}`;
 
-  const checkerboardStyle = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE;
+  const checkerboardStyle =
+    managementCheckerboard === false ? {} : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE;
 
   const transparentShellStyle = {
     background: "transparent",

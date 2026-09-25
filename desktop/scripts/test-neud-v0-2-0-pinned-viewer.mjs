@@ -96,7 +96,7 @@ test("pinned graphic-only preview uses checkerboard only inside display window",
   assert.match(canvas, /data-pinned-display-window=\{graphicOnly \? "" : undefined\}/);
   assert.match(canvas, /\.\.\.checkerboardStyle/);
   assert.match(broadCanvas, /data-pinned-display-window=\{graphicOnly \? "" : undefined\}/);
-  assert.match(broadCanvas, /\.\.\.MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE/);
+  assert.match(broadCanvas, /MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE/);
   assert.match(canvas, /scheduleGraphicOnlyIframeTransparency/);
   assert.match(canvas, /pinnedPreview: graphicOnly/);
   assert.match(transparency, /\.layout-guide/);
@@ -149,7 +149,7 @@ test("pin control uses text Pin box aligned with version badge", () => {
 
 test("pinned live slot keeps stable display id keys without iframe key churn", () => {
   const area = read("src/components/displays/PinnedDisplayViewerArea.tsx");
-  assert.match(area, /key=\{display\.id\}/);
+  assert.match(area, /key=\{display\.id\}|key=\{slot\.stackId\}/);
   assert.doesNotMatch(area, /iframeKey/);
   const slot = read("src/components/displays/PinnedDisplayLiveSlot.tsx");
   assert.doesNotMatch(slot, /iframeKey/);
@@ -193,7 +193,7 @@ test("pinned viewer uses optimistic displays for immediate band render", () => {
   assert.match(context, /mergeOptimisticPinnedDisplays/);
   assert.match(context, /displaySummary/);
   const area = read("src/components/displays/PinnedDisplayViewerArea.tsx");
-  assert.match(area, /pinnedViewer\?\.pinnedDisplays/);
+  assert.match(area, /visibleSlots/);
   assert.match(read("src/lib/displays/pinned-viewer-pin-diagnostics.ts"), /firstPinFailureStage/);
 });
 

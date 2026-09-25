@@ -1172,6 +1172,10 @@ async function createMainWindow() {
         type: input.type,
         message: input.message,
         source: "displays",
+        actor:
+          localDataService!.resolveActivityActorForUserId(input.initiatorUserId) ?? {
+            name: "System",
+          },
         metadata: {
           projectId: input.projectId,
           displayId: input.displayId,

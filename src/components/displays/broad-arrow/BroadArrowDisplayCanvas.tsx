@@ -13,6 +13,7 @@ export type BroadArrowDisplayCanvasProps = {
   label?: string;
   showSizeLabel?: boolean;
   graphicOnly?: boolean;
+  managementCheckerboard?: boolean;
   children: ReactNode;
 };
 
@@ -22,6 +23,7 @@ export function BroadArrowDisplayCanvas({
   label,
   showSizeLabel = true,
   graphicOnly = false,
+  managementCheckerboard,
   children,
 }: BroadArrowDisplayCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,7 +65,7 @@ export function BroadArrowDisplayCanvas({
         }
         style={{
           aspectRatio: `${displayWidth} / ${displayHeight}`,
-          ...MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE,
+          ...(managementCheckerboard === false ? {} : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE),
         }}
       >
         <div

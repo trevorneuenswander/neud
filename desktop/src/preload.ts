@@ -461,6 +461,8 @@ const neudDesktop = {
       ipcRenderer.invoke("neud:displays:unpinIfPinned", payload),
     setPinnedViewerHeight: (payload: { projectId: string; viewerHeightPx: number }) =>
       ipcRenderer.invoke("neud:displays:setPinnedViewerHeight", payload),
+    patchPinnedViewer: (payload: { projectId: string } & Record<string, unknown>) =>
+      ipcRenderer.invoke("neud:displays:patchPinnedViewer", payload),
   },
   updates: {
     getStatus: () => ipcRenderer.invoke("neud:updates:getStatus"),

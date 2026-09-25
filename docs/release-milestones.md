@@ -6,26 +6,30 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.1.4** | Last shipped Windows installer / GitHub release baseline |
-| **Current release candidate** | **v0.2.0** | Unreleased development milestone (substantial scope formerly tracked informally as v0.1.5) |
+| **Latest published release** | **v0.2.0** | Last shipped Windows installer / GitHub release before v0.2.1 |
+| **Current release** | **v0.2.1** | Access fixes, pinned stacks, collapsible sidebar, LED Display (Quail) |
 
-There is **no** published v0.1.5 release. The intended auto-update path to validate after v0.2.0 ships:
-
-```text
-v0.1.4 → v0.2.0
-```
-
-Expected packaged installer name for the next release (when published):
+There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-NEUD-Setup-0.2.0-x64.exe
+v0.1.4 → v0.2.0 → v0.2.1
 ```
 
-Canonical application version during development is **`0.2.0`** in root and `@neud/desktop` `package.json`.
+Expected packaged installer name for v0.2.1:
 
-## Alpha v0.2.0 (current — not yet published)
+```text
+NEUD-Setup-0.2.1-x64.exe
+```
 
-In-flight scope includes desktop-first polish and operational features developed on the v0.1.4 foundation (pinned viewer, display transport, publishing lease hardening, access/sync improvements, scraper performance instrumentation, and related tests). This milestone **does not** include LAN-wide local display hosting or modular project package downloads unless explicitly implemented and documented elsewhere.
+Canonical application version is **`0.2.1`** in root and `@neud/desktop` `package.json`.
+
+## Alpha v0.2.1
+
+Shipped scope includes activity/teams/owner access fixes, persistent pinned display stacking, collapsible desktop navigation, and the initial Broad Arrow LED Display (Quail) at 9216×1536. Stream Bid / Stream Ticker visuals and scraper architecture are unchanged.
+
+## Alpha v0.2.0 (published)
+
+Desktop-first polish and operational features on the v0.1.4 foundation (pinned viewer, display transport, publishing lease hardening, access/sync improvements, scraper performance instrumentation, and related tests). This milestone **does not** include LAN-wide local display hosting or modular project package downloads.
 
 ## Future milestones (planned — not started)
 
@@ -33,7 +37,7 @@ In-flight scope includes desktop-first polish and operational features developed
 
 **Previously planned under the v0.2.0 number.** Renumbered when v0.2.0 was promoted to the current substantial release candidate.
 
-Goal: make local display URLs reachable from other machines on the LAN under controlled, project-scoped rules. **Not implemented** in v0.2.0.
+Goal: make local display URLs reachable from other machines on the LAN under controlled, project-scoped rules. **Not implemented** in v0.2.0 or v0.2.1.
 
 ### v0.4.0 — NEUD core + modular project packages
 

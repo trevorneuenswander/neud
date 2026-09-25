@@ -15,6 +15,7 @@ type BroadArrowTypedDisplayPreviewProps = {
   label?: string;
   showSizeLabel?: boolean;
   graphicOnly?: boolean;
+  managementCheckerboard?: boolean;
 };
 
 export function BroadArrowTypedDisplayPreview({
@@ -26,6 +27,7 @@ export function BroadArrowTypedDisplayPreview({
   label,
   showSizeLabel = true,
   graphicOnly = false,
+  managementCheckerboard,
 }: BroadArrowTypedDisplayPreviewProps) {
   const { data } = useBroadArrowDisplayData(projectId);
   const Renderer = resolveBroadArrowDisplayRenderer(rendererKey);
@@ -41,6 +43,7 @@ export function BroadArrowTypedDisplayPreview({
       label={label}
       showSizeLabel={showSizeLabel}
       graphicOnly={graphicOnly}
+      managementCheckerboard={managementCheckerboard}
     >
       <Renderer data={data} enabled={enabled} />
     </BroadArrowDisplayCanvas>

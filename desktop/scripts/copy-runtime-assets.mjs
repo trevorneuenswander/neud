@@ -159,21 +159,59 @@ function validateDataEngineRuntimeAssets() {
   console.log("Validated data-engine runtime assets");
 }
 
+const REQUIRED_DISPLAY_BRIDGE_SCRIPTS = [
+  "legacy-pylon-v2-bridge.js",
+  "legacy-pylon-live-bridge.js",
+  "legacy-ticker-v2-bridge.js",
+  "legacy-ticker-live-bridge.js",
+  "stream-bid-v2-bridge.js",
+  "stream-ticker-v2-bridge.js",
+  "led-display-quail-v2-bridge.js",
+];
+
+const ADDITIONAL_DISPLAY_RUNTIME_SCRIPTS = ["legacy-ticker-marquee.js"];
+
+function listDisplayBridgeSourceFiles() {
+  const sourceDir = path.join(desktopRoot, "src", "displays");
+  return fs
+    .readdirSync(sourceDir)
+    .filter((file) => file.endsWith("-bridge.js"))
+    .sort();
+}
+
 function copyDisplayBridgeAssets() {
+  const sourceDir = path.join(desktopRoot, "src", "displays");
   const targetDir = path.join(desktopRoot, "dist", "displays");
   fs.mkdirSync(targetDir, { recursive: true });
 
-  for (const filename of [
-    "legacy-pylon-v2-bridge.js",
-    "legacy-pylon-live-bridge.js",
-    "legacy-ticker-v2-bridge.js",
-    "legacy-ticker-live-bridge.js",
-    "legacy-ticker-marquee.js",
-    "stream-bid-v2-bridge.js",
-    "stream-ticker-v2-bridge.js",
-  ]) {
-    const source = path.join(desktopRoot, "src", "displays", filename);
+  for (const filename of REQUIRED_DISPLAY_BRIDGE_SCRIPTS) {
+    const source = path.join(sourceDir, filename);
+    if (!fs.existsSync(source)) {
+      console.error(`Missing required display bridge source: ${source}`);
+      process.exit(1);
+    }
+  }
+
+  for (const filename of listDisplayBridgeSourceFiles()) {
+    const source = path.join(sourceDir, filename);
     fs.copyFileSync(source, path.join(targetDir, filename));
+  }
+
+  for (const filename of ADDITIONAL_DISPLAY_RUNTIME_SCRIPTS) {
+    const source = path.join(sourceDir, filename);
+    if (!fs.existsSync(source)) {
+      console.error(`Missing required display runtime script: ${source}`);
+      process.exit(1);
+    }
+    fs.copyFileSync(source, path.join(targetDir, filename));
+  }
+
+  for (const filename of REQUIRED_DISPLAY_BRIDGE_SCRIPTS) {
+    const target = path.join(targetDir, filename);
+    if (!fs.existsSync(target)) {
+      console.error(`Failed to stage required display bridge: ${target}`);
+      process.exit(1);
+    }
   }
 
   const bundledSourceDir = path.join(desktopRoot, "src", "displays", "bundled");

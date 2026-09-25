@@ -132,6 +132,7 @@ import {
 } from "./activity-message";
 import {
   ACTIVITY_SYSTEM_ACTOR_LABEL,
+  ACTIVITY_UNKNOWN_USER_LABEL,
   isAutomatedActivityEventType,
 } from "../lib/activity/actor-resolution";
 import { formatPollingInterval } from "./poll-interval-format";
@@ -152,12 +153,21 @@ import type { UserPinnedViewerRepository } from "../repositories/user-pinned-vie
 import type { PinnedViewerSyncService } from "./pinned-viewer/pinned-viewer-sync-service";
 import {
   DEFAULT_PINNED_VIEWER_HEIGHT_PX,
-  MAX_PINNED_DISPLAYS,
   clampPinnedViewerHeight,
   normalizePinnedViewerHeight,
   orderPinnedDisplayIds,
-  sanitizePinnedDisplayIds,
 } from "../lib/displays/pinned-viewer-preference";
+import {
+  MAX_PINNED_DISPLAYS_MESSAGE,
+  MAX_VISIBLE_PINNED_SLOTS,
+  buildAddToStackPreference,
+  buildRemoveFromStackPreference,
+  buildUnpinStackPreference,
+  countVisiblePinnedSlots,
+  deriveVisiblePinnedSlots,
+  sanitizePinnedViewerStacks,
+  type PinnedStackRecord,
+} from "../lib/displays/pinned-viewer-stacks";
 import type { ProjectDisplayCodeRepository } from "../repositories/project-display-code-repository";
 import { reconcileHostedProjectAndDisplayIdentity } from "./display-sync/hosted-identity-reconciliation";
 import type { LocalDisplay } from "../repositories/displays-repository";
@@ -3237,6 +3247,42 @@ export class LocalDataService {
     }));
   }
 
+  private buildPinnedViewerDisplaysById(
+    eligible: ReturnType<LocalDataService["listPinnedViewerEligibleDisplays"]>,
+  ) {
+    return new Map(
+      eligible.map((display) => [
+        display.id,
+        { id: display.id, width: display.width, height: display.height },
+      ]),
+    );
+  }
+
+  private persistPinnedViewerPreference(
+    userId: string,
+    projectId: string,
+    input: {
+      pinnedDisplayIds: string[];
+      pinnedStacks: PinnedStackRecord[];
+      viewerHeightPx: number;
+    },
+  ) {
+    if (!this.userPinnedViewer) {
+      throw new Error("Pinned viewer persistence is unavailable.");
+    }
+    const updatedAt = new Date().toISOString();
+    this.userPinnedViewer.upsert({
+      userId,
+      projectId,
+      pinnedDisplayIds: input.pinnedDisplayIds,
+      pinnedStacks: input.pinnedStacks,
+      viewerHeightPx: normalizePinnedViewerHeight(input.viewerHeightPx),
+      updatedAt,
+      cloudSyncStatus: "pending",
+    });
+    void this.pinnedViewerSync?.requestSync(projectId, "save");
+  }
+
   getPinnedViewerState(projectId: string) {
     const userId = this.auth.getAuthenticatedUser()?.userId;
     if (!userId) {
@@ -3248,24 +3294,29 @@ export class LocalDataService {
 
     const eligible = this.listPinnedViewerEligibleDisplays(projectId);
     const displayOrderIds = eligible.map((display) => display.id);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligible);
     const stored = this.userPinnedViewer.get(userId, projectId);
     const rawPinned = stored?.pinnedDisplayIds ?? [];
-    const sanitized = sanitizePinnedDisplayIds(rawPinned, eligible);
-    const orderedPinnedIds = orderPinnedDisplayIds(sanitized.pinnedDisplayIds, displayOrderIds);
+    const rawStacks = stored?.pinnedStacks ?? [];
+    const sanitized = sanitizePinnedViewerStacks({
+      pinnedDisplayIds: rawPinned,
+      stacks: rawStacks,
+      displays: eligible.map(({ id, enabled, archived }) => ({ id, enabled, archived })),
+      displayListOrderIds: displayOrderIds,
+      displaysById,
+    });
+    const orderedPinnedIds = sanitized.pinnedDisplayIds;
     const viewerHeightPx = normalizePinnedViewerHeight(stored?.viewerHeightPx);
 
     if (
-      sanitized.removedIds.length > 0 ||
-      orderedPinnedIds.join(",") !== rawPinned.join(",")
+      sanitized.removedDisplayIds.length > 0 ||
+      orderedPinnedIds.join(",") !== rawPinned.join(",") ||
+      JSON.stringify(sanitized.stacks) !== JSON.stringify(rawStacks)
     ) {
-      const updatedAt = new Date().toISOString();
-      this.userPinnedViewer.upsert({
-        userId,
-        projectId,
+      this.persistPinnedViewerPreference(userId, projectId, {
         pinnedDisplayIds: orderedPinnedIds,
+        pinnedStacks: sanitized.stacks,
         viewerHeightPx,
-        updatedAt,
-        cloudSyncStatus: "pending",
       });
       void this.pinnedViewerSync?.requestSync(projectId, "sanitize");
     }
@@ -3274,12 +3325,21 @@ export class LocalDataService {
       .map((id) => eligible.find((display) => display.id === id))
       .filter((display): display is (typeof eligible)[number] => Boolean(display));
 
+    const visibleSlots = deriveVisiblePinnedSlots({
+      pinnedDisplayIds: orderedPinnedIds,
+      stacks: sanitized.stacks,
+      displayListOrderIds: displayOrderIds,
+      displaysById,
+    });
+
     return {
       pinnedDisplayIds: orderedPinnedIds,
+      pinnedStacks: sanitized.stacks,
       viewerHeightPx,
       updatedAt: stored?.updatedAt ?? new Date(0).toISOString(),
       cloudSyncStatus: stored?.cloudSyncStatus ?? "pending",
       displays: pinnedDisplays,
+      visibleSlots,
       displayOrderIds,
       eligible: eligible.map(({ id, enabled, archived }) => ({ id, enabled, archived })),
     };
@@ -3287,7 +3347,11 @@ export class LocalDataService {
 
   savePinnedViewerPreference(
     projectId: string,
-    input: { pinnedDisplayIds: string[]; viewerHeightPx: number },
+    input: {
+      pinnedDisplayIds: string[];
+      pinnedStacks?: PinnedStackRecord[];
+      viewerHeightPx: number;
+    },
   ) {
     const userId = this.auth.getAuthenticatedUser()?.userId;
     if (!userId) {
@@ -3299,23 +3363,31 @@ export class LocalDataService {
 
     const eligible = this.listPinnedViewerEligibleDisplays(projectId);
     const displayOrderIds = eligible.map((display) => display.id);
-    const sanitized = sanitizePinnedDisplayIds(input.pinnedDisplayIds, eligible);
-    const orderedPinnedIds = orderPinnedDisplayIds(sanitized.pinnedDisplayIds, displayOrderIds);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligible);
+    const sanitized = sanitizePinnedViewerStacks({
+      pinnedDisplayIds: input.pinnedDisplayIds,
+      stacks: input.pinnedStacks ?? [],
+      displays: eligible.map(({ id, enabled, archived }) => ({ id, enabled, archived })),
+      displayListOrderIds: displayOrderIds,
+      displaysById,
+    });
 
-    if (orderedPinnedIds.length > MAX_PINNED_DISPLAYS) {
-      throw new Error("Maximum of 4 pinned displays.");
+    const visibleCount = countVisiblePinnedSlots({
+      pinnedDisplayIds: sanitized.pinnedDisplayIds,
+      stacks: sanitized.stacks,
+      displayListOrderIds: displayOrderIds,
+      displaysById,
+    });
+    if (visibleCount > MAX_VISIBLE_PINNED_SLOTS) {
+      throw new Error(MAX_PINNED_DISPLAYS_MESSAGE);
     }
 
-    const updatedAt = new Date().toISOString();
-    const row = this.userPinnedViewer.upsert({
-      userId,
-      projectId,
-      pinnedDisplayIds: orderedPinnedIds,
-      viewerHeightPx: normalizePinnedViewerHeight(input.viewerHeightPx),
-      updatedAt,
-      cloudSyncStatus: "pending",
+    this.persistPinnedViewerPreference(userId, projectId, {
+      pinnedDisplayIds: sanitized.pinnedDisplayIds,
+      pinnedStacks: sanitized.stacks,
+      viewerHeightPx: input.viewerHeightPx,
     });
-    void this.pinnedViewerSync?.requestSync(projectId, "save");
+    const row = this.userPinnedViewer.get(userId, projectId)!;
     return { ok: true as const, preference: row };
   }
 
@@ -3328,8 +3400,15 @@ export class LocalDataService {
     const state = this.getPinnedViewerState(projectId);
     const isPinned = state.pinnedDisplayIds.includes(displayId);
     if (isPinned) {
+      const stacks = state.pinnedStacks
+        .map((stack) => ({
+          ...stack,
+          displayIds: stack.displayIds.filter((id) => id !== displayId),
+        }))
+        .filter((stack) => stack.displayIds.length >= 2);
       return this.savePinnedViewerPreference(projectId, {
         pinnedDisplayIds: state.pinnedDisplayIds.filter((id) => id !== displayId),
+        pinnedStacks: stacks,
         viewerHeightPx: state.viewerHeightPx,
       });
     }
@@ -3339,12 +3418,21 @@ export class LocalDataService {
       throw new Error("Only enabled displays can be pinned.");
     }
 
-    if (state.pinnedDisplayIds.length >= MAX_PINNED_DISPLAYS) {
-      throw new Error("Maximum of 4 pinned displays.");
+    const eligibleDisplays = this.listPinnedViewerEligibleDisplays(projectId);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligibleDisplays);
+    const visibleCount = countVisiblePinnedSlots({
+      pinnedDisplayIds: [...state.pinnedDisplayIds, displayId],
+      stacks: state.pinnedStacks,
+      displayListOrderIds: state.displayOrderIds,
+      displaysById,
+    });
+    if (visibleCount > MAX_VISIBLE_PINNED_SLOTS) {
+      throw new Error(MAX_PINNED_DISPLAYS_MESSAGE);
     }
 
     return this.savePinnedViewerPreference(projectId, {
       pinnedDisplayIds: [...state.pinnedDisplayIds, displayId],
+      pinnedStacks: state.pinnedStacks,
       viewerHeightPx: state.viewerHeightPx,
     });
   }
@@ -3353,7 +3441,71 @@ export class LocalDataService {
     const state = this.getPinnedViewerState(projectId);
     return this.savePinnedViewerPreference(projectId, {
       pinnedDisplayIds: state.pinnedDisplayIds,
+      pinnedStacks: state.pinnedStacks,
       viewerHeightPx,
+    });
+  }
+
+  addPinnedDisplayToStack(
+    projectId: string,
+    input: {
+      sourceDisplayId: string;
+      target:
+        | { kind: "display"; displayId: string }
+        | { kind: "stack"; stackId: string };
+    },
+  ) {
+    const state = this.getPinnedViewerState(projectId);
+    const eligible = this.listPinnedViewerEligibleDisplays(projectId);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligible);
+    const next = buildAddToStackPreference({
+      sourceDisplayId: input.sourceDisplayId,
+      target: input.target,
+      pinnedDisplayIds: state.pinnedDisplayIds,
+      stacks: state.pinnedStacks,
+      displayListOrderIds: state.displayOrderIds,
+      displaysById,
+    });
+    return this.savePinnedViewerPreference(projectId, {
+      pinnedDisplayIds: next.pinnedDisplayIds,
+      pinnedStacks: next.stacks,
+      viewerHeightPx: state.viewerHeightPx,
+    });
+  }
+
+  removePinnedDisplayFromStack(
+    projectId: string,
+    input: { stackId: string; displayId: string },
+  ) {
+    const state = this.getPinnedViewerState(projectId);
+    const eligible = this.listPinnedViewerEligibleDisplays(projectId);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligible);
+    const next = buildRemoveFromStackPreference({
+      stackId: input.stackId,
+      displayId: input.displayId,
+      pinnedDisplayIds: state.pinnedDisplayIds,
+      stacks: state.pinnedStacks,
+      displayListOrderIds: state.displayOrderIds,
+      displaysById,
+    });
+    return this.savePinnedViewerPreference(projectId, {
+      pinnedDisplayIds: next.pinnedDisplayIds,
+      pinnedStacks: next.stacks,
+      viewerHeightPx: state.viewerHeightPx,
+    });
+  }
+
+  unpinPinnedViewerStack(projectId: string, stackId: string) {
+    const state = this.getPinnedViewerState(projectId);
+    const next = buildUnpinStackPreference({
+      stackId,
+      pinnedDisplayIds: state.pinnedDisplayIds,
+      stacks: state.pinnedStacks,
+    });
+    return this.savePinnedViewerPreference(projectId, {
+      pinnedDisplayIds: next.pinnedDisplayIds,
+      pinnedStacks: next.stacks,
+      viewerHeightPx: state.viewerHeightPx,
     });
   }
 
@@ -3366,8 +3518,15 @@ export class LocalDataService {
     if (!stored?.pinnedDisplayIds.includes(displayId)) {
       return { ok: true as const, changed: false };
     }
+    const stacks = (stored.pinnedStacks ?? [])
+      .map((stack) => ({
+        ...stack,
+        displayIds: stack.displayIds.filter((id) => id !== displayId),
+      }))
+      .filter((stack) => stack.displayIds.length >= 2);
     this.savePinnedViewerPreference(projectId, {
       pinnedDisplayIds: stored.pinnedDisplayIds.filter((id) => id !== displayId),
+      pinnedStacks: stacks,
       viewerHeightPx: stored.viewerHeightPx,
     });
     return { ok: true as const, changed: true };
@@ -4346,6 +4505,31 @@ export class LocalDataService {
 
     return {
       id: user?.userId,
+      name,
+      email: email || undefined,
+    };
+  }
+
+  resolveActivityActorForUserId(userId?: string | null): ActivityActor | undefined {
+    const trimmed = userId?.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const user = this.accessManagement?.lookupUserForActivityActor(trimmed) ?? null;
+    if (!user) {
+      return {
+        id: trimmed,
+        name: ACTIVITY_UNKNOWN_USER_LABEL,
+      };
+    }
+    const displayName = user.fullName?.trim();
+    const email = user.email?.trim();
+    const name =
+      displayName ||
+      (email ? email.split("@")[0] : "") ||
+      ACTIVITY_UNKNOWN_USER_LABEL;
+    return {
+      id: user.id,
       name,
       email: email || undefined,
     };

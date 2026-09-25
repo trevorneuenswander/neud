@@ -13,6 +13,7 @@ const BROAD_ARROW_SLUG = "broad-arrow-auctions";
 const INTENDED_ACTIVE_SLUGS = new Set([
   "stream-bid-display",
   "stream-ticker",
+  "led-display-quail",
   "legacy-pylon",
   "legacy-ticker",
 ]);

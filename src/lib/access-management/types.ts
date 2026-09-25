@@ -64,6 +64,7 @@ export type AccessManagementErrorCode =
   | "insufficient_access"
   | "outside_team_scope"
   | "cannot_modify_owner"
+  | "owner_protected"
   | "owner_role_not_assignable"
   | "sole_owner_protected"
   | "owner_team_protected"

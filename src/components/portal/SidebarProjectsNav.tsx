@@ -3,22 +3,25 @@
 import Link from "next/link";
 import { useEffect, useId, useState } from "react";
 import { usePathname } from "next/navigation";
+import { SidebarTooltip } from "@/components/portal/SidebarTooltip";
 import { useSidebarProjects } from "@/hooks/useSidebarProjects";
 import {
   buildProjectLandingHref,
   extractProjectSlugFromPathname,
 } from "@/lib/projects/project-landing-route";
 import { isProjectWorkspacePath } from "@/lib/portal/navigation";
+import { useSidebarCollapsed } from "@/lib/portal/sidebar-collapse-context";
 import {
   readSidebarProjectsExpandedPreference,
   writeSidebarProjectsExpandedPreference,
 } from "@/lib/portal/sidebar-projects-preference";
+import { SidebarProjectsIcon } from "@/lib/portal/sidebar-nav-icons";
 import type { ProjectListItem } from "@/lib/projects/types";
 import {
   SIDEBAR_PRIMARY_NAV_CHEVRON_CLASS,
-  SIDEBAR_PRIMARY_NAV_ROW_CLASS,
   sidebarPrimaryNavActiveClass,
   sidebarPrimaryNavInactiveClass,
+  sidebarPrimaryNavRowClass,
 } from "@/lib/portal/sidebar-nav-item-classes";
 
 type SidebarProjectsNavProps = {
@@ -40,6 +43,7 @@ export function SidebarProjectsNav({
   onNavigate,
 }: SidebarProjectsNavProps) {
   const pathname = usePathname();
+  const sidebarCollapsed = useSidebarCollapsed();
   const submenuId = useId();
   const { projects, viewerMode, hasLoaded } = useSidebarProjects({
     initialProjects,
@@ -51,12 +55,8 @@ export function SidebarProjectsNav({
     pathname.split("?")[0]?.split("#")[0] ?? pathname,
   );
 
-  const [expanded, setExpanded] = useState(() => {
-    if (inProjectWorkspace) {
-      return true;
-    }
-    return readSidebarProjectsExpandedPreference() ?? false;
-  });
+  // SSR and first client paint must match; apply localStorage only after mount.
+  const [expanded, setExpanded] = useState(() => inProjectWorkspace);
 
   useEffect(() => {
     if (inProjectWorkspace) {
@@ -81,23 +81,50 @@ export function SidebarProjectsNav({
 
   const noDragStyle = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 
+  const projectsLinkClass = `${sidebarPrimaryNavRowClass(sidebarCollapsed)} ${
+    sidebarCollapsed
+      ? parentActive
+        ? sidebarPrimaryNavActiveClass
+        : sidebarPrimaryNavInactiveClass
+      : parentActive && !activeSlug
+        ? sidebarPrimaryNavActiveClass
+        : parentActive
+          ? "text-foreground hover:bg-surface-raised"
+          : sidebarPrimaryNavInactiveClass
+  } ${sidebarCollapsed ? "" : "min-w-0 flex-1"}`;
+
+  const projectsLink = (
+    <Link
+      href={projectsHref}
+      onClick={onNavigate}
+      aria-current={
+        sidebarCollapsed
+          ? parentActive
+            ? "page"
+            : undefined
+          : parentActive && !activeSlug
+            ? "page"
+            : undefined
+      }
+      className={projectsLinkClass}
+    >
+      <SidebarProjectsIcon className="h-5 w-5 shrink-0" />
+      <span className={sidebarCollapsed ? "sr-only" : "min-w-0 truncate"}>Projects</span>
+    </Link>
+  );
+
+  if (sidebarCollapsed) {
+    return (
+      <div style={noDragStyle}>
+        <SidebarTooltip label="Projects">{projectsLink}</SidebarTooltip>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-0.5" style={noDragStyle}>
       <div className="flex h-10 items-stretch gap-0.5">
-        <Link
-          href={projectsHref}
-          onClick={onNavigate}
-          aria-current={parentActive && !activeSlug ? "page" : undefined}
-          className={`${SIDEBAR_PRIMARY_NAV_ROW_CLASS} min-w-0 flex-1 ${
-            parentActive && !activeSlug
-              ? sidebarPrimaryNavActiveClass
-              : parentActive
-                ? "text-foreground hover:bg-surface-raised"
-                : sidebarPrimaryNavInactiveClass
-          }`}
-        >
-          Projects
-        </Link>
+        {projectsLink}
         <button
           type="button"
           onClick={toggleExpanded}

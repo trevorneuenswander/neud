@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=9216, height=1536, initial-scale=1" />
+<title>LED Display (Quail)</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #f7f5f2;
+  }
+
+  body {
+    font-family: Helvetica, "Helvetica Neue", Arial, sans-serif;
+    color: #111;
+    user-select: none;
+  }
+
+  :root {
+    --canvas-w: 9216px;
+    --canvas-h: 1536px;
+    --safe-x: 640px;
+    --red: #c8102e;
+  }
+
+  .viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #f7f5f2;
+  }
+
+  .display-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--canvas-w);
+    height: var(--canvas-h);
+    transform-origin: left top;
+    background: linear-gradient(180deg, #faf9f7 0%, #f3f1ed 100%);
+  }
+
+  .logo-wrap {
+    position: absolute;
+    left: 50%;
+    top: 72px;
+    transform: translateX(-50%);
+    padding: 20px 56px;
+    background: #101010;
+    border-radius: 12px;
+    z-index: 20;
+  }
+
+  .logo-wrap img {
+    display: block;
+    height: 96px;
+    width: auto;
+    max-width: 720px;
+    object-fit: contain;
+  }
+
+  .up-next-region {
+    position: absolute;
+    left: var(--safe-x);
+    right: var(--safe-x);
+    top: 220px;
+    height: 200px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 48px;
+    z-index: 15;
+  }
+
+  .up-next-region.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .up-next-slot {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+    transition: opacity 0.45s ease;
+  }
+
+  .up-next-slot .lot {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #111;
+    line-height: 1.1;
+  }
+
+  .up-next-slot .title {
+    margin-top: 12px;
+    font-size: 48px;
+    font-weight: 500;
+    color: #222;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .center-block {
+    position: absolute;
+    left: 50%;
+    top: 52%;
+    transform: translate(-50%, -50%);
+    width: 3200px;
+    text-align: center;
+    z-index: 12;
+  }
+
+  .center-block.is-hidden {
+    opacity: 0;
+    transform: translate(-50%, -46%);
+  }
+
+  .center-block.is-entering {
+    transition: opacity 0.55s ease, transform 0.55s ease;
+  }
+
+  .center-lot {
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #333;
+  }
+
+  .center-title {
+    margin-top: 20px;
+    font-size: 112px;
+    font-weight: 700;
+    line-height: 1.05;
+    color: #0a0a0a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .center-reserve {
+    margin-top: 28px;
+    min-height: 52px;
+    font-size: 44px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--red);
+  }
+
+  .center-bid {
+    margin-top: 36px;
+    font-size: 148px;
+    font-weight: 800;
+    line-height: 1;
+    color: #000;
+  }
+
+  .center-currencies {
+    margin-top: 28px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 28px 40px;
+    font-size: 40px;
+    font-weight: 500;
+    color: #333;
+  }
+
+  .photo-frame {
+    position: absolute;
+    width: 1380px;
+    height: 776px;
+    border-radius: 28px;
+    overflow: hidden;
+    background: #e8e6e2;
+    z-index: 8;
+    will-change: transform, opacity;
+  }
+
+  .photo-frame img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 1;
+    transition: opacity 0.65s ease;
+  }
+
+  .photo-frame img.is-fading-out {
+    opacity: 0;
+  }
+
+  .photo-frame img.is-fading-in {
+    opacity: 0;
+  }
+
+  .photo-frame.is-entering {
+    opacity: 0;
+    transition: transform 0.7s ease, opacity 0.7s ease;
+  }
+
+  .photo-frame.is-exiting {
+    opacity: 0;
+    transition: opacity 0.45s ease, transform 0.45s ease;
+  }
+
+  .photo-left-outer { left: 520px; top: 520px; transform: rotate(-7deg); }
+  .photo-left-inner { left: 1880px; top: 600px; transform: rotate(4deg); }
+  .photo-right-inner { right: 1880px; top: 580px; transform: rotate(-5deg); }
+  .photo-right-outer { right: 520px; top: 500px; transform: rotate(8deg); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .photo-frame, .center-block, .up-next-slot, .photo-frame img {
+      transition: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="viewport">
+  <div class="display-stage" id="stage">
+    <div class="logo-wrap">
+      <img src="/displays/pylon/logo.png" alt="Broad Arrow Auctions" />
+    </div>
+
+    <div class="up-next-region hidden" id="upNextRegion">
+      <div class="up-next-slot" id="upNext0"><div class="lot"></div><div class="title"></div></div>
+      <div class="up-next-slot" id="upNext1"><div class="lot"></div><div class="title"></div></div>
+      <div class="up-next-slot" id="upNext2"><div class="lot"></div><div class="title"></div></div>
+    </div>
+
+    <div class="photo-frame photo-left-outer" data-frame="0"><img alt="" /></div>
+    <div class="photo-frame photo-left-inner" data-frame="1"><img alt="" /></div>
+    <div class="photo-frame photo-right-inner" data-frame="2"><img alt="" /></div>
+    <div class="photo-frame photo-right-outer" data-frame="3"><img alt="" /></div>
+
+    <div class="center-block is-hidden" id="centerBlock">
+      <div class="center-lot" id="centerLot"></div>
+      <div class="center-title" id="centerTitle"></div>
+      <div class="center-reserve" id="centerReserve"></div>
+      <div class="center-bid" id="centerBid"></div>
+      <div class="center-currencies" id="centerCurrencies"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  window.QUAIL_CANVAS_WIDTH = 9216;
+  window.QUAIL_CANVAS_HEIGHT = 1536;
+  window.QUAIL_PHOTO_SLIDE_MS = 6000;
+  window.QUAIL_PHOTO_STAGGER_MS = 280;
+
+  var PHOTO_FRAME_SPECS = [
+    { key: "left-outer", className: "photo-left-outer", rotation: -7 },
+    { key: "left-inner", className: "photo-left-inner", rotation: 4 },
+    { key: "right-inner", className: "photo-right-inner", rotation: -5 },
+    { key: "right-outer", className: "photo-right-outer", rotation: 8 },
+  ];
+  window.QUAIL_PHOTO_FRAME_SPECS = PHOTO_FRAME_SPECS;
+
+  var stage = document.getElementById("stage");
+  var upNextRegion = document.getElementById("upNextRegion");
+  var upNextSlots = [
+    document.getElementById("upNext0"),
+    document.getElementById("upNext1"),
+    document.getElementById("upNext2"),
+  ];
+  var centerBlock = document.getElementById("centerBlock");
+  var centerLot = document.getElementById("centerLot");
+  var centerTitle = document.getElementById("centerTitle");
+  var centerReserve = document.getElementById("centerReserve");
+  var centerBid = document.getElementById("centerBid");
+  var centerCurrencies = document.getElementById("centerCurrencies");
+  var photoFrames = Array.prototype.slice.call(document.querySelectorAll(".photo-frame"));
+
+  var renderedLotKey = null;
+  var slideshowTimers = [];
+  var upNextCycleTimer = null;
+  var upNextAllLots = [];
+  var upNextCycleIndex = 0;
+  var failedPhotoUrls = Object.create(null);
+  var frameStates = photoFrames.map(function () {
+    return { queue: [], index: 0, currentUrl: "" };
+  });
+
+  function textValue(value) {
+    if (value === null || value === undefined) return "";
+    return String(value).trim();
+  }
+
+  function formatLotLabel(value) {
+    var lot = textValue(value);
+    if (!lot) return "LOT —";
+    return /^lot\b/i.test(lot) ? lot.toUpperCase() : "LOT " + lot.replace(/^lot\s+/i, "");
+  }
+
+  function formatReserveStatusForQuail(value) {
+    var text = textValue(value);
+    if (!text || /^unknown$/i.test(text)) return "";
+    if (/offered\s+without\s+reserve|offered_without_reserve|no[-_]?reserve|without\s+reserve/i.test(text)) {
+      return "OFFERED WITHOUT RESERVE";
+    }
+    if (/has[-_\s]?reserve|with\s+reserve/i.test(text)) return "";
+    return text.toUpperCase();
+  }
+
+  function hashLotKey(value) {
+    var text = textValue(value);
+    var hash = 0;
+    for (var i = 0; i < text.length; i += 1) {
+      hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+    }
+    return hash;
+  }
+
+  function seededShuffle(list, seed) {
+    var arr = list.slice();
+    var state = seed || 1;
+    for (var i = arr.length - 1; i > 0; i -= 1) {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      var j = state % (i + 1);
+      var tmp = arr[i];
+      arr[i] = arr[j];
+      arr[j] = tmp;
+    }
+    return arr;
+  }
+
+  function filterValidPhotos(photos) {
+    return (photos || []).filter(function (url) {
+      return textValue(url) && !failedPhotoUrls[url];
+    });
+  }
+
+  function selectInitialQuailPhotos(photos, lotKey) {
+    var valid = filterValidPhotos(photos);
+    if (!valid.length) return [];
+    var shuffled = seededShuffle(valid, hashLotKey(lotKey) || 17);
+    if (shuffled.length <= 4) return shuffled.slice();
+    var picked = [];
+    for (var i = 0; i < 4; i += 1) {
+      picked.push(shuffled[i]);
+    }
+    return picked;
+  }
+
+  function createFrameQueue(photos, currentUrl, excludeUrls) {
+    var valid = filterValidPhotos(photos).filter(function (url) {
+      return url !== currentUrl && !(excludeUrls && excludeUrls[url]);
+    });
+    if (!valid.length) return [];
+    return seededShuffle(valid, hashLotKey(currentUrl + valid.length));
+  }
+
+  window.__quailTestHooks = {
+    selectInitialQuailPhotos: selectInitialQuailPhotos,
+    createFrameQueue: createFrameQueue,
+    formatReserveStatusForQuail: formatReserveStatusForQuail,
+    PHOTO_FRAME_SPECS: PHOTO_FRAME_SPECS,
+  };
+
+  function clearSlideshowTimers() {
+    slideshowTimers.forEach(function (id) { window.clearTimeout(id); });
+    slideshowTimers = [];
+  }
+
+  function clearAllTimers() {
+    clearSlideshowTimers();
+    if (upNextCycleTimer) {
+      window.clearTimeout(upNextCycleTimer);
+      upNextCycleTimer = null;
+    }
+  }
+
+  function scaleStage() {
+    var vw = window.innerWidth || 9216;
+    var vh = window.innerHeight || 1536;
+    var scale = Math.min(vw / 9216, vh / 1536);
+    stage.style.transform = "scale(" + scale + ")";
+  }
+
+  function setImageWithCrossfade(img, url, done) {
+    if (!url) {
+      img.removeAttribute("src");
+      if (done) done(false);
+      return;
+    }
+    var preload = new Image();
+    preload.onload = function () {
+      if (img.src && img.src !== url) {
+        img.classList.add("is-fading-out");
+        window.setTimeout(function () {
+          img.classList.remove("is-fading-out");
+          img.src = url;
+          img.classList.add("is-fading-in");
+          void img.offsetWidth;
+          img.classList.remove("is-fading-in");
+          if (done) done(true);
+        }, 320);
+      } else {
+        img.src = url;
+        if (done) done(true);
+      }
+    };
+    preload.onerror = function () {
+      failedPhotoUrls[url] = true;
+      if (done) done(false);
+    };
+    preload.src = url;
+  }
+
+  function renderUpNextVisible() {
+    if (!upNextAllLots.length) {
+      upNextRegion.classList.add("hidden");
+      return;
+    }
+    upNextRegion.classList.remove("hidden");
+    var slice = [];
+    for (var i = 0; i < 3; i += 1) {
+      slice.push(upNextAllLots[(upNextCycleIndex + i) % upNextAllLots.length]);
+    }
+    for (var slot = 0; slot < 3; slot += 1) {
+      var entry = slice[slot];
+      var lotEl = upNextSlots[slot].querySelector(".lot");
+      var titleEl = upNextSlots[slot].querySelector(".title");
+      if (!entry) {
+        upNextSlots[slot].style.opacity = "0";
+        continue;
+      }
+      upNextSlots[slot].style.opacity = "1";
+      lotEl.textContent = formatLotLabel(entry.lot);
+      titleEl.textContent = textValue(entry.title) || "—";
+    }
+  }
+
+  function scheduleUpNextCycle() {
+    if (upNextCycleTimer) window.clearTimeout(upNextCycleTimer);
+    if (upNextAllLots.length <= 3) return;
+    upNextCycleTimer = window.setTimeout(function () {
+      upNextCycleIndex = (upNextCycleIndex + 3) % upNextAllLots.length;
+      renderUpNextVisible();
+      scheduleUpNextCycle();
+    }, 8000);
+  }
+
+  function updateLiveFields(display) {
+    centerLot.textContent = formatLotLabel(display.lot);
+    centerTitle.textContent = textValue(display.title) || "—";
+    centerReserve.textContent = formatReserveStatusForQuail(display.reserveStatus);
+    centerBid.textContent = textValue(display.biddingPrice) || "—";
+    centerCurrencies.innerHTML = "";
+    (display.currencies || []).forEach(function (line) {
+      var span = document.createElement("span");
+      span.textContent = line;
+      centerCurrencies.appendChild(span);
+    });
+  }
+
+  function resetFrameTransforms() {
+    photoFrames.forEach(function (frame, index) {
+      var spec = PHOTO_FRAME_SPECS[index];
+      frame.classList.remove("is-entering", "is-exiting");
+      frame.style.opacity = "1";
+      frame.style.transform = "rotate(" + spec.rotation + "deg)";
+    });
+  }
+
+  function runLotTransition(display, initialPhotos) {
+    clearAllTimers();
+    failedPhotoUrls = Object.create(null);
+    centerBlock.classList.add("is-hidden");
+    centerBlock.classList.remove("is-entering");
+
+    photoFrames.forEach(function (frame) {
+      frame.classList.add("is-exiting");
+    });
+
+    window.setTimeout(function () {
+      photoFrames.forEach(function (frame, index) {
+        var img = frame.querySelector("img");
+        img.removeAttribute("src");
+        frame.classList.remove("is-exiting");
+        frame.classList.add("is-entering");
+        var spec = PHOTO_FRAME_SPECS[index];
+        frame.style.transform = "translateX(" + (index < 2 ? -220 : 220) + "px) rotate(" + spec.rotation + "deg)";
+        frame.style.opacity = "0";
+      });
+
+      function enterPhoto(index) {
+        if (index >= 4) {
+          centerBlock.classList.remove("is-hidden");
+          centerBlock.classList.add("is-entering");
+          updateLiveFields(display);
+          startPhotoSlideshow(display.photos || []);
+          return;
+        }
+        var frame = photoFrames[index];
+        var spec = PHOTO_FRAME_SPECS[index];
+        var url = initialPhotos[index] || "";
+        var img = frame.querySelector("img");
+        window.setTimeout(function () {
+          setImageWithCrossfade(img, url, function () {
+            frame.classList.remove("is-entering");
+            frame.style.opacity = "1";
+            frame.style.transform = "rotate(" + spec.rotation + "deg)";
+            frameStates[index].currentUrl = url;
+            frameStates[index].queue = createFrameQueue(display.photos || [], url, null);
+            frameStates[index].index = 0;
+          });
+          enterPhoto(index + 1);
+        }, index === 0 ? 0 : 220);
+      }
+
+      enterPhoto(0);
+    }, 420);
+  }
+
+  function dissolveFrame(frameIndex, photos) {
+    var state = frameStates[frameIndex];
+    if (!state.queue.length) {
+      state.queue = createFrameQueue(photos, state.currentUrl, collectVisibleUrls());
+    }
+    if (!state.queue.length) return;
+
+    var nextUrl = state.queue[state.index % state.queue.length];
+    state.index += 1;
+    if (state.index >= state.queue.length) {
+      state.queue = createFrameQueue(photos, nextUrl, collectVisibleUrls());
+      state.index = 0;
+    }
+
+    var img = photoFrames[frameIndex].querySelector("img");
+    setImageWithCrossfade(img, nextUrl, function (ok) {
+      if (ok) state.currentUrl = nextUrl;
+    });
+  }
+
+  function collectVisibleUrls() {
+    var map = Object.create(null);
+    frameStates.forEach(function (state) {
+      if (state.currentUrl) map[state.currentUrl] = true;
+    });
+    return map;
+  }
+
+  function startPhotoSlideshow(photos) {
+    clearSlideshowTimers();
+    if (!filterValidPhotos(photos).length) return;
+    function tick() {
+      for (var i = 0; i < 4; i += 1) {
+        (function (frameIndex) {
+          var timer = window.setTimeout(function () {
+            dissolveFrame(frameIndex, photos);
+          }, frameIndex * window.QUAIL_PHOTO_STAGGER_MS);
+          slideshowTimers.push(timer);
+        })(i);
+      }
+      var cycle = window.setTimeout(tick, window.QUAIL_PHOTO_SLIDE_MS);
+      slideshowTimers.push(cycle);
+    }
+    tick();
+  }
+
+  window.renderQuailFeed = function renderQuailFeed(feed) {
+    if (!feed || typeof feed !== "object") return;
+    var display = feed.auctionDisplay || {};
+    var lotKey =
+      textValue(display.lot) + "|" + textValue(display.title) + "|" + textValue(display.biddingPrice);
+    var nextLots = Array.isArray(feed.next) ? feed.next : [];
+    upNextAllLots = nextLots.slice();
+    upNextCycleIndex = 0;
+    renderUpNextVisible();
+    scheduleUpNextCycle();
+
+    if (lotKey !== renderedLotKey) {
+      renderedLotKey = lotKey;
+      var initial = selectInitialQuailPhotos(display.photos || [], lotKey);
+      runLotTransition(display, initial);
+      return;
+    }
+
+    updateLiveFields(display);
+  };
+
+  scaleStage();
+  window.addEventListener("resize", scaleStage);
+})();
+
+/*__NEUD_LED_DISPLAY_QUAIL_BRIDGE__*/
+</script>
+</body>
+</html>

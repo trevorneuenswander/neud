@@ -6,6 +6,7 @@ import { isPackagedDesktopRuntime } from "./packaged-runtime";
 export const BUNDLED_DISPLAY_HTML_FILES = [
   "stream-bid-display-v1.html",
   "stream-ticker-v1.html",
+  "led-display-quail-v1.html",
   "legacy-pylon-v1.html",
   "auction-ticker-overlay-v1.html",
   "auction-pylon-display-v1.html",

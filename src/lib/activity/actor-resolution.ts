@@ -2,9 +2,7 @@ export const ACTIVITY_SYSTEM_ACTOR_LABEL = "System";
 export const ACTIVITY_UNKNOWN_USER_LABEL = "Unknown User";
 
 const AUTOMATED_ACTIVITY_EVENT_TYPES = new Set([
-  "display.online_published",
   "display.online_publish_failed",
-  "display.online_publish_resumed",
   "engine.started",
   "engine.stopped",
 ]);

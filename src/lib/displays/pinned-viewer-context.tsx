@@ -11,12 +11,19 @@ import {
   type ReactNode,
 } from "react";
 import {
+  localAddPinnedDisplayToStack,
   localGetPinnedViewerState,
+  localRemovePinnedDisplayFromStack,
   localSetPinnedViewerHeight,
   localTogglePinnedDisplay,
+  localUnpinPinnedViewerStack,
   type PinnedViewerDisplaySummary,
   type PinnedViewerState,
 } from "@/lib/local/pinned-viewer-api";
+import {
+  MAX_PINNED_DISPLAYS_MESSAGE,
+  type VisiblePinnedSlot,
+} from "@/lib/displays/pinned-viewer-stacks";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import {
   clampPinnedViewerHeight,
@@ -36,12 +43,22 @@ type PinnedViewerContextValue = {
   viewerHeightPx: number;
   pinnedDisplayIds: string[];
   pinnedDisplays: PinnedViewerDisplaySummary[];
+  visibleSlots: VisiblePinnedSlot[];
   pinMessage: string | null;
   isPinned: (displayId: string) => boolean;
   togglePin: (
     displayId: string,
     displaySummary?: PinnedViewerDisplaySummary,
   ) => Promise<void>;
+  unpinDisplay: (displayId: string) => Promise<void>;
+  addDisplayToStack: (
+    sourceDisplayId: string,
+    target:
+      | { kind: "display"; displayId: string }
+      | { kind: "stack"; stackId: string },
+  ) => Promise<void>;
+  removeDisplayFromStack: (stackId: string, displayId: string) => Promise<void>;
+  unpinStack: (stackId: string) => Promise<void>;
   setViewerHeightPx: (height: number, options?: { persist?: boolean }) => void;
   refresh: () => Promise<void>;
 };
@@ -149,8 +166,9 @@ export function PinnedViewerProvider({
 
       const previous = state;
       const wasPinned = previous?.pinnedDisplayIds.includes(displayId) ?? false;
-      if (!wasPinned && (previous?.pinnedDisplayIds.length ?? 0) >= 4) {
-        showPinMessage("Maximum of 4 pinned displays.");
+      const visibleSlotCount = previous?.visibleSlots?.length ?? previous?.pinnedDisplayIds.length ?? 0;
+      if (!wasPinned && visibleSlotCount >= 4) {
+        showPinMessage(MAX_PINNED_DISPLAYS_MESSAGE);
         logPinActionDiagnostics({
           projectId,
           userIdPresent: true,
@@ -183,10 +201,12 @@ export function PinnedViewerProvider({
       setState((current) => {
         const base: PinnedViewerState = current ?? {
           pinnedDisplayIds: [],
+          pinnedStacks: [],
           viewerHeightPx: draftHeightPx,
           updatedAt: new Date().toISOString(),
           cloudSyncStatus: "pending",
           displays: [],
+          visibleSlots: [],
           displayOrderIds: [],
           eligible: [],
         };
@@ -235,7 +255,7 @@ export function PinnedViewerProvider({
         failureStage = "toggle_request_failed";
         const message = error instanceof Error ? error.message : "Could not update pin.";
         if (message.includes("Maximum")) {
-          showPinMessage("Maximum of 4 pinned displays.");
+          showPinMessage(MAX_PINNED_DISPLAYS_MESSAGE);
         } else {
           showPinMessage(message);
         }
@@ -259,6 +279,74 @@ export function PinnedViewerProvider({
       });
     },
     [draftHeightPx, enabled, projectId, projectSlug, showPinMessage, state],
+  );
+
+  const applyPinnedMutation = useCallback(
+    async (mutation: () => Promise<PinnedViewerState>) => {
+      if (!enabled) return;
+      const previous = state;
+      try {
+        const next = await mutation();
+        setState(next);
+        setDraftHeightPx(
+          normalizePinnedViewerHeight(
+            next.viewerHeightPx,
+            typeof window !== "undefined" ? window.innerHeight : undefined,
+          ),
+        );
+      } catch (error) {
+        setState(previous ?? null);
+        const message = error instanceof Error ? error.message : "Could not update pinned viewer.";
+        showPinMessage(message);
+      }
+    },
+    [enabled, showPinMessage, state],
+  );
+
+  const unpinDisplay = useCallback(
+    async (displayId: string) => {
+      const trimmed = displayId.trim();
+      if (!trimmed) return;
+      if (state?.pinnedDisplayIds.includes(trimmed)) {
+        await togglePin(trimmed);
+      }
+    },
+    [state?.pinnedDisplayIds, togglePin],
+  );
+
+  const addDisplayToStack = useCallback(
+    async (
+      sourceDisplayId: string,
+      target:
+        | { kind: "display"; displayId: string }
+        | { kind: "stack"; stackId: string },
+    ) => {
+      await applyPinnedMutation(() =>
+        localAddPinnedDisplayToStack(projectSlug, projectId, {
+          sourceDisplayId,
+          target,
+        }),
+      );
+    },
+    [applyPinnedMutation, projectId, projectSlug],
+  );
+
+  const removeDisplayFromStack = useCallback(
+    async (stackId: string, displayId: string) => {
+      await applyPinnedMutation(() =>
+        localRemovePinnedDisplayFromStack(projectSlug, projectId, { stackId, displayId }),
+      );
+    },
+    [applyPinnedMutation, projectId, projectSlug],
+  );
+
+  const unpinStack = useCallback(
+    async (stackId: string) => {
+      await applyPinnedMutation(() =>
+        localUnpinPinnedViewerStack(projectSlug, projectId, stackId),
+      );
+    },
+    [applyPinnedMutation, projectId, projectSlug],
   );
 
   const setViewerHeightPx = useCallback(
@@ -285,11 +373,11 @@ export function PinnedViewerProvider({
   );
 
   const pinnedDisplayIds = state?.pinnedDisplayIds ?? [];
+  const visibleSlots = state?.visibleSlots ?? [];
   const pinnedDisplays = useMemo(
     () => mergeOptimisticPinnedDisplays(state?.displays ?? [], pinnedDisplayIds),
     [pinnedDisplayIds, state?.displays],
   );
-
   const viewerHeightPx = normalizePinnedViewerHeight(
     draftHeightPx,
     typeof window !== "undefined" ? window.innerHeight : undefined,
@@ -303,16 +391,26 @@ export function PinnedViewerProvider({
       viewerHeightPx,
       pinnedDisplayIds,
       pinnedDisplays,
+      visibleSlots,
       pinMessage,
       isPinned: (displayId: string) => pinnedDisplayIds.includes(displayId),
       togglePin,
+      unpinDisplay,
+      addDisplayToStack,
+      removeDisplayFromStack,
+      unpinStack,
       setViewerHeightPx,
       refresh,
     }),
     [
+      addDisplayToStack,
       pinMessage,
       pinnedDisplayIds,
       pinnedDisplays,
+      removeDisplayFromStack,
+      unpinDisplay,
+      unpinStack,
+      visibleSlots,
       viewerHeightPx,
       projectId,
       projectSlug,

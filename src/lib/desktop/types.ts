@@ -390,6 +390,9 @@ export type NeudDesktopAPI = {
       projectId: string;
       viewerHeightPx: number;
     }): Promise<import("@/lib/local/pinned-viewer-api").PinnedViewerState>;
+    patchPinnedViewer(
+      payload: { projectId: string } & Record<string, unknown>,
+    ): Promise<import("@/lib/local/pinned-viewer-api").PinnedViewerState>;
   };
   updates: {
     getStatus(): Promise<NeudUpdateStatus>;

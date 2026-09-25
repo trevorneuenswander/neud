@@ -162,6 +162,58 @@ export function registerDisplaysIpc(input: {
     return input.data.getPinnedViewerState(projectId);
   });
 
+  registerIpcHandler("neud:displays:patchPinnedViewer", (_event, payload: unknown) => {
+    if (!input.auth.isAccessAllowed()) {
+      throw new Error("Sign in to update pinned viewer.");
+    }
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid pinned viewer payload.");
+    }
+    const record = payload as Record<string, unknown>;
+    const projectId = typeof record.projectId === "string" ? record.projectId.trim() : "";
+    if (!projectId) {
+      throw new Error("Project id is required.");
+    }
+    const action = typeof record.action === "string" ? record.action : "";
+    if (action === "addToStack" && typeof record.sourceDisplayId === "string") {
+      const target = record.target;
+      if (!target || typeof target !== "object") {
+        throw new Error("Stack target is required.");
+      }
+      const targetRecord = target as Record<string, unknown>;
+      if (targetRecord.kind === "display" && typeof targetRecord.displayId === "string") {
+        input.data.addPinnedDisplayToStack(projectId, {
+          sourceDisplayId: record.sourceDisplayId.trim(),
+          target: { kind: "display", displayId: targetRecord.displayId.trim() },
+        });
+      } else if (targetRecord.kind === "stack" && typeof targetRecord.stackId === "string") {
+        input.data.addPinnedDisplayToStack(projectId, {
+          sourceDisplayId: record.sourceDisplayId.trim(),
+          target: { kind: "stack", stackId: targetRecord.stackId.trim() },
+        });
+      } else {
+        throw new Error("Invalid stack target.");
+      }
+      return input.data.getPinnedViewerState(projectId);
+    }
+    if (
+      action === "removeFromStack" &&
+      typeof record.stackId === "string" &&
+      typeof record.displayId === "string"
+    ) {
+      input.data.removePinnedDisplayFromStack(projectId, {
+        stackId: record.stackId.trim(),
+        displayId: record.displayId.trim(),
+      });
+      return input.data.getPinnedViewerState(projectId);
+    }
+    if (action === "unpinStack" && typeof record.stackId === "string") {
+      input.data.unpinPinnedViewerStack(projectId, record.stackId.trim());
+      return input.data.getPinnedViewerState(projectId);
+    }
+    throw new Error("Unsupported pinned viewer action.");
+  });
+
   registerIpcHandler("neud:displays:setPinnedViewerHeight", (_event, payload: unknown) => {
     if (!input.auth.isAccessAllowed()) {
       throw new Error("Sign in to resize pinned viewer.");

@@ -14,6 +14,7 @@ import {
   type DisplayRevisionImportDiagnostics,
 } from "../displays/display-source-content-hash";
 import {
+  transformLedDisplayQuailHtmlForServing,
   transformStreamBidHtmlForServing,
   transformStreamTickerHtmlForServing,
 } from "../displays/stream-display-v2-transform";
@@ -42,6 +43,16 @@ export type BroadArrowStreamDisplaysImportSummary = {
   createdCount: number;
   revisionCount: number;
 };
+
+function streamDisplayRevisionPrefix(spec: BroadArrowStreamDisplaySpec): string {
+  if (spec.graphicType === "stream-bid") {
+    return "stream-bid-v1";
+  }
+  if (spec.graphicType === "stream-ticker") {
+    return "stream-ticker-v1";
+  }
+  return "led-display-quail-v1";
+}
 
 export class BroadArrowStreamDisplaysImportService {
   constructor(
@@ -207,9 +218,7 @@ export class BroadArrowStreamDisplaysImportService {
       }
 
       const revisionId = createRevisionId();
-      const revisionName = buildStreamDisplayRevisionName(
-        spec.graphicType === "stream-bid" ? "stream-bid-v1" : "stream-ticker-v1",
-      );
+      const revisionName = buildStreamDisplayRevisionName(streamDisplayRevisionPrefix(spec));
       const bundle = {
         html: runtimeHtml,
         css: "",
@@ -291,9 +300,7 @@ export class BroadArrowStreamDisplaysImportService {
     });
 
     const revisionId = createRevisionId();
-    const revisionName = buildStreamDisplayRevisionName(
-      spec.graphicType === "stream-bid" ? "stream-bid-v1" : "stream-ticker-v1",
-    );
+    const revisionName = buildStreamDisplayRevisionName(streamDisplayRevisionPrefix(spec));
     const bundle = {
       html: runtimeHtml,
       css: "",
@@ -415,6 +422,9 @@ export class BroadArrowStreamDisplaysImportService {
     const html = baseHtml ?? readBundledDisplaySourceFromReference(spec.bundledRelativePath);
     if (spec.graphicType === "stream-bid") {
       return transformStreamBidHtmlForServing(html);
+    }
+    if (spec.graphicType === "led-display-quail") {
+      return transformLedDisplayQuailHtmlForServing(html);
     }
     return transformStreamTickerHtmlForServing(html);
   }

@@ -25,8 +25,8 @@ test("sidebar renders projects submenu via SidebarProjectsNav", () => {
   assert.match(projectsNav, /Collapse projects list|Expand projects list/);
   assert.match(sharedClasses, /SIDEBAR_PRIMARY_NAV_ROW_CLASS/);
   assert.match(sharedClasses, /SIDEBAR_PRIMARY_NAV_CHEVRON_CLASS/);
-  assert.match(navItem, /SIDEBAR_PRIMARY_NAV_ROW_CLASS/);
-  assert.match(projectsNav, /SIDEBAR_PRIMARY_NAV_ROW_CLASS/);
+  assert.match(navItem, /sidebarPrimaryNavRowClass/);
+  assert.match(projectsNav, /sidebarPrimaryNavRowClass/);
   assert.match(projectsNav, /SIDEBAR_PRIMARY_NAV_CHEVRON_CLASS/);
 });
 

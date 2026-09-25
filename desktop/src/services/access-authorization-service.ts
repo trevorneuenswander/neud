@@ -14,6 +14,7 @@ import {
   type ProjectAccessPath,
   type TeamRole,
 } from "./access-types";
+import { isProtectedNeudOwnerUser } from "../access/protect-project-owner";
 import { normalizeProjectIsActive } from "../projects/project-permissions";
 import { normalizeEmail } from "../auth/normalize-email";
 import { abbreviateUserId } from "../auth/local-desktop-identity";
@@ -674,7 +675,7 @@ export class AccessAuthorizationService {
             return false;
           }
           const target = this.users.getById(entry.id);
-          if (!target || target.platformRole === "owner") {
+          if (!target || isProtectedNeudOwnerUser(target)) {
             return false;
           }
 

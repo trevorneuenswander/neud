@@ -19,6 +19,10 @@ import {
 } from "./cloud-access-local-sync";
 import type { UserDetailsDirectory } from "../access/can-view-user-details";
 import { isProtectedNeudTeam } from "../access/is-protected-neud-team";
+import {
+  isProtectedNeudOwnerUser,
+  PROJECT_OWNER_REMOVAL_MESSAGE,
+} from "../access/protect-project-owner";
 
 type ActivityRecorder = (input: {
   type: string;
@@ -46,11 +50,17 @@ export class AccessManagementService {
     private readonly supabaseInvite: SupabaseInviteHandler | null = null,
   ) {}
 
+  lookupUserForActivityActor(userId: string) {
+    return this.users.getById(userId) ?? this.users.resolveByAuthUserId(userId);
+  }
+
   getDirectory(actorUserId: string) {
     const context = this.authorization.getAuthorizationContext(actorUserId);
     if (!context?.canManageUsersAndAccess) {
       throw new Error("You do not have permission to manage users and access.");
     }
+
+    this.teamMemberships.pruneOrphans();
 
     const adminTeamIds = this.resolveAdminTeamIds(context);
     const visibleTeamIds = new Set(context.accessibleTeamIds);
@@ -621,6 +631,9 @@ export class AccessManagementService {
     if (!target) {
       throw new Error("The selected user cannot be modified.");
     }
+    if (isProtectedNeudOwnerUser(target)) {
+      throw new Error(PROJECT_OWNER_REMOVAL_MESSAGE);
+    }
 
     const project = this.projects.getById(projectId);
     if (!project) {
@@ -651,8 +664,11 @@ export class AccessManagementService {
     }
 
     const target = this.users.getById(input.userId);
-    if (!target || target.platformRole === "owner") {
+    if (!target) {
       throw new Error("The selected user cannot be modified.");
+    }
+    if (isProtectedNeudOwnerUser(target)) {
+      throw new Error(PROJECT_OWNER_REMOVAL_MESSAGE);
     }
 
     if (input.userId === actorUserId) {

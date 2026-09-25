@@ -57,6 +57,7 @@ type OnlineViewerActivityRecorder = (input: {
   displayId: string;
   displayName: string;
   message: string;
+  initiatorUserId?: string | null;
   metadata?: Record<string, unknown>;
 }) => void;
 
@@ -1093,7 +1094,8 @@ export class DisplaySyncService {
       const code = this.displayCode.getByDisplayId(revision.resourceId);
       const slug = code?.slug ?? display?.displayKey ?? revision.resourceId;
       const uploadHtml =
-        slug === "stream-ticker" && isStreamTickerLogoReference(bundle.html)
+        (slug === "stream-ticker" || slug === "led-display-quail") &&
+        isStreamTickerLogoReference(bundle.html)
           ? inlineStreamTickerLogoForHosted(bundle.html)
           : bundle.html;
       const row = toCloudDisplayRevisionRow({
@@ -1295,6 +1297,7 @@ export class DisplaySyncService {
     }
 
     const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
+    const initiatorUserId = code.updatedBy ?? userId ?? null;
     const onlineViewerEnabled =
       Boolean(code.onlineViewerEnabled) && display.enabled;
 
@@ -1339,6 +1342,7 @@ export class DisplaySyncService {
         displayId: display.id,
         displayName: display.name,
         message: `Online viewer sync resumed for "${display.name}".`,
+        initiatorUserId,
       });
       return;
     }
@@ -1350,6 +1354,7 @@ export class DisplaySyncService {
         displayId: display.id,
         displayName: display.name,
         message: `Published "${display.name}" to the online viewer.`,
+        initiatorUserId,
         metadata: { publishedRevisionId },
       });
     }

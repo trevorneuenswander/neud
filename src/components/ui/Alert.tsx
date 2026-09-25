@@ -11,11 +11,11 @@ const variantClasses = {
 
 export function Alert({ children, variant = "info" }: AlertProps) {
   return (
-    <p
+    <div
       role="alert"
       className={`rounded-lg border px-3 py-2 text-sm ${variantClasses[variant]}`}
     >
       {children}
-    </p>
+    </div>
   );
 }

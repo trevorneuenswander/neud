@@ -1,6 +1,15 @@
 /** Primary sidebar row sizing — shared by SidebarNavItem and SidebarProjectsNav. */
 export const SIDEBAR_PRIMARY_NAV_ROW_CLASS =
-  "flex h-10 cursor-pointer items-center rounded-md px-3 text-sm font-medium transition-colors";
+  "flex h-10 cursor-pointer items-center rounded-md text-sm font-medium transition-colors";
+
+export function sidebarPrimaryNavRowClass(collapsed: boolean): string {
+  return collapsed
+    ? `${SIDEBAR_PRIMARY_NAV_ROW_CLASS} w-full justify-center px-0`
+    : `${SIDEBAR_PRIMARY_NAV_ROW_CLASS} gap-3 px-3`;
+}
+
+/** Full-width row used to center collapsed branding with collapsed nav icon axis. */
+export const SIDEBAR_COLLAPSED_CENTER_ROW_CLASS = sidebarPrimaryNavRowClass(true);
 
 export const sidebarPrimaryNavActiveClass = "bg-primary/15 text-foreground";
 

@@ -17,6 +17,7 @@ const ERROR_MESSAGES: Record<AccessManagementErrorCode, string> = {
   insufficient_access: "You do not have permission to perform this action.",
   outside_team_scope: "This team is outside your management scope.",
   cannot_modify_owner: "The NEUD owner account cannot be modified here.",
+  owner_protected: "The NEUD Owner cannot be removed from a project.",
   owner_role_not_assignable: "Owner is reserved for the sole NEUD owner account.",
   sole_owner_protected: "The sole NEUD owner account cannot be changed or removed.",
   owner_team_protected: "The NEUD team cannot be archived or removed.",

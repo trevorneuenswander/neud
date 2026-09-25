@@ -480,7 +480,7 @@ export function buildProjectAccessRows(
       accessSources: sources,
       projectRole,
       status: user?.accountStatus ?? "active",
-      isMutable: hasDirectMembership,
+      isMutable: hasDirectMembership && !(user && isSoleOwnerProfile(user)),
     });
   }
 

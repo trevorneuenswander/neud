@@ -3,11 +3,16 @@ import {
   DEFAULT_PINNED_VIEWER_HEIGHT_PX,
   parsePinnedDisplayIds,
 } from "../lib/displays/pinned-viewer-preference";
+import {
+  parsePinnedStacks,
+  type PinnedStackRecord,
+} from "../lib/displays/pinned-viewer-stacks";
 
 export type UserPinnedViewerPreferenceRow = {
   userId: string;
   projectId: string;
   pinnedDisplayIds: string[];
+  pinnedStacks: PinnedStackRecord[];
   viewerHeightPx: number;
   updatedAt: string;
   cloudSyncStatus: "pending" | "synced" | "failed";
@@ -18,6 +23,7 @@ type DbRow = {
   user_id: string;
   project_id: string;
   pinned_display_ids: string;
+  pinned_stacks?: string;
   viewer_height_px: number;
   updated_at: string;
   cloud_sync_status: string;
@@ -32,10 +38,17 @@ function mapRow(row: DbRow): UserPinnedViewerPreferenceRow {
     pinnedDisplayIds = [];
   }
   const syncStatus = row.cloud_sync_status;
+  let pinnedStacks: PinnedStackRecord[] = [];
+  try {
+    pinnedStacks = parsePinnedStacks(JSON.parse(row.pinned_stacks ?? "[]"));
+  } catch {
+    pinnedStacks = [];
+  }
   return {
     userId: row.user_id,
     projectId: row.project_id,
     pinnedDisplayIds,
+    pinnedStacks,
     viewerHeightPx: row.viewer_height_px,
     updatedAt: row.updated_at,
     cloudSyncStatus:
@@ -73,6 +86,7 @@ export class UserPinnedViewerRepository {
     userId: string;
     projectId: string;
     pinnedDisplayIds: string[];
+    pinnedStacks?: PinnedStackRecord[];
     viewerHeightPx: number;
     updatedAt: string;
     cloudSyncStatus?: "pending" | "synced" | "failed";
@@ -82,11 +96,12 @@ export class UserPinnedViewerRepository {
     this.db
       .prepare(
         `INSERT INTO user_pinned_viewer_preferences (
-           user_id, project_id, pinned_display_ids, viewer_height_px,
+           user_id, project_id, pinned_display_ids, pinned_stacks, viewer_height_px,
            updated_at, cloud_sync_status, cloud_updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id, project_id) DO UPDATE SET
            pinned_display_ids = excluded.pinned_display_ids,
+           pinned_stacks = excluded.pinned_stacks,
            viewer_height_px = excluded.viewer_height_px,
            updated_at = excluded.updated_at,
            cloud_sync_status = excluded.cloud_sync_status,
@@ -96,6 +111,7 @@ export class UserPinnedViewerRepository {
         input.userId,
         input.projectId,
         JSON.stringify(parsePinnedDisplayIds(input.pinnedDisplayIds)),
+        JSON.stringify(parsePinnedStacks(input.pinnedStacks ?? [])),
         input.viewerHeightPx || DEFAULT_PINNED_VIEWER_HEIGHT_PX,
         input.updatedAt,
         cloudSyncStatus,

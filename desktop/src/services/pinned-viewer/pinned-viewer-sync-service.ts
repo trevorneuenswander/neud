@@ -67,6 +67,7 @@ export class PinnedViewerSyncService {
     const empty = {
       updatedAt: new Date(0).toISOString(),
       pinnedDisplayIds: [] as string[],
+      pinnedStacks: [] as import("../../lib/displays/pinned-viewer-stacks").PinnedStackRecord[],
       viewerHeightPx: 220,
     };
 
@@ -75,6 +76,7 @@ export class PinnedViewerSyncService {
         ? {
             updatedAt: local.updatedAt,
             pinnedDisplayIds: local.pinnedDisplayIds,
+            pinnedStacks: local.pinnedStacks,
             viewerHeightPx: local.viewerHeightPx,
           }
         : empty,
@@ -82,6 +84,7 @@ export class PinnedViewerSyncService {
         ? {
             updatedAt: remote.updatedAt,
             pinnedDisplayIds: remote.pinnedDisplayIds,
+            pinnedStacks: remote.pinnedStacks,
             viewerHeightPx: remote.viewerHeightPx,
           }
         : empty,
@@ -98,6 +101,7 @@ export class PinnedViewerSyncService {
           userId,
           projectId,
           pinnedDisplayIds: local.pinnedDisplayIds,
+          pinnedStacks: local.pinnedStacks,
           viewerHeightPx: local.viewerHeightPx,
           updatedAt: local.updatedAt,
         });
@@ -116,6 +120,7 @@ export class PinnedViewerSyncService {
       userId,
       projectId,
       pinnedDisplayIds: merged.pinnedDisplayIds,
+      pinnedStacks: merged.pinnedStacks ?? [],
       viewerHeightPx: normalizePinnedViewerHeight(merged.viewerHeightPx),
       updatedAt: merged.updatedAt,
       cloudSyncStatus: "synced",

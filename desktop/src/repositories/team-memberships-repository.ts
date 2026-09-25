@@ -113,4 +113,14 @@ export class TeamMembershipsRepository {
   removeAllForUser(userId: string): void {
     this.db.prepare("DELETE FROM team_memberships WHERE user_id = ?").run(userId);
   }
+
+  pruneOrphans(): number {
+    this.db
+      .prepare(
+        `DELETE FROM team_memberships
+         WHERE user_id NOT IN (SELECT id FROM users)`,
+      )
+      .run();
+    return 0;
+  }
 }

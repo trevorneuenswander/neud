@@ -58,7 +58,7 @@ test("sidebar branding and nav scroll independently within sidebar", () => {
 test("app shell passes full height to sidebar and main area", () => {
   assert.match(appShell, /app-shell flex h-full/);
   assert.match(appShell, /main-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden/);
-  assert.match(portalLayout, /h-full min-h-0 flex-1 flex-col overflow-hidden/);
+  assert.match(portalLayout, /<AppShell>\{children\}<\/AppShell>/);
 });
 
 test("sidebar z-index sits below window menu", () => {

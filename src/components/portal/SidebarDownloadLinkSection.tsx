@@ -2,9 +2,12 @@
 
 import { isDesktopRuntimeClient } from "@/lib/runtime/environment";
 import { SidebarDownloadLink } from "@/components/portal/SidebarDownloadLink";
+import { useSidebarCollapsed } from "@/lib/portal/sidebar-collapse-context";
 
 export function SidebarDownloadLinkSection() {
-  if (isDesktopRuntimeClient()) {
+  const collapsed = useSidebarCollapsed();
+
+  if (isDesktopRuntimeClient() || collapsed) {
     return null;
   }
 

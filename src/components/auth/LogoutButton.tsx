@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { forceLocalSignOut } from "@/lib/auth/force-local-sign-out";
+import { SidebarSignOutIcon } from "@/lib/portal/sidebar-nav-icons";
+import { sidebarPrimaryNavRowClass } from "@/lib/portal/sidebar-nav-item-classes";
 
-export function LogoutButton() {
+type LogoutButtonProps = {
+  iconOnly?: boolean;
+};
+
+export function LogoutButton({ iconOnly = false }: LogoutButtonProps) {
   const [pending, setPending] = useState(false);
 
   function handleClick() {
@@ -12,6 +18,29 @@ export function LogoutButton() {
     void forceLocalSignOut("sidebar-sign-out").finally(() => {
       setPending(false);
     });
+  }
+
+  if (iconOnly) {
+    return (
+      <button
+        type="button"
+        disabled={pending}
+        aria-label={pending ? "Signing out" : "Sign out"}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleClick();
+        }}
+        className={`${sidebarPrimaryNavRowClass(true)} w-full text-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-70`}
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
+        <SidebarSignOutIcon className="h-5 w-5 shrink-0" />
+        <span className="sr-only">{pending ? "Signing out…" : "Sign Out"}</span>
+      </button>
+    );
   }
 
   return (

@@ -8,13 +8,25 @@ import {
   resolveActivityActorLabel,
 } from "../../scripts/live-validation/lib/activity-actor-resolution.mjs";
 
-test("automated online publish events resolve to System", () => {
-  assert.equal(isAutomatedActivityEventType("display.online_published"), true);
+test("user-attributed online publish events resolve to stored actor", () => {
+  assert.equal(isAutomatedActivityEventType("display.online_published"), false);
   assert.equal(
     resolveActivityActorLabel({
       actorDisplayName: "Trevor Neuenswander",
       actorId: "user-123",
       eventType: "display.online_published",
+    }),
+    "Trevor Neuenswander",
+  );
+});
+
+test("background online publish failure events remain System", () => {
+  assert.equal(isAutomatedActivityEventType("display.online_publish_failed"), true);
+  assert.equal(
+    resolveActivityActorLabel({
+      actorDisplayName: "Trevor Neuenswander",
+      actorId: "user-123",
+      eventType: "display.online_publish_failed",
     }),
     ACTIVITY_SYSTEM_ACTOR_LABEL,
   );

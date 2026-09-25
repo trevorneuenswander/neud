@@ -5,6 +5,10 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { SessionRecoveryActions } from "@/components/auth/SessionRecoveryActions";
+import { SidebarTooltip } from "@/components/portal/SidebarTooltip";
+import { useSidebarCollapsed } from "@/lib/portal/sidebar-collapse-context";
+import { SidebarUserIcon } from "@/lib/portal/sidebar-nav-icons";
+import { sidebarPrimaryNavRowClass } from "@/lib/portal/sidebar-nav-item-classes";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { localGetProjectsMeta, localRetryIdentitySync } from "@/lib/local/displays-api";
 import { useConnectivityPresentation } from "@/lib/connectivity/use-internet-connection";
@@ -180,6 +184,7 @@ export function SidebarUserPanel({
       ? getUserDetailsHref(meta?.authenticatedLocalUserId?.trim() || initialProfile.id)
       : null);
 
+  const collapsed = useSidebarCollapsed();
   const panelStyle = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 
   const identityContent = (
@@ -209,6 +214,48 @@ export function SidebarUserPanel({
       ) : null}
     </>
   );
+
+  if (collapsed) {
+    const profileTooltip = displayName.trim() || "Profile";
+    const profileLink =
+      identityStatus === "ready" && userDetailsHref ? (
+        <Link
+          href={userDetailsHref}
+          aria-current={profileActive ? "page" : undefined}
+          className={`${sidebarPrimaryNavRowClass(true)} w-full ${
+            profileActive ? "bg-primary/15 text-foreground" : "text-muted hover:bg-surface-raised hover:text-foreground"
+          }`}
+        >
+          <SidebarUserIcon className="h-5 w-5 shrink-0" />
+          <span className="sr-only">{profileTooltip}</span>
+        </Link>
+      ) : (
+        <div
+          className={`${sidebarPrimaryNavRowClass(true)} w-full text-muted`}
+          aria-hidden
+        >
+          <SidebarUserIcon className="h-5 w-5 shrink-0" />
+        </div>
+      );
+
+    return (
+      <div className="space-y-1" style={panelStyle}>
+        <SidebarTooltip label={profileTooltip}>{profileLink}</SidebarTooltip>
+        {identityStatus === "error" ? (
+          <SessionRecoveryActions
+            compact
+            showClearLocalSession={meta?.identityStatus === "stale-session"}
+            onRetry={isIdentityRecoverable(meta) ? () => void handleRetry() : undefined}
+            retryPending={retryPending}
+          />
+        ) : (
+          <SidebarTooltip label="Sign out">
+            <LogoutButton iconOnly />
+          </SidebarTooltip>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3" style={panelStyle}>

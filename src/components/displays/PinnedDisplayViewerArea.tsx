@@ -1,9 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PinnedDisplayLiveSlot } from "@/components/displays/PinnedDisplayLiveSlot";
+import { PinnedDisplayStackSlot } from "@/components/displays/PinnedDisplayStackSlot";
+import { PinnedViewerContextMenu } from "@/components/displays/PinnedViewerContextMenu";
 import { Alert } from "@/components/ui/Alert";
 import { usePinnedViewer } from "@/lib/displays/pinned-viewer-context";
+import {
+  buildSinglePinnedDisplayMenuItems,
+  buildStackPinnedDisplayMenuItems,
+} from "@/lib/displays/pinned-viewer-context-menu-items";
 import {
   evaluatePinnedBandFailureStage,
   logPinnedBandLayoutSnapshot,
@@ -13,6 +19,7 @@ import {
   MIN_PINNED_VIEWER_HEIGHT_PX,
   normalizePinnedViewerHeight,
 } from "@/lib/displays/pinned-viewer-preference";
+import type { PinnedViewerMenuItem } from "@/components/displays/PinnedViewerContextMenu";
 
 const COLUMN_CLASS: Record<number, string> = {
   1: "grid-cols-1",
@@ -23,19 +30,73 @@ const COLUMN_CLASS: Record<number, string> = {
 
 const RESIZE_HANDLE_HEIGHT_PX = 12;
 
+type MenuState = {
+  x: number;
+  y: number;
+  items: PinnedViewerMenuItem[];
+};
+
 export function PinnedDisplayViewerArea() {
   const pinnedViewer = usePinnedViewer();
   const dragStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const [dragHeightPx, setDragHeightPx] = useState<number | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const outerBandRef = useRef<HTMLDivElement>(null);
 
+  const visibleSlots = pinnedViewer?.visibleSlots ?? [];
   const pinnedDisplays = pinnedViewer?.pinnedDisplays ?? [];
-  const count = pinnedDisplays.length;
+  const count = visibleSlots.length;
+
+  const displaysById = useMemo(
+    () => new Map(pinnedDisplays.map((display) => [display.id, display])),
+    [pinnedDisplays],
+  );
 
   const viewportHeight = typeof window !== "undefined" ? window.innerHeight : undefined;
   const rawHeightPx = dragHeightPx ?? pinnedViewer?.viewerHeightPx;
   const effectiveViewerHeightPx = normalizePinnedViewerHeight(rawHeightPx, viewportHeight);
+
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  const openSingleDisplayMenu = useCallback(
+    (event: React.MouseEvent, displayId: string) => {
+      event.preventDefault();
+      if (!pinnedViewer) return;
+      const items = buildSinglePinnedDisplayMenuItems({
+        displayId,
+        visibleSlots: pinnedViewer.visibleSlots,
+        displaysById,
+        onUnpin: () => {
+          void pinnedViewer.unpinDisplay(displayId);
+        },
+        onAddToStack: (target) => {
+          void pinnedViewer.addDisplayToStack(displayId, target);
+        },
+      });
+      setMenu({ x: event.clientX, y: event.clientY, items });
+    },
+    [displaysById, pinnedViewer],
+  );
+
+  const openStackMenu = useCallback(
+    (event: React.MouseEvent, slot: Extract<(typeof visibleSlots)[number], { kind: "stack" }>) => {
+      event.preventDefault();
+      if (!pinnedViewer) return;
+      const items = buildStackPinnedDisplayMenuItems({
+        slot,
+        displaysById,
+        onUnpinStack: () => {
+          void pinnedViewer.unpinStack(slot.stackId);
+        },
+        onRemoveFromStack: (memberDisplayId) => {
+          void pinnedViewer.removeDisplayFromStack(slot.stackId, memberDisplayId);
+        },
+      });
+      setMenu({ x: event.clientX, y: event.clientY, items });
+    },
+    [displaysById, pinnedViewer, visibleSlots],
+  );
 
   const maxContentHeightPx = () => {
     const projectRoot = contentRef.current?.closest(".project-layout-root");
@@ -125,6 +186,7 @@ export function PinnedDisplayViewerArea() {
         flex: "0 0 auto",
         minHeight: `${effectiveViewerHeightPx + RESIZE_HANDLE_HEIGHT_PX}px`,
       }}
+      onContextMenu={(event) => event.preventDefault()}
     >
       {pinnedViewer.pinMessage ? (
         <div className="shrink-0 px-4 pt-2 lg:px-6">
@@ -148,16 +210,40 @@ export function PinnedDisplayViewerArea() {
         <div
           className={`grid h-full min-h-0 grid-rows-1 gap-2 overflow-hidden [&>*]:min-h-0 [&>*]:min-w-0 ${gridClass}`}
         >
-          {pinnedDisplays.map((display) => (
-            <PinnedDisplayLiveSlot
-              key={display.id}
-              projectId={pinnedViewer.projectId}
-              display={display}
-              configuredBandHeightPx={effectiveViewerHeightPx}
-            />
-          ))}
+          {visibleSlots.map((slot) => {
+            if (slot.kind === "stack") {
+              return (
+                <PinnedDisplayStackSlot
+                  key={slot.stackId}
+                  projectId={pinnedViewer.projectId}
+                  slot={slot}
+                  displaysById={displaysById}
+                  configuredBandHeightPx={effectiveViewerHeightPx}
+                  onContextMenu={(event) => openStackMenu(event, slot)}
+                />
+              );
+            }
+            const display = displaysById.get(slot.displayId);
+            if (!display) return null;
+            return (
+              <PinnedDisplayLiveSlot
+                key={display.id}
+                projectId={pinnedViewer.projectId}
+                display={display}
+                configuredBandHeightPx={effectiveViewerHeightPx}
+                onContextMenu={(event) => openSingleDisplayMenu(event, display.id)}
+              />
+            );
+          })}
         </div>
       </div>
+      <PinnedViewerContextMenu
+        open={menu != null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        items={menu?.items ?? []}
+        onClose={closeMenu}
+      />
       <div
         role="separator"
         aria-orientation="horizontal"

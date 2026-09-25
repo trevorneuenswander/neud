@@ -133,7 +133,10 @@ export class TeamsRepository {
   countUsers(teamId: string): number {
     const row = this.db
       .prepare(
-        "SELECT COUNT(*) AS count FROM team_memberships WHERE team_id = ? AND is_active = 1",
+        `SELECT COUNT(*) AS count
+         FROM team_memberships tm
+         INNER JOIN users u ON u.id = tm.user_id
+         WHERE tm.team_id = ? AND tm.is_active = 1 AND u.is_active = 1`,
       )
       .get(teamId) as { count: number };
     return row.count;
@@ -142,7 +145,10 @@ export class TeamsRepository {
   countAdmins(teamId: string): number {
     const row = this.db
       .prepare(
-        "SELECT COUNT(*) AS count FROM team_memberships WHERE team_id = ? AND role = 'admin' AND is_active = 1",
+        `SELECT COUNT(*) AS count
+         FROM team_memberships tm
+         INNER JOIN users u ON u.id = tm.user_id
+         WHERE tm.team_id = ? AND tm.role = 'admin' AND tm.is_active = 1 AND u.is_active = 1`,
       )
       .get(teamId) as { count: number };
     return row.count;

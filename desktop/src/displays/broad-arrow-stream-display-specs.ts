@@ -7,7 +7,7 @@ export type BroadArrowStreamDisplaySpec = {
   name: string;
   description: string;
   bundledRelativePath: string;
-  graphicType: "stream-bid" | "stream-ticker";
+  graphicType: "stream-bid" | "stream-ticker" | "led-display-quail";
   displayWidth: number;
   displayHeight: number;
 };
@@ -36,9 +36,22 @@ export const STREAM_TICKER_DISPLAY_SPEC: BroadArrowStreamDisplaySpec = {
   displayHeight: 2160,
 };
 
+export const LED_DISPLAY_QUAIL_SPEC: BroadArrowStreamDisplaySpec = {
+  importKey: "broad-arrow:led-display-quail:v1",
+  slug: "led-display-quail",
+  name: "LED Display (Quail)",
+  description:
+    "9216×1536 ultra-wide Broad Arrow LED wall display with Up Next, current lot focal block, and photo spread.",
+  bundledRelativePath: "led-display-quail-v1.html",
+  graphicType: "led-display-quail",
+  displayWidth: 9216,
+  displayHeight: 1536,
+};
+
 export const BROAD_ARROW_STREAM_DISPLAY_SPECS: BroadArrowStreamDisplaySpec[] = [
   STREAM_BID_DISPLAY_SPEC,
   STREAM_TICKER_DISPLAY_SPEC,
+  LED_DISPLAY_QUAIL_SPEC,
 ];
 
 export function buildStreamDisplayRevisionName(prefix: string): string {
