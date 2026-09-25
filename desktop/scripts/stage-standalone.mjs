@@ -63,34 +63,13 @@ function copyRecursive(source, destination, context = "global") {
     throw new Error(`Missing staging source: ${source}`);
   }
 
-  fs.mkdirSync(destination, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    if (shouldSkipEntry(entry.name, context)) {
-      continue;
-    }
-
-    const fromPath = path.join(source, entry.name);
-    const toPath = path.join(destination, entry.name);
-
-    if (entry.isSymbolicLink()) {
-      const resolved = fs.realpathSync(fromPath);
-      const resolvedStat = fs.statSync(resolved);
-      if (resolvedStat.isDirectory()) {
-        copyRecursive(resolved, toPath, context);
-      } else {
-        fs.mkdirSync(path.dirname(toPath), { recursive: true });
-        fs.copyFileSync(resolved, toPath);
-      }
-      continue;
-    }
-
-    if (entry.isDirectory()) {
-      copyRecursive(fromPath, toPath, context);
-    } else {
-      fs.mkdirSync(path.dirname(toPath), { recursive: true });
-      fs.copyFileSync(fromPath, toPath);
-    }
-  }
+  fs.cpSync(source, destination, {
+    recursive: true,
+    force: true,
+    // Next.js standalone on macOS uses symlinks under node_modules; dereference for packaging.
+    dereference: true,
+    filter: (src) => !shouldSkipEntry(path.basename(src), context),
+  });
 }
 
 function stageProductionWorkerNodeModules(destinationRoot) {

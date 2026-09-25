@@ -59,15 +59,21 @@ function ensureChromeInstalled(buildId, profile) {
 }
 
 function copyRecursive(source, destination) {
-  fs.mkdirSync(destination, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    const fromPath = path.join(source, entry.name);
-    const toPath = path.join(destination, entry.name);
-    if (entry.isDirectory()) {
-      copyRecursive(fromPath, toPath);
-    } else {
-      fs.copyFileSync(fromPath, toPath);
-    }
+  fs.cpSync(source, destination, {
+    recursive: true,
+    force: true,
+    dereference: true,
+  });
+}
+
+function ensureChromeLaunchPermissions(executablePath) {
+  if (process.platform !== "darwin" || !executablePath) {
+    return;
+  }
+  try {
+    fs.chmodSync(executablePath, 0o755);
+  } catch {
+    // Best-effort; isUsableChromeExecutable validates the staged binary below.
   }
 }
 
@@ -103,6 +109,7 @@ export function stagePackagedBrowser(options = {}) {
 
   const sourceDir = ensureChromeInstalled(expectedBuildId, profile);
   const sourceExecutable = resolvePackagedChromeExecutablePath(sourceDir, profile);
+  ensureChromeLaunchPermissions(sourceExecutable);
 
   if (!isUsableChromeExecutable(sourceExecutable)) {
     throw new Error(
@@ -114,6 +121,7 @@ export function stagePackagedBrowser(options = {}) {
   copyRecursive(sourceDir, stagingBrowserRoot);
 
   const stagedExecutable = resolvePackagedChromeExecutablePath(stagingBrowserRoot, profile);
+  ensureChromeLaunchPermissions(stagedExecutable);
   if (!isUsableChromeExecutable(stagedExecutable)) {
     throw new Error(
       `Packaged browser staging failed to copy executable to ${stagingBrowserRoot}`,
