@@ -72,9 +72,22 @@ function copyRecursive(source, destination, context = "global") {
     const fromPath = path.join(source, entry.name);
     const toPath = path.join(destination, entry.name);
 
+    if (entry.isSymbolicLink()) {
+      const resolved = fs.realpathSync(fromPath);
+      const resolvedStat = fs.statSync(resolved);
+      if (resolvedStat.isDirectory()) {
+        copyRecursive(resolved, toPath, context);
+      } else {
+        fs.mkdirSync(path.dirname(toPath), { recursive: true });
+        fs.copyFileSync(resolved, toPath);
+      }
+      continue;
+    }
+
     if (entry.isDirectory()) {
       copyRecursive(fromPath, toPath, context);
     } else {
+      fs.mkdirSync(path.dirname(toPath), { recursive: true });
       fs.copyFileSync(fromPath, toPath);
     }
   }
