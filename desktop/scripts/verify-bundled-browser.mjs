@@ -1,77 +1,68 @@
-#!/usr/bin/env node
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { findReleaseRoots } from "./lib/release-security-scan.mjs";
+import {
+  resolvePackagedBrowserExecutable,
+  resolvePackagingProfile,
+} from "../../shared/browser/packaged-chrome-profile.js";
+import {
+  getWinUnpackedResourcesDir,
+  findMacAppBundleRoot,
+  getMacResourcesDir,
+} from "./lib/packaged-platform-paths.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const desktopRoot = path.join(repoRoot, "desktop");
+const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-function resolveUnpackedRoot() {
-  const fromEnv = process.env.NEUD_UNPACKED_ROOT?.trim();
-  if (fromEnv) {
-    return path.resolve(fromEnv);
+function resolveResourcesRoot() {
+  const macResources = getMacResourcesDir(findMacAppBundleRoot());
+  if (macResources && fs.existsSync(macResources)) {
+    return { resourcesRoot: macResources, platformKey: "darwin-arm64" };
   }
 
-  for (const root of findReleaseRoots(desktopRoot)) {
-    if (fs.existsSync(path.join(root, "NEUD.exe"))) {
-      return root;
-    }
+  const winResources = getWinUnpackedResourcesDir();
+  if (fs.existsSync(winResources)) {
+    return { resourcesRoot: winResources, platformKey: "win32-x64" };
   }
 
   return null;
 }
 
-function assertBrowserBundle(resourcesRoot) {
-  const candidates = [
-    path.join(resourcesRoot, "puppeteer", "chrome", "chrome-win64", "chrome.exe"),
-    path.join(resourcesRoot, "browser", "chrome-win64", "chrome.exe"),
-  ];
+const layout = resolveResourcesRoot();
+assert.ok(layout, "No packaged resources found. Run package:win or package:mac first.");
 
-  const chromeExe = candidates.find((candidate) => fs.existsSync(candidate));
-  assert.ok(chromeExe, "Bundled chrome.exe was not found under resources/puppeteer/chrome or resources/browser");
+const profile = resolvePackagingProfile({ platformKey: layout.platformKey });
+const resourcesRoot = layout.resourcesRoot;
 
-  const browserDir = path.dirname(chromeExe);
-  const requiredEntries = ["chrome.exe", "chrome.dll", "resources.pak"];
-  for (const entry of requiredEntries) {
-    assert.equal(
-      fs.existsSync(path.join(browserDir, entry)),
-      true,
-      `Missing required browser file: ${entry}`,
-    );
-  }
+const chromeExe = resolvePackagedBrowserExecutable(resourcesRoot, profile);
+assert.ok(
+  chromeExe,
+  `Bundled Chrome executable was not found under ${profile.packagedRelativeDir}`,
+);
 
-  const asarPath = path.join(resourcesRoot, "app.asar");
-  if (fs.existsSync(asarPath)) {
-    const asarContents = fs.readFileSync(asarPath, "utf8");
-    assert.doesNotMatch(
-      asarContents,
-      /"files":\{[^}]*"puppeteer"[^}]*"chrome-win64"/,
-    );
-  }
+const manifestPath = path.join(
+  desktopRoot,
+  "staging",
+  "puppeteer",
+  "chrome",
+  profile.chromeBundleDirName,
+  "browser-manifest.json",
+);
 
-  return {
-    chromeExe,
-    browserDir,
-    bytes: fs.readdirSync(browserDir, { recursive: true }).length,
-  };
+if (fs.existsSync(manifestPath)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  assert.equal(manifest.platformKey, profile.platformKey);
+  assert.match(JSON.stringify(manifest), new RegExp(profile.chromeBundleDirName));
 }
 
-const unpackedRoot = resolveUnpackedRoot();
-assert.ok(unpackedRoot, "No win-unpacked output found. Run npm run package:win first or set NEUD_UNPACKED_ROOT.");
-
-const resourcesRoot = path.join(unpackedRoot, "resources");
-assert.equal(fs.existsSync(resourcesRoot), true, "Missing resources directory in unpacked build");
-
-const browser = assertBrowserBundle(resourcesRoot);
 console.log(
   JSON.stringify(
     {
       ok: true,
-      unpackedRoot,
-      chromeExe: browser.chromeExe,
-      browserFileCount: browser.bytes,
+      platformKey: profile.platformKey,
+      resourcesRoot,
+      chromeExe,
+      browserDir: path.dirname(chromeExe),
     },
     null,
     2,

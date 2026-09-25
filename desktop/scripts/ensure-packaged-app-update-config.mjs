@@ -5,15 +5,17 @@
  * config expected by electron-updater before NSIS packaging.
  */
 import fs from "node:fs";
+import path from "node:path";
 import {
   buildAppUpdateYaml,
   getAppUpdateYamlPath,
-  getWinUnpackedResourcesDir,
   readPackagedUpdatePublishConfig,
 } from "./lib/electron-builder-publish-config.mjs";
 
-const resourcesDir = getWinUnpackedResourcesDir();
-const outputPath = getAppUpdateYamlPath();
+const args = new Set(process.argv.slice(2));
+const platform = args.has("--mac") ? "mac" : "win";
+const outputPath = getAppUpdateYamlPath(platform);
+const resourcesDir = path.dirname(outputPath);
 
 if (!fs.existsSync(resourcesDir)) {
   console.error(`Missing packaged resources directory: ${resourcesDir}`);

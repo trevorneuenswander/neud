@@ -5,21 +5,17 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { Browser, getInstalledBrowsers } from "@puppeteer/browsers";
 import { NEUD_PACKAGED, NEUD_RESOURCES_PATH } from "../neud-env.js";
+import {
+  buildPackagedBrowserSearchPaths,
+  getPrimaryPackagedBrowserPath,
+  isUsableChromeExecutable as isUsableChromeExecutableShared,
+  resolvePackagedBrowserExecutable as resolvePackagedBrowserExecutableShared,
+  resolvePackagingProfile,
+  sanitizePackagedBrowserDiagnosticPath,
+} from "./packaged-chrome-profile.js";
 
 const require = createRequire(import.meta.url);
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-
-const WINDOWS_CHROME_CANDIDATES = [
-  path.join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
-  path.join(
-    process.env["PROGRAMFILES(X86)"] || "",
-    "Google",
-    "Chrome",
-    "Application",
-    "chrome.exe",
-  ),
-  path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
-];
 
 const WINDOWS_EDGE_CANDIDATES = [
   path.join(process.env.PROGRAMFILES || "", "Microsoft", "Edge", "Application", "msedge.exe"),
@@ -33,15 +29,7 @@ const WINDOWS_EDGE_CANDIDATES = [
 ];
 
 export function isUsableExecutable(candidate) {
-  if (!candidate || typeof candidate !== "string") {
-    return false;
-  }
-
-  try {
-    return fs.statSync(candidate).isFile();
-  } catch {
-    return false;
-  }
+  return isUsableChromeExecutableShared(candidate);
 }
 
 export function getPuppeteerApi(puppeteerModule) {
@@ -95,20 +83,11 @@ export function resolvePackagedBrowserExecutable(resourcesPath = NEUD_RESOURCES_
     return null;
   }
 
-  const candidates = [
-    path.join(resourcesPath, "puppeteer", "chrome", "chrome-win64", "chrome.exe"),
-    path.join(resourcesPath, "browser", "chrome-win64", "chrome.exe"),
-    path.join(resourcesPath, "staging", "puppeteer", "chrome", "chrome-win64", "chrome.exe"),
-    path.join(resourcesPath, "staging", "browser", "chrome-win64", "chrome.exe"),
-  ];
-
-  for (const candidate of candidates) {
-    if (isUsableExecutable(candidate)) {
-      return candidate;
-    }
+  try {
+    return resolvePackagedBrowserExecutableShared(resourcesPath, resolvePackagingProfile());
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 export function categorizeExecutablePath(executablePath, source) {
@@ -132,7 +111,7 @@ export function categorizeExecutablePath(executablePath, source) {
     return "system-browser";
   }
 
-  if (/[\\/]browser[\\/]chrome-win64[\\/]/i.test(executablePath)) {
+  if (/[\\/]browser[\\/]chrome-(win64|mac-arm64)[\\/]/i.test(executablePath)) {
     return "packaged-resources";
   }
 
@@ -156,17 +135,15 @@ export function sanitizeDiagnosticPath(executablePath) {
   const category = categorizeExecutablePath(executablePath, null);
 
   if (category === "packaged-resources") {
-    const markers = [
-      "/puppeteer/chrome/chrome-win64/chrome.exe",
-      "/browser/chrome-win64/chrome.exe",
-    ];
-    for (const marker of markers) {
-      const index = normalized.toLowerCase().indexOf(marker);
-      if (index >= 0) {
-        return normalized.slice(index + 1);
-      }
+    try {
+      const profile = resolvePackagingProfile();
+      return (
+        sanitizePackagedBrowserDiagnosticPath(executablePath, profile) ??
+        path.join(profile.packagedRelativeDir, profile.executableRelativePath).replace(/\\/g, "/")
+      );
+    } catch {
+      return path.basename(executablePath);
     }
-    return "puppeteer/chrome/chrome-win64/chrome.exe";
   }
 
   if (category === "puppeteer-cache") {
@@ -377,9 +354,16 @@ export async function resolvePuppeteerBrowser(options = {}) {
   const expectedBrowserVersion = readExpectedChromeBuildId(puppeteerPackagePath);
   const packagedMode = isPackagedNeudRuntime();
   const resourcesPath = NEUD_RESOURCES_PATH() ?? null;
-  const packagedBrowserPathChecked = resourcesPath
-    ? path.join(resourcesPath, "puppeteer", "chrome", "chrome-win64", "chrome.exe")
-    : null;
+  let packagingProfile = null;
+  try {
+    packagingProfile = resolvePackagingProfile();
+  } catch {
+    packagingProfile = null;
+  }
+  const packagedBrowserPathChecked =
+    resourcesPath && packagingProfile
+      ? getPrimaryPackagedBrowserPath(resourcesPath, packagingProfile)
+      : null;
 
   const explicitCandidates = collectExplicitCandidates(options);
   const configuredExecutablePath = explicitCandidates[0] ?? null;
@@ -544,7 +528,16 @@ export async function resolvePuppeteerBrowser(options = {}) {
 
   diagnostics.firstBrowserFailureStage = diagnostics.firstBrowserFailureStage ?? "system_browser_fallback";
 
-  const systemChrome = findSystemBrowser(WINDOWS_CHROME_CANDIDATES, "system-chrome");
+  const systemChromeCandidates =
+    packagingProfile?.systemChromeCandidates?.(process.env) ??
+    (process.platform === "win32"
+      ? [
+          path.join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
+          path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
+        ]
+      : []);
+
+  const systemChrome = findSystemBrowser(systemChromeCandidates, "system-chrome");
   if (systemChrome) {
     diagnostics.resolvedBrowserSource = systemChrome.source;
     diagnostics.browserSource = systemChrome.source;
@@ -562,7 +555,10 @@ export async function resolvePuppeteerBrowser(options = {}) {
     };
   }
 
-  const systemEdge = findSystemBrowser(WINDOWS_EDGE_CANDIDATES, "system-edge");
+  const systemEdge =
+    process.platform === "win32"
+      ? findSystemBrowser(WINDOWS_EDGE_CANDIDATES, "system-edge")
+      : null;
   if (systemEdge) {
     diagnostics.resolvedBrowserSource = systemEdge.source;
     diagnostics.browserSource = systemEdge.source;

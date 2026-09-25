@@ -4,13 +4,17 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
+import {
+  findCachedChromeBundleDir,
+  isUsableChromeExecutable,
+  resolvePackagedChromeExecutablePath,
+  resolvePackagingProfile,
+} from "../../shared/browser/packaged-chrome-profile.js";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..");
 const workerRoot = path.join(repoRoot, "workers", "data-engine");
-const stagingBrowserRoot = path.join(repoRoot, "desktop", "staging", "puppeteer", "chrome", "chrome-win64");
-const manifestPath = path.join(repoRoot, "desktop", "staging", "puppeteer", "chrome", "browser-manifest.json");
 
 function readExpectedChromeBuildId() {
   const revisionsPath = require.resolve("puppeteer-core/lib/cjs/puppeteer/revisions.js", {
@@ -28,25 +32,9 @@ function resolveDefaultPuppeteerCacheDir() {
   return process.env.PUPPETEER_CACHE_DIR || path.join(os.homedir(), ".cache", "puppeteer");
 }
 
-function findCachedChromeWin64Dir(buildId) {
+function ensureChromeInstalled(buildId, profile) {
   const cacheDir = resolveDefaultPuppeteerCacheDir();
-  const candidates = [
-    path.join(cacheDir, "chrome", `win64-${buildId}`, "chrome-win64"),
-    path.join(cacheDir, "chrome", buildId, "chrome-win64"),
-  ];
-
-  for (const candidate of candidates) {
-    const chromeExe = path.join(candidate, "chrome.exe");
-    if (fs.existsSync(chromeExe)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-function ensureChromeInstalled(buildId) {
-  const existing = findCachedChromeWin64Dir(buildId);
+  const existing = findCachedChromeBundleDir(cacheDir, buildId, profile);
   if (existing) {
     return existing;
   }
@@ -56,14 +44,14 @@ function ensureChromeInstalled(buildId) {
     stdio: "inherit",
     env: {
       ...process.env,
-      PUPPETEER_CACHE_DIR: resolveDefaultPuppeteerCacheDir(),
+      PUPPETEER_CACHE_DIR: cacheDir,
     },
   });
 
-  const installed = findCachedChromeWin64Dir(buildId);
+  const installed = findCachedChromeBundleDir(cacheDir, buildId, profile);
   if (!installed) {
     throw new Error(
-      `Chrome for Testing ${buildId} was not found after browser:install. Expected under ${resolveDefaultPuppeteerCacheDir()}.`,
+      `Chrome for Testing ${buildId} was not found after browser:install. Expected under ${cacheDir} for ${profile.platformKey}.`,
     );
   }
 
@@ -97,28 +85,53 @@ function measureDirectoryBytes(rootDir) {
 }
 
 export function stagePackagedBrowser(options = {}) {
+  const profile = resolvePackagingProfile({
+    platformKey: options.platformKey,
+    os: options.os,
+    arch: options.arch,
+  });
   const expectedBuildId = options.expectedBuildId ?? readExpectedChromeBuildId();
-  const sourceDir = ensureChromeInstalled(expectedBuildId);
-  const chromeExe = path.join(sourceDir, "chrome.exe");
+  const stagingBrowserRoot = path.join(
+    repoRoot,
+    "desktop",
+    "staging",
+    "puppeteer",
+    "chrome",
+    profile.chromeBundleDirName,
+  );
+  const manifestPath = path.join(stagingBrowserRoot, "browser-manifest.json");
 
-  if (!fs.existsSync(chromeExe)) {
-    throw new Error(`Packaged browser staging source is missing chrome.exe: ${chromeExe}`);
+  const sourceDir = ensureChromeInstalled(expectedBuildId, profile);
+  const sourceExecutable = resolvePackagedChromeExecutablePath(sourceDir, profile);
+
+  if (!isUsableChromeExecutable(sourceExecutable)) {
+    throw new Error(
+      `Packaged browser staging source is missing executable: ${sourceExecutable}`,
+    );
   }
 
   fs.rmSync(stagingBrowserRoot, { recursive: true, force: true });
   copyRecursive(sourceDir, stagingBrowserRoot);
 
-  const stagedChromeExe = path.join(stagingBrowserRoot, "chrome.exe");
-  if (!fs.existsSync(stagedChromeExe)) {
-    throw new Error(`Packaged browser staging failed to copy chrome.exe to ${stagingBrowserRoot}`);
+  const stagedExecutable = resolvePackagedChromeExecutablePath(stagingBrowserRoot, profile);
+  if (!isUsableChromeExecutable(stagedExecutable)) {
+    throw new Error(
+      `Packaged browser staging failed to copy executable to ${stagingBrowserRoot}`,
+    );
   }
 
   const manifest = {
     browser: "chrome",
-    platform: "win64",
+    platformKey: profile.platformKey,
+    os: profile.os,
+    arch: profile.arch,
     expectedBuildId,
-    packagedRelativePath: "puppeteer/chrome/chrome-win64/chrome.exe",
-    resourcesRelativePath: "puppeteer/chrome/chrome-win64/chrome.exe",
+    chromeBundleDirName: profile.chromeBundleDirName,
+    executableRelativePath: profile.executableRelativePath,
+    packagedRelativeDir: profile.packagedRelativeDir,
+    packagedRelativeExecutable: path
+      .join(profile.packagedRelativeDir, profile.executableRelativePath)
+      .replace(/\\/g, "/"),
     stagedAt: new Date().toISOString(),
     stagedBytes: measureDirectoryBytes(stagingBrowserRoot),
     stagedFileCount: fs.readdirSync(stagingBrowserRoot, { recursive: true }).length,
@@ -129,8 +142,9 @@ export function stagePackagedBrowser(options = {}) {
 
   return {
     expectedBuildId,
+    profile,
     stagingBrowserRoot,
-    stagedChromeExe,
+    stagedExecutable,
     manifest,
   };
 }
@@ -138,6 +152,6 @@ export function stagePackagedBrowser(options = {}) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = stagePackagedBrowser();
   console.log(
-    `Staged Chrome for Testing ${result.expectedBuildId} at ${result.stagingBrowserRoot} (${Math.round(result.manifest.stagedBytes / (1024 * 1024))} MB)`,
+    `Staged Chrome for Testing ${result.expectedBuildId} (${result.profile.platformKey}) at ${result.stagingBrowserRoot} (${Math.round(result.manifest.stagedBytes / (1024 * 1024))} MB)`,
   );
 }

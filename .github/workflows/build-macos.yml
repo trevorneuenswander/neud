@@ -1,0 +1,58 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - "shared/browser/**"
+      - "workers/data-engine/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build-macos.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-14
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Static macOS packaging tests
+        run: node --test desktop/scripts/test-neud-macos-packaging.mjs
+
+      - name: Build and package macOS (unsigned when signing secrets absent)
+        run: npm run package:mac
+
+      - name: Verify bundled browser
+        run: npm run verify:mac-bundled-browser
+
+      - name: Verify macOS package layout
+        run: npm run verify:mac-package
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: neud-macos-arm64
+          path: |
+            desktop/release/NEUD-*-arm64.dmg
+            desktop/release/NEUD-*-arm64-mac.zip
+            desktop/release/NEUD-*-arm64-mac.zip.blockmap
+            desktop/release/latest-mac.yml

@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { app } from "electron";
+import { resolveFallbackNeudUserDataRoot } from "../platform/fallback-user-data";
 
 const STARTUP_BOOTSTRAP_FILENAME = "startup-bootstrap.log";
 
@@ -22,7 +23,7 @@ export function writeStartupBootstrapLog(): void {
       logsPath = path.join(userData, "logs");
     }
   } catch {
-    userData = path.join(process.env.APPDATA ?? "", "NEUD");
+    userData = resolveFallbackNeudUserDataRoot();
     logsPath = path.join(userData, "logs");
     appName = "NEUD";
   }
@@ -48,7 +49,7 @@ export function writeStartupBootstrapLog(): void {
     fs.writeFileSync(targetFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   } catch {
     try {
-      const fallbackDir = path.join(process.env.APPDATA ?? "", "NEUD", "logs");
+      const fallbackDir = path.join(resolveFallbackNeudUserDataRoot(), "logs");
       fs.mkdirSync(fallbackDir, { recursive: true });
       fs.writeFileSync(
         path.join(fallbackDir, STARTUP_BOOTSTRAP_FILENAME),

@@ -10,18 +10,23 @@ export function setClearLocalSessionHandler(handler: (() => void) | null) {
 }
 
 export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null): Menu {
+  const fileSubmenu: Electron.MenuItemConstructorOptions[] =
+    process.platform === "darwin"
+      ? [{ role: "close" }]
+      : [
+          {
+            label: "Exit",
+            accelerator: "Alt+F4",
+            click: () => {
+              app.quit();
+            },
+          },
+        ];
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: "File",
-      submenu: [
-        {
-          label: "Exit",
-          accelerator: process.platform === "darwin" ? "Cmd+Q" : "Alt+F4",
-          click: () => {
-            app.quit();
-          },
-        },
-      ],
+      submenu: fileSubmenu,
     },
     {
       label: "Edit",

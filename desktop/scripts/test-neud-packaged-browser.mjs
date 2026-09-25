@@ -71,8 +71,8 @@ function withEnv(overrides, fn) {
 
 test("stage-packaged-browser copies compatible Chrome for Testing into staging", () => {
   const result = stagePackagedBrowser();
-  const chromeExe = path.join(result.stagingBrowserRoot, "chrome.exe");
-  assert.equal(fs.existsSync(chromeExe), true);
+  assert.equal(fs.existsSync(result.stagedExecutable), true);
+  assert.equal(result.profile.platformKey, "win32-x64");
   assert.match(result.expectedBuildId, /^\d+\.\d+\.\d+\.\d+$/);
   assert.ok(result.manifest.stagedBytes > 50_000_000);
 });

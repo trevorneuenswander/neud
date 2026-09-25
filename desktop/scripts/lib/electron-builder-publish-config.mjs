@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  getWinUnpackedResourcesDir,
+  getMacAppUpdateYamlPath,
+} from "./packaged-platform-paths.mjs";
 
 const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -67,10 +71,20 @@ export function buildAppUpdateYaml(config = readPackagedUpdatePublishConfig()) {
   ].join("\n");
 }
 
-export function getWinUnpackedResourcesDir() {
-  return path.join(desktopRoot, "release", "win-unpacked", "resources");
-}
+export {
+  getWinUnpackedResourcesDir,
+  getMacResourcesDir,
+  getMacAppUpdateYamlPath,
+  findMacAppBundleRoot,
+  getReleaseDir,
+} from "./packaged-platform-paths.mjs";
 
-export function getAppUpdateYamlPath() {
+export function getAppUpdateYamlPath(platform = "win") {
+  if (platform === "mac") {
+    const macPath = getMacAppUpdateYamlPath();
+    if (macPath) {
+      return macPath;
+    }
+  }
   return path.join(getWinUnpackedResourcesDir(), "app-update.yml");
 }
