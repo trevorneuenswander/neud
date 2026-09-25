@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   build-macos-arm64:
@@ -34,6 +35,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate public Supabase configuration
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "Missing required GitHub Actions secrets for desktop cloud runtime config."
+            exit 1
+          fi
 
       - name: Static macOS packaging tests
         run: node --test desktop/scripts/test-neud-macos-packaging.mjs

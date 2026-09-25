@@ -15,6 +15,7 @@ export const PACKAGED_CHROME_PROFILES = {
     chromeBundleDirName: "chrome-win64",
     executableRelativePath: "chrome.exe",
     packagedRelativeDir: "puppeteer/chrome/chrome-win64",
+    /** Matches @puppeteer/browsers BrowserPlatform.WIN64 cache folder names. */
     puppeteerCacheFolderPrefix: "win64",
     systemChromeCandidates: (env) => [
       path.join(env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
@@ -40,7 +41,8 @@ export const PACKAGED_CHROME_PROFILES = {
       "Google Chrome for Testing",
     ),
     packagedRelativeDir: "puppeteer/chrome/chrome-mac-arm64",
-    puppeteerCacheFolderPrefix: "mac-arm64",
+    /** Matches @puppeteer/browsers BrowserPlatform.MAC_ARM cache folder names. */
+    puppeteerCacheFolderPrefix: "mac_arm",
     systemChromeCandidates: () => [
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
       "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
@@ -105,6 +107,10 @@ export function findCachedChromeBundleDir(cacheDir, buildId, profile) {
     path.join(cacheDir, "chrome", `${prefix}-${buildId}`, bundleName),
     path.join(cacheDir, "chrome", buildId, bundleName),
   ];
+
+  if (profile.platformKey === "darwin-arm64") {
+    candidates.unshift(path.join(cacheDir, "chrome", `mac-arm64-${buildId}`, bundleName));
+  }
 
   for (const candidate of candidates) {
     const executable = resolvePackagedChromeExecutablePath(candidate, profile);
