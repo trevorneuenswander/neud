@@ -54,6 +54,7 @@ test("manifest lists all bundled display HTML files", () => {
   assert.deepEqual(bundled.files, [
     "stream-bid-display-v1.html",
     "stream-ticker-v1.html",
+    "led-display-quail-v1.html",
     "legacy-pylon-v1.html",
     "auction-ticker-overlay-v1.html",
     "auction-pylon-display-v1.html",
