@@ -25,6 +25,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEUD_USE_LOCAL_DATA: "1"
       NEXT_PUBLIC_NEUD_USE_LOCAL_DATA: "1"
+      NODE_OPTIONS: --max-old-space-size=8192
       # Unsigned CI builds: do not require Developer ID certificates.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
@@ -54,11 +55,33 @@ jobs:
         run: npx puppeteer browsers install chrome
         working-directory: workers/data-engine
 
-      - name: Build desktop staging (web + resources)
-        run: npm run build:desktop
+      - name: Build web (standalone)
+        run: |
+          set -euo pipefail
+          npm run build:web 2>&1 | tee /tmp/neud-build-web.log
+          test -f .next/standalone/server.js
+
+      - name: Stage desktop resources
+        run: |
+          set -euo pipefail
+          node desktop/scripts/stage-standalone.mjs 2>&1 | tee /tmp/neud-stage-standalone.log
+          test -f desktop/staging/runtime-config/cloud.json
+
+      - name: Compile desktop host
+        run: |
+          set -euo pipefail
+          npm run build -w @neud/desktop 2>&1 | tee /tmp/neud-build-desktop.log
+          test -f desktop/dist/bootstrap.js
 
       - name: Package macOS arm64 (unsigned)
         run: npm run package:mac -w @neud/desktop
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neud-macos-build-logs
+          path: /tmp/neud-*.log
 
       - name: Verify bundled browser
         run: npm run verify:mac-bundled-browser

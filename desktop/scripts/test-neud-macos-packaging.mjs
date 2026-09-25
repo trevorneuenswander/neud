@@ -103,7 +103,9 @@ test("macOS entitlements include JIT and network client permissions", () => {
 test("GitHub Actions macOS workflow is defined", () => {
   const workflow = read(".github/workflows/build-macos.yml");
   assert.match(workflow, /runs-on: macos-14/);
-  assert.match(workflow, /build:desktop/);
+  assert.match(workflow, /Build web \(standalone\)/);
+  assert.match(workflow, /Stage desktop resources/);
+  assert.match(workflow, /Compile desktop host/);
   assert.match(workflow, /package:mac -w @neud\/desktop/);
   assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY/);
 });
