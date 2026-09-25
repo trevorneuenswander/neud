@@ -118,6 +118,6 @@ jobs:
           name: neud-macos-arm64
           path: |
             desktop/release/NEUD-*-arm64.dmg
-            desktop/release/NEUD-*-arm64-mac.zip
-            desktop/release/NEUD-*-arm64-mac.zip.blockmap
+            desktop/release/NEUD-*-arm64.zip
+            desktop/release/NEUD-*-arm64.zip.blockmap
             desktop/release/latest-mac.yml

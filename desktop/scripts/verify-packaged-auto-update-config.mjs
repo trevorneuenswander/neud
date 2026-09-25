@@ -86,7 +86,7 @@ if (requireLatestYml) {
 }
 
 if (requireLatestMacYml) {
-  const zipName = `NEUD-${version}-arm64-mac.zip`;
+  const zipName = `NEUD-${version}-arm64.zip`;
   const latestMacPath = path.join(releaseDir, "latest-mac.yml");
   assert.equal(fs.existsSync(latestMacPath), true, "Missing desktop/release/latest-mac.yml");
   const latestRaw = fs.readFileSync(latestMacPath, "utf8");

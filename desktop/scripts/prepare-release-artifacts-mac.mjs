@@ -11,7 +11,7 @@ const releaseDir = getReleaseDir();
 const rootPkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 const version = rootPkg.version;
 
-const zipName = `NEUD-${version}-arm64-mac.zip`;
+const zipName = `NEUD-${version}-arm64.zip`;
 const dmgName = `NEUD-${version}-arm64.dmg`;
 const latestMacYml = "latest-mac.yml";
 
