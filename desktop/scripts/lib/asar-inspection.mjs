@@ -27,6 +27,29 @@ export function hasAsarFile(asarPath, internalPath) {
   return listAsarFiles(asarPath).includes(normalized);
 }
 
+export function extractAsarEntryToTemp(asarPath, internalPath) {
+  assertAsarExists(asarPath);
+  const normalized = normalizeAsarEntryPath(internalPath);
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "neud-asar-extract-"));
+  asar.extractAll(asarPath, tempRoot);
+  const absolute = path.join(tempRoot, ...normalized.split("/"));
+  if (!fs.existsSync(absolute)) {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    throw new Error(`Missing ${normalized} in asar archive ${asarPath}`);
+  }
+  return { tempRoot, absolutePath: absolute };
+}
+
+export function requireCommonJsModuleFromAsar(asarPath, internalPath) {
+  const { tempRoot, absolutePath } = extractAsarEntryToTemp(asarPath, internalPath);
+  try {
+    const moduleRequire = createRequire(absolutePath);
+    return moduleRequire(absolutePath);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 export function readAsarFile(asarPath, internalPath) {
   assertAsarExists(asarPath);
   const normalized = normalizeAsarEntryPath(internalPath);

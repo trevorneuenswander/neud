@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": "dist/lib/browser",
+    "rootDir": "../shared/browser",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "declaration": false,
+    "noEmit": false
+  },
+  "include": ["../shared/browser/packaged-chrome-profile.js"]
+}

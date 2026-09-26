@@ -89,12 +89,13 @@ test("resolve puppeteer browser uses shared packaged chrome profile", () => {
   assert.match(resolver, /resolvePackagingProfile/);
 });
 
-test("desktop Electron main syncs packaged Chrome profile into app bundle tree", () => {
+test("desktop Electron main builds CommonJS packaged Chrome profile into app bundle tree", () => {
   const sync = read("desktop/scripts/sync-packaged-chrome-profile.mjs");
-  assert.match(sync, /desktop", "src", "lib", "browser", "packaged-chrome-profile\.js"/);
+  assert.doesNotMatch(sync, /desktop", "src", "lib", "browser", "packaged-chrome-profile\.js"/);
+  assert.match(sync, /packaged-chrome-profile\.d\.ts"/);
   const copyAssets = read("desktop/scripts/copy-runtime-assets.mjs");
-  assert.match(copyAssets, /copyPackagedChromeProfile/);
-  assert.match(copyAssets, /dist", "lib", "browser", "packaged-chrome-profile\.js"/);
+  assert.match(copyAssets, /buildPackagedChromeProfileCjs/);
+  assert.match(read("desktop/scripts/build-packaged-chrome-profile-cjs.mjs"), /tsconfig\.packaged-chrome-profile\.json/);
   const startup = read("desktop/src/services/startup-diagnostics.ts");
   assert.match(startup, /\.\.\/lib\/browser\/packaged-chrome-profile\.js/);
   assert.doesNotMatch(startup, /shared\/browser\/packaged-chrome-profile/);

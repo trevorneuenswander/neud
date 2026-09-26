@@ -9,7 +9,6 @@ const jsTargets = [
   path.join(repoRoot, "workers", "data-engine", "src", "browser", "packaged-chrome-profile.js"),
   path.join(repoRoot, "workers", "data-engine", "dist", "browser", "packaged-chrome-profile.js"),
   path.join(repoRoot, "workers", "data-engine", "dist-local", "browser", "packaged-chrome-profile.js"),
-  path.join(repoRoot, "desktop", "src", "lib", "browser", "packaged-chrome-profile.js"),
 ];
 const dtsTargets = [
   path.join(repoRoot, "desktop", "src", "lib", "browser", "packaged-chrome-profile.d.ts"),
