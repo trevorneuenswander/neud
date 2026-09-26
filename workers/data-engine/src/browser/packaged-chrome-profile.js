@@ -57,6 +57,27 @@ export const PACKAGED_CHROME_PROFILES = {
 /**
  * @param {{ os?: string; arch?: string; platformKey?: PackagedChromePlatformKey }} [options]
  */
+export function resolveRuntimePlatformKey(
+  os = process.platform,
+  arch = process.arch,
+) {
+  if (os === "win32") {
+    return "win32-x64";
+  }
+
+  if (os === "darwin") {
+    // NEUD macOS packages are arm64-only; x64 Node (Rosetta) still uses the arm64 bundle.
+    if (arch === "arm64" || arch === "x64") {
+      return "darwin-arm64";
+    }
+    throw new Error(
+      `Unsupported macOS architecture for NEUD v0.3.0 Item 1: ${arch}. Use Apple Silicon (arm64).`,
+    );
+  }
+
+  throw new Error(`Unsupported NEUD packaged browser platform: ${os}/${arch}`);
+}
+
 export function resolvePackagingProfile(options = {}) {
   if (options.platformKey) {
     const profile = PACKAGED_CHROME_PROFILES[options.platformKey];
@@ -68,21 +89,110 @@ export function resolvePackagingProfile(options = {}) {
 
   const os = options.os ?? process.platform;
   const arch = options.arch ?? process.arch;
+  const platformKey = resolveRuntimePlatformKey(os, arch);
+  return PACKAGED_CHROME_PROFILES[platformKey];
+}
 
-  if (os === "win32") {
-    return PACKAGED_CHROME_PROFILES["win32-x64"];
+export function findPackagedBrowserManifestPath(resourcesPath) {
+  if (!resourcesPath) {
+    return null;
   }
 
-  if (os === "darwin") {
-    if (arch === "arm64") {
-      return PACKAGED_CHROME_PROFILES["darwin-arm64"];
+  const searchRoots = [
+    path.join(resourcesPath, "puppeteer", "chrome"),
+    path.join(resourcesPath, "staging", "puppeteer", "chrome"),
+  ];
+
+  for (const searchRoot of searchRoots) {
+    if (!fs.existsSync(searchRoot)) {
+      continue;
     }
-    throw new Error(
-      `Unsupported macOS architecture for NEUD v0.3.0 Item 1: ${arch}. Use Apple Silicon (arm64).`,
-    );
+
+    for (const entry of fs.readdirSync(searchRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const manifestPath = path.join(searchRoot, entry.name, "browser-manifest.json");
+      if (fs.existsSync(manifestPath)) {
+        return manifestPath;
+      }
+    }
   }
 
-  throw new Error(`Unsupported NEUD packaged browser platform: ${os}/${arch}`);
+  return null;
+}
+
+export function readPackagedBrowserManifest(resourcesPath) {
+  const manifestPath = findPackagedBrowserManifestPath(resourcesPath);
+  if (!manifestPath) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function resolvePackagingProfileForPackagedRuntime(
+  resourcesPath,
+  options = {},
+) {
+  const runtimePlatformKey = resolveRuntimePlatformKey(
+    options.os ?? process.platform,
+    options.arch ?? process.arch,
+  );
+  const manifest = readPackagedBrowserManifest(resourcesPath);
+
+  if (manifest?.platformKey) {
+    if (manifest.platformKey !== runtimePlatformKey) {
+      throw new Error(
+        `Packaged browser platform mismatch: runtime ${runtimePlatformKey}, manifest ${manifest.platformKey}`,
+      );
+    }
+    return resolvePackagingProfile({ platformKey: manifest.platformKey });
+  }
+
+  return resolvePackagingProfile({
+    os: options.os ?? process.platform,
+    arch: options.arch ?? process.arch,
+  });
+}
+
+export function buildPackagedBrowserRuntimeDiagnostic(resourcesPath, options = {}) {
+  const runtimePlatform = options.os ?? process.platform;
+  const runtimeArch = options.arch ?? process.arch;
+  const runtimePlatformKey = resolveRuntimePlatformKey(runtimePlatform, runtimeArch);
+  const manifest = readPackagedBrowserManifest(resourcesPath);
+  let selectedProfile = null;
+  let profileError = null;
+
+  try {
+    selectedProfile = resourcesPath
+      ? resolvePackagingProfileForPackagedRuntime(resourcesPath, options)
+      : resolvePackagingProfile(options);
+  } catch (error) {
+    profileError = error instanceof Error ? error.message : String(error);
+  }
+
+  const expectedExecutable =
+    resourcesPath && selectedProfile
+      ? getPrimaryPackagedBrowserPath(resourcesPath, selectedProfile)
+      : null;
+
+  return {
+    runtimePlatform,
+    runtimeArch,
+    runtimePlatformKey,
+    manifestPlatformKey: manifest?.platformKey ?? null,
+    manifestBuildId: manifest?.expectedBuildId ?? null,
+    selectedProfilePlatformKey: selectedProfile?.platformKey ?? null,
+    resourcesRoot: resourcesPath ?? null,
+    expectedExecutable,
+    expectedExecutableExists: isUsableChromeExecutable(expectedExecutable),
+    profileError,
+  };
 }
 
 export function resolvePackagedChromeExecutablePath(bundleRootDir, profile) {
@@ -94,7 +204,14 @@ export function isUsableChromeExecutable(candidate) {
     return false;
   }
   try {
-    return fs.statSync(candidate).isFile();
+    const stats = fs.statSync(candidate);
+    if (!stats.isFile()) {
+      return false;
+    }
+    if (process.platform === "darwin") {
+      fs.accessSync(candidate, fs.constants.X_OK);
+    }
+    return stats.size > 0;
   } catch {
     return false;
   }

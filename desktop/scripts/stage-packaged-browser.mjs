@@ -62,7 +62,8 @@ function copyRecursive(source, destination) {
   fs.cpSync(source, destination, {
     recursive: true,
     force: true,
-    dereference: true,
+    // Preserve Chrome .app framework symlinks; dereferencing breaks macOS bundles.
+    verbatimSymlinks: true,
   });
 }
 

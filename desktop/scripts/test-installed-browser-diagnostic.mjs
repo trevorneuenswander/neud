@@ -16,8 +16,8 @@ test("installed browser diagnostic service exists and writes JSON report", () =>
   assert.match(service, /installed-browser-diagnostic\.json/);
   assert.match(service, /runInstalledBrowserDiagnostic/);
   assert.match(service, /process\.resourcesPath/);
-  assert.match(service, /chrome-win64/);
-  assert.match(service, /chrome\.exe/);
+  assert.match(service, /resolvePackagingProfileForPackagedRuntime/);
+  assert.match(service, /resolvePackagedBrowserExecutable/);
   assert.match(service, /directLaunch/);
   assert.match(service, /puppeteerLaunch/);
 });
@@ -32,4 +32,5 @@ test("browser resolver does not use system Chrome in packaged mode", () => {
   const resolver = read("workers/data-engine/src/browser/resolve-puppeteer-browser.js");
   assert.match(resolver, /packagedMode/);
   assert.match(resolver, /resolvePackagedBrowserExecutable/);
+  assert.match(resolver, /resolvePackagingProfileForPackagedRuntime/);
 });

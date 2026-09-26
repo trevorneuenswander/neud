@@ -4,6 +4,12 @@ import path from "path";
 import { app } from "electron";
 import { getCanonicalReleaseVersion } from "../app/release-version";
 import type { AppPaths } from "./app-paths";
+import {
+  getPrimaryPackagedBrowserPath,
+  isUsableChromeExecutable,
+  resolvePackagedBrowserExecutable,
+  resolvePackagingProfileForPackagedRuntime,
+} from "../../../shared/browser/packaged-chrome-profile.js";
 import { resolveBagLotDetailAdapterPath } from "./bag-detail-adapter-path";
 import { resolvePuppeteerModule } from "./resolve-puppeteer-module";
 
@@ -46,23 +52,25 @@ function resolvePackagedChromePath(resourcesPath: string | null): string | null 
     return null;
   }
 
-  const candidates = [
-    path.join(resourcesPath, "puppeteer", "chrome", "chrome-win64", "chrome.exe"),
-    path.join(resourcesPath, "browser", "chrome-win64", "chrome.exe"),
-    path.join(resourcesPath, "staging", "puppeteer", "chrome", "chrome-win64", "chrome.exe"),
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      if (fs.statSync(candidate).isFile()) {
-        return candidate;
-      }
-    } catch {
-      // try next candidate
+  try {
+    const resolved = resolvePackagedBrowserExecutable(
+      resourcesPath,
+      resolvePackagingProfileForPackagedRuntime(resourcesPath),
+    );
+    if (resolved && isUsableChromeExecutable(resolved)) {
+      return resolved;
     }
+  } catch {
+    // fall through to expected primary path for diagnostics
   }
 
-  return null;
+  try {
+    const profile = resolvePackagingProfileForPackagedRuntime(resourcesPath);
+    const expected = getPrimaryPackagedBrowserPath(resourcesPath, profile);
+    return isUsableChromeExecutable(expected) ? expected : expected;
+  } catch {
+    return null;
+  }
 }
 
 function readChromeFileStats(chromePath: string | null): {
@@ -275,7 +283,7 @@ export async function runInstalledBrowserDiagnostic(
       attempted: false,
       succeeded: false,
       exitCode: null,
-      error: "Bundled chrome.exe is missing or empty.",
+      error: "Bundled Chrome executable is missing or empty.",
       browserVersion: null,
     };
   } else {

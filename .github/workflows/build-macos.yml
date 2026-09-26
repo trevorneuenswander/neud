@@ -49,7 +49,9 @@ jobs:
           fi
 
       - name: Static macOS packaging tests
-        run: node --test desktop/scripts/test-neud-macos-packaging.mjs
+        run: |
+          node --test desktop/scripts/test-neud-macos-packaging.mjs
+          node --test desktop/scripts/test-packaged-browser-platform-resolution.mjs
 
       - name: Prefetch Chrome for Testing (darwin arm64)
         run: npx puppeteer browsers install chrome

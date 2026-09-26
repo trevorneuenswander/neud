@@ -61,6 +61,7 @@ test("electron-builder configures mac dmg and zip arm64 artifacts", () => {
   assert.match(config, /arch:[\s\S]*- arm64/);
   assert.match(config, /icon: build\/icon\.icns/);
   assert.match(config, /entitlements: build\/entitlements\.mac\.plist/);
+  assert.match(config, /identity: null/);
 });
 
 test("appId remains com.hildreths.neud across platforms", () => {
@@ -98,6 +99,19 @@ test("macOS entitlements include JIT and network client permissions", () => {
   const entitlements = read("desktop/build/entitlements.mac.plist");
   assert.match(entitlements, /com\.apple\.security\.cs\.allow-jit/);
   assert.match(entitlements, /com\.apple\.security\.network\.client/);
+});
+
+test("build:desktop stages worker after desktop compile", () => {
+  const rootPkg = JSON.parse(read("package.json"));
+  const sequence = rootPkg.scripts["build:desktop"];
+  const buildDesktopIndex = sequence.indexOf("npm run build -w @neud/desktop");
+  const stageIndex = sequence.indexOf("stage-standalone.mjs");
+  assert.ok(buildDesktopIndex >= 0, "build:desktop must compile @neud/desktop");
+  assert.ok(stageIndex >= 0, "build:desktop must run stage-standalone.mjs");
+  assert.ok(
+    buildDesktopIndex < stageIndex,
+    "stage-standalone must run after desktop compile so staged worker matches dist-local",
+  );
 });
 
 test("GitHub Actions macOS workflow is defined", () => {

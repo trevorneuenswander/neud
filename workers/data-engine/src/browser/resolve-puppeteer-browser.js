@@ -11,6 +11,10 @@ import {
   isUsableChromeExecutable as isUsableChromeExecutableShared,
   resolvePackagedBrowserExecutable as resolvePackagedBrowserExecutableShared,
   resolvePackagingProfile,
+  resolvePackagingProfileForPackagedRuntime,
+  readPackagedBrowserManifest,
+  resolveRuntimePlatformKey,
+  buildPackagedBrowserRuntimeDiagnostic,
   sanitizePackagedBrowserDiagnosticPath,
 } from "./packaged-chrome-profile.js";
 
@@ -78,13 +82,22 @@ export function isPackagedNeudRuntime() {
   return NEUD_PACKAGED();
 }
 
+function resolveActivePackagingProfile(resourcesPath, packagedMode) {
+  if (packagedMode && resourcesPath) {
+    return resolvePackagingProfileForPackagedRuntime(resourcesPath);
+  }
+  return resolvePackagingProfile();
+}
+
 export function resolvePackagedBrowserExecutable(resourcesPath = NEUD_RESOURCES_PATH()) {
   if (!resourcesPath) {
     return null;
   }
 
   try {
-    return resolvePackagedBrowserExecutableShared(resourcesPath, resolvePackagingProfile());
+    const packagedMode = isPackagedNeudRuntime();
+    const profile = resolveActivePackagingProfile(resourcesPath, packagedMode);
+    return resolvePackagedBrowserExecutableShared(resourcesPath, profile);
   } catch {
     return null;
   }
@@ -323,6 +336,12 @@ function buildResolutionFailure(diagnostics) {
         diagnostics.firstBrowserFailureStage
           ? `Failure stage: ${diagnostics.firstBrowserFailureStage}`
           : null,
+        diagnostics.packagingProfileError
+          ? `Profile resolution: ${diagnostics.packagingProfileError}`
+          : null,
+        diagnostics.manifestPlatformKey && diagnostics.selectedProfilePlatformKey
+          ? `Manifest platform: ${diagnostics.manifestPlatformKey}, selected profile: ${diagnostics.selectedProfilePlatformKey}`
+          : null,
       ]
     : [
         "Unable to resolve a usable Chrome executable for Puppeteer.",
@@ -354,16 +373,22 @@ export async function resolvePuppeteerBrowser(options = {}) {
   const expectedBrowserVersion = readExpectedChromeBuildId(puppeteerPackagePath);
   const packagedMode = isPackagedNeudRuntime();
   const resourcesPath = NEUD_RESOURCES_PATH() ?? null;
+  const runtimeDiagnostic = buildPackagedBrowserRuntimeDiagnostic(resourcesPath);
   let packagingProfile = null;
+  let packagingProfileError = runtimeDiagnostic.profileError;
   try {
-    packagingProfile = resolvePackagingProfile();
-  } catch {
+    packagingProfile = resolveActivePackagingProfile(resourcesPath, packagedMode);
+    packagingProfileError = null;
+  } catch (error) {
     packagingProfile = null;
+    packagingProfileError =
+      error instanceof Error ? error.message : String(error);
   }
   const packagedBrowserPathChecked =
     resourcesPath && packagingProfile
       ? getPrimaryPackagedBrowserPath(resourcesPath, packagingProfile)
       : null;
+  const packagedBrowserManifest = readPackagedBrowserManifest(resourcesPath);
 
   const explicitCandidates = collectExplicitCandidates(options);
   const configuredExecutablePath = explicitCandidates[0] ?? null;
@@ -382,6 +407,16 @@ export async function resolvePuppeteerBrowser(options = {}) {
     browserSource: null,
     firstBrowserFailureStage: null,
     packagedBrowserPathChecked,
+    runtimePlatform: runtimeDiagnostic.runtimePlatform,
+    runtimeArch: runtimeDiagnostic.runtimeArch,
+    runtimePlatformKey: runtimeDiagnostic.runtimePlatformKey,
+    manifestPlatformKey:
+      packagedBrowserManifest?.platformKey ?? runtimeDiagnostic.manifestPlatformKey,
+    selectedProfilePlatformKey:
+      packagingProfile?.platformKey ?? runtimeDiagnostic.selectedProfilePlatformKey,
+    resourcesRoot: resourcesPath,
+    packagingProfileError,
+    expectedExecutableExists: runtimeDiagnostic.expectedExecutableExists,
     puppeteerCacheDirSet: Boolean(process.env.PUPPETEER_CACHE_DIR),
     puppeteerCacheDir: process.env.PUPPETEER_CACHE_DIR ?? null,
     configuredExecutableSupplied: explicitCandidates.length > 0,
@@ -419,6 +454,9 @@ export async function resolvePuppeteerBrowser(options = {}) {
 
   if (packagedMode) {
     diagnostics.firstBrowserFailureStage = "packaged_browser_missing";
+    if (packagingProfileError) {
+      diagnostics.packagingProfileError = packagingProfileError;
+    }
     throw buildResolutionFailure(diagnostics);
   }
 
@@ -643,6 +681,14 @@ export function formatBrowserDiagnostics(diagnostics) {
     packagedBrowserPathChecked: diagnostics.packagedBrowserPathChecked
       ? sanitizeDiagnosticPath(diagnostics.packagedBrowserPathChecked)
       : null,
+    runtimePlatform: diagnostics.runtimePlatform ?? null,
+    runtimeArch: diagnostics.runtimeArch ?? null,
+    runtimePlatformKey: diagnostics.runtimePlatformKey ?? null,
+    manifestPlatformKey: diagnostics.manifestPlatformKey ?? null,
+    selectedProfilePlatformKey: diagnostics.selectedProfilePlatformKey ?? null,
+    resourcesRoot: diagnostics.resourcesRoot ? "process.resourcesPath" : null,
+    packagingProfileError: diagnostics.packagingProfileError ?? null,
+    expectedExecutableExists: diagnostics.expectedExecutableExists ? "yes" : "no",
     puppeteerCacheDirSet: diagnostics.puppeteerCacheDirSet ? "yes" : "no",
     puppeteerCacheDir: diagnostics.puppeteerCacheDir ? "puppeteer-cache" : null,
     configuredExecutableSupplied: diagnostics.configuredExecutableSupplied ? "yes" : "no",

@@ -1,6 +1,11 @@
 import fs from "fs";
 import path from "path";
 import { app } from "electron";
+import {
+  isUsableChromeExecutable,
+  resolvePackagedBrowserExecutable,
+  resolvePackagingProfileForPackagedRuntime,
+} from "../../../shared/browser/packaged-chrome-profile.js";
 import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
 
 let logFilePath: string | null = null;
@@ -59,15 +64,16 @@ export function logStartupEnvironment() {
     stagedNextServerExists: fs.existsSync(
       path.join(process.resourcesPath, "staging", "next", "server.js"),
     ),
-    bundledChromeExists: fs.existsSync(
-      path.join(
-        process.resourcesPath,
-        "puppeteer",
-        "chrome",
-        "chrome-win64",
-        "chrome.exe",
-      ),
-    ),
+    bundledChromeExists: (() => {
+      try {
+        const resourcesPath = process.resourcesPath;
+        const profile = resolvePackagingProfileForPackagedRuntime(resourcesPath);
+        const executable = resolvePackagedBrowserExecutable(resourcesPath, profile);
+        return Boolean(executable && isUsableChromeExecutable(executable));
+      } catch {
+        return false;
+      }
+    })(),
   });
 }
 
