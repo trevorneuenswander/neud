@@ -1420,6 +1420,15 @@ async function createMainWindow() {
     );
   }
 
+  for (const project of projectsRepository.list()) {
+    const hydration = developerToolsService.reconcilePublishedDisplayContentForProject(project.id);
+    if (hydration.repaired > 0) {
+      console.info(
+        `[desktop] Repaired published display output bundles count=${hydration.repaired} projectId=${project.id}`,
+      );
+    }
+  }
+
   const broadArrowProject = projectsRepository.getBySlug("broad-arrow-auctions");
   for (const project of projectsRepository.list()) {
     developerToolsService.reconcileInvalidDisplayOnlineStates(project.id);

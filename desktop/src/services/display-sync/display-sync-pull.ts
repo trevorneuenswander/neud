@@ -19,6 +19,7 @@ import {
   formatRevisionConflictDiagnostic,
   importCloudDisplayRevision,
 } from "./display-revision-cloud-import";
+import { reconcilePublishedDisplayContent } from "../../lib/reconcile-published-display-content";
 
 export type DisplaySyncPullResult = {
   displaysExamined: number;
@@ -47,6 +48,47 @@ type PullContext = {
 
 function logPull(paths: AppPaths, message: string): void {
   appendDisplaySyncLog(paths, message);
+}
+
+function hydratePublishedDisplayBundleFromActiveRevision(
+  ctx: PullContext,
+  projectId: string,
+  displayId: string,
+): void {
+  const code = ctx.displayCode.getByDisplayId(displayId);
+  if (!code?.publishedRevisionId) {
+    return;
+  }
+
+  const result = reconcilePublishedDisplayContent({
+    projectId,
+    displayId,
+    publishedRevisionId: code.publishedRevisionId,
+    storage: ctx.storage,
+    resolveStorageRevisionId: (revisionId) => {
+      const revision = ctx.revisions.getById(revisionId);
+      if (!revision) {
+        return revisionId;
+      }
+      const storageRevisionId = revision.metadata?.storageRevisionId;
+      if (typeof storageRevisionId === "string" && storageRevisionId.trim()) {
+        return storageRevisionId.trim();
+      }
+      return revision.id;
+    },
+  });
+
+  if (result.status === "repaired") {
+    logPull(
+      ctx.paths,
+      `pull.published.hydrated displayId=${displayId} publishedRevisionId=${code.publishedRevisionId}`,
+    );
+  } else if (result.status === "missing_revision_bundle") {
+    logPull(
+      ctx.paths,
+      `pull.published.hydration_missing_revision displayId=${displayId} publishedRevisionId=${code.publishedRevisionId}`,
+    );
+  }
 }
 
 function hasPendingActiveRevisionPush(
@@ -365,6 +407,8 @@ async function reconcileCloudDisplay(
     projectId,
     cloudDisplay,
   );
+
+  hydratePublishedDisplayBundleFromActiveRevision(ctx, projectId, displayId);
 
   logPull(
     ctx.paths,

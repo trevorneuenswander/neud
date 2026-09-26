@@ -39,6 +39,10 @@ import {
 } from "../displays/display-size";
 import type { ProjectCodeStorageService } from "./project-code-storage-service";
 import { buildDisplayViewerLookupDiagnostic } from "../lib/display-viewer-lookup-diagnostic";
+import {
+  readPublishedDisplayBundleForOutput,
+  reconcilePublishedDisplayContent,
+} from "../lib/reconcile-published-display-content";
 import { validateDisplaySource, validateDisplaySlug } from "./display-code-validation-service";
 import { validateScraperSource } from "./scraper-code-validation-service";
 import type { AuthLicenseManager } from "./auth-license-manager";
@@ -2221,6 +2225,32 @@ export class DeveloperToolsService {
     });
   }
 
+  reconcilePublishedDisplayContentForProject(projectId: string) {
+    let repaired = 0;
+    for (const code of this.displayCode.listByProject(projectId)) {
+      const result = reconcilePublishedDisplayContent({
+        projectId,
+        displayId: code.displayId,
+        publishedRevisionId: code.publishedRevisionId,
+        storage: this.storage,
+        resolveStorageRevisionId: (revisionId) =>
+          this.resolvePublishedRevisionStorageId(revisionId),
+      });
+      if (result.status === "repaired") {
+        repaired += 1;
+      }
+    }
+    return { repaired };
+  }
+
+  private resolvePublishedRevisionStorageId(revisionId: string): string {
+    const revision = this.revisions.getById(revisionId);
+    if (!revision) {
+      return revisionId;
+    }
+    return this.resolveRevisionStorageId(revision);
+  }
+
   private resolveViewerPublishedBundle(
     projectId: string,
     code: {
@@ -2232,13 +2262,20 @@ export class DeveloperToolsService {
     },
     previewMode: boolean,
   ) {
+    if (!previewMode) {
+      return readPublishedDisplayBundleForOutput({
+        projectId,
+        displayId: code.displayId,
+        publishedRevisionId: code.publishedRevisionId,
+        storage: this.storage,
+        resolveStorageRevisionId: (revisionId) =>
+          this.resolvePublishedRevisionStorageId(revisionId),
+      });
+    }
+
     const published = this.storage.readDisplayPublished(projectId, code.displayId);
     if (published?.html?.trim()) {
       return published;
-    }
-
-    if (!previewMode) {
-      return null;
     }
 
     if (code.publishedRevisionId) {

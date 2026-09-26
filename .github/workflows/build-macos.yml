@@ -77,6 +77,8 @@ jobs:
           npm run build -w @neud/desktop 2>&1 | tee /tmp/neud-build-desktop.log
           node --test desktop/scripts/test-display-preview-lookup-diagnostic.mjs
           node --test desktop/scripts/test-engine-session-facing-errors.mjs
+          node --test desktop/scripts/test-reconcile-published-display-content.mjs
+          node --test desktop/scripts/test-fresh-install-display-output.mjs
           node --test desktop/scripts/test-packaged-faye-transport-parity-built-worker.mjs
           test -f desktop/dist/bootstrap.js
 
