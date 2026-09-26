@@ -7,6 +7,8 @@ import {
   resolveLegacyLivePollIntervalMs,
   normalizeLiveFeedModePreference,
   formatLiveFeedModePreferenceLabel,
+  isBagEventDrivenLiveEnabled,
+  readWorkerBuildIdentity,
 } from "./bag-live-feed-utils.js";
 import { installLiveFeedBridgeOnPage } from "./bag-live-feed-bridge.js";
 import {
@@ -189,8 +191,10 @@ export function createBagEventDrivenSession(options) {
 
     const source = String(event.source ?? "faye");
     if (source === "faye") {
+      const nowIso = new Date().toISOString();
       updateState({
-        lastFayeApplicationEventAt: new Date().toISOString(),
+        lastFayeApplicationEventAt: nowIso,
+        lastFayeTransportActivityAt: nowIso,
         fayeConnectionHealthy: true,
         activeVehicleSubscriptionPresent: true,
       });
@@ -234,9 +238,11 @@ export function createBagEventDrivenSession(options) {
     updateState({
       fallbackCount: state.fallbackCount + 1,
       lastFallbackReason: reason,
+      lastFallbackFrom: "faye",
+      lastFallbackAt: new Date().toISOString(),
     });
     persistModeDowngrade("dom", reason);
-    logExecution("Faye live feed unavailable; switched to DOM");
+    logExecution(`Faye live feed unavailable; switched to DOM (${reason})`);
     onActivityTransition?.({
       type: "scraper.live_feed_fallback",
       from: "faye",
@@ -256,9 +262,11 @@ export function createBagEventDrivenSession(options) {
     updateState({
       fallbackCount: state.fallbackCount + 1,
       lastFallbackReason: reason,
+      lastFallbackFrom: "dom",
+      lastFallbackAt: new Date().toISOString(),
     });
     persistModeDowngrade("legacy", reason);
-    logExecution("DOM live feed unavailable; switched to Legacy Polling");
+    logExecution(`DOM live feed unavailable; switched to Legacy Polling (${reason})`);
     onActivityTransition?.({
       type: "scraper.live_feed_fallback",
       from: "dom",
@@ -463,9 +471,17 @@ export function createBagEventDrivenSession(options) {
   function getPublicRuntimeState() {
     const activeSource = state.liveFeedActiveSource ?? state.liveFeedMode ?? "faye";
     return {
+      eventDrivenLiveEnabled: isBagEventDrivenLiveEnabled(),
+      engineRunId: process.env.NEUD_ENGINE_RUN_ID ?? null,
+      workerId: process.env.WORKER_ID ?? null,
+      workerBuild: readWorkerBuildIdentity(),
       liveFeedModePreference: getOperatorMode(),
       liveFeedActiveSource: activeSource,
       liveFeedMode: activeSource,
+      requestedMode: getOperatorMode(),
+      activeMode: activeSource,
+      fallbackFrom: state.lastFallbackFrom ?? null,
+      fallbackTimestamp: state.lastFallbackAt ?? null,
       liveFeedHealth: state.liveFeedHealth,
       lastLiveUpdateAt: state.lastLiveUpdateAt,
       lastLiveChangeAt: state.lastLiveChangeAt,

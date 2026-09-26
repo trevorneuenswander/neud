@@ -29,10 +29,10 @@
 
 html[data-runtime="desktop"][data-platform="darwin"],
 html[data-runtime="desktop"]:not([data-platform]) {
-  --title-bar-height: 0px;
-  --window-menu-height: 0px;
-  --desktop-titlebar-height: 0px;
-  --app-title-bar-height: 0px;
+  --title-bar-height: 2.25rem;
+  --window-menu-height: var(--title-bar-height);
+  --desktop-titlebar-height: var(--title-bar-height);
+  --app-title-bar-height: var(--title-bar-height);
 }
 
 html[data-runtime="desktop"][data-platform="win32"],

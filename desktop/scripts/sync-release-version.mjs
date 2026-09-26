@@ -53,7 +53,19 @@ export function syncReleaseVersion() {
   };
 
   writeJson(path.join(distDir, "package.json"), distPackage);
+
+  const buildInfo = {
+    appVersion: releaseVersion,
+    gitCommit:
+      process.env.GITHUB_SHA?.trim() ||
+      process.env.NEUD_BUILD_COMMIT?.trim() ||
+      "dev-local",
+    builtAt: new Date().toISOString(),
+  };
+  writeJson(path.join(distDir, "build-info.json"), buildInfo);
+
   console.log(`Wrote dist/package.json with release version ${releaseVersion}`);
+  console.log(`Wrote dist/build-info.json (commit ${buildInfo.gitCommit})`);
 
   return releaseVersion;
 }

@@ -426,18 +426,21 @@ export class EngineManager {
       this.data.setExecutionMode(id, "local-desktop");
       this.data.updateDesiredState(id, "running");
 
-      const managed = await this.spawnWorker(id, correlationId);
+      const runId = randomUUID();
+      const managed = await this.spawnWorker(id, correlationId, runId);
       logWorkerLifecycleTimeline("worker-spawned", {
         engineId: id,
         correlationId,
-        details: { pid: managed.pid },
+        details: { pid: managed.pid, runId },
       });
       this.data.recordStatus(id, {
         workerId: `${this.host.getHostId()}-local`,
         actualState: "starting",
         lastHeartbeatAt: new Date().toISOString(),
+        lastError: null,
+        healthState: "unknown",
       });
-      this.recordExecutionLog(id, "Scraper Engine started");
+      this.recordExecutionLog(id, `Scraper Engine started (run ${runId.slice(0, 8)})`);
 
       return {
         ok: true,
@@ -924,6 +927,7 @@ export class EngineManager {
   private async spawnWorker(
     engineId: string,
     correlationId?: string,
+    runId?: string,
   ): Promise<ManagedEngineProcess> {
     const existing = this.engines.get(engineId);
     if (existing && this.isLive(engineId)) {
@@ -1035,6 +1039,7 @@ export class EngineManager {
     fs.mkdirSync(browserUserDataDir, { recursive: true });
     fs.mkdirSync(this.paths.cookies, { recursive: true });
 
+    const engineRunId = runId ?? randomUUID();
     const workerEnv = this.buildWorkerEnvironment({
       engineId,
       adapter,
@@ -1042,6 +1047,7 @@ export class EngineManager {
       hostId,
       browserUserDataDir,
       correlationId,
+      runId: engineRunId,
     });
 
     appendWorkerCrashLog({
@@ -1239,6 +1245,7 @@ export class EngineManager {
     hostId: string;
     browserUserDataDir: string;
     correlationId?: string;
+    runId?: string;
   }): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env };
     delete env.BAG_AUCTION_EMAIL;
@@ -1258,6 +1265,9 @@ export class EngineManager {
     env.NEUD_COOKIES_DIR = this.paths.cookies;
     if (input.correlationId) {
       env.NEUD_ENGINE_START_CORRELATION_ID = input.correlationId;
+    }
+    if (input.runId) {
+      env.NEUD_ENGINE_RUN_ID = input.runId;
     }
 
     if (app.isPackaged) {

@@ -77,8 +77,38 @@ test("event-driven feature flag and adapter wiring exist", () => {
   const engineRuntime = read("workers/data-engine/src/engine-runtime.js");
   assert.match(bagAuction, /startEventDrivenEngine/);
   assert.match(read("workers/data-engine/src/adapters/bag-live-feed-utils.js"), /NEUD_BAG_EVENT_DRIVEN_LIVE/);
+  assert.match(read("workers/data-engine/src/adapters/bag-live-feed-utils.js"), /NEUD_PACKAGED/);
   assert.match(engineRuntime, /supportsEventDrivenLive/);
+  assert.match(engineRuntime, /loggedLegacyPollTransport/);
   assert.match(read("workers/data-engine/src/adapters/bag-live-feed-bridge.js"), /afterVehicleUpdate/);
+});
+
+test("packaged worker spawn enables event-driven live when NODE_ENV is production", async () => {
+  const utilsPath = path.join(
+    repoRoot,
+    "workers/data-engine/dist-local/adapters/bag-live-feed-utils.js",
+  );
+  assert.equal(fs.existsSync(utilsPath), true, "Build data-engine dist-local before this test");
+  const utilsUrl = pathToFileURL(utilsPath).href;
+  const previous = {
+    flag: process.env.NEUD_BAG_EVENT_DRIVEN_LIVE,
+    nodeEnv: process.env.NODE_ENV,
+    packaged: process.env.NEUD_PACKAGED,
+  };
+  try {
+    delete process.env.NEUD_BAG_EVENT_DRIVEN_LIVE;
+    process.env.NODE_ENV = "production";
+    process.env.NEUD_PACKAGED = "1";
+    const { isBagEventDrivenLiveEnabled } = await import(`${utilsUrl}?packagedParity=${Date.now()}`);
+    assert.equal(isBagEventDrivenLiveEnabled(), true);
+  } finally {
+    if (previous.flag === undefined) delete process.env.NEUD_BAG_EVENT_DRIVEN_LIVE;
+    else process.env.NEUD_BAG_EVENT_DRIVEN_LIVE = previous.flag;
+    if (previous.nodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous.nodeEnv;
+    if (previous.packaged === undefined) delete process.env.NEUD_PACKAGED;
+    else process.env.NEUD_PACKAGED = previous.packaged;
+  }
 });
 
 test("legacy scrape preserved as fallback path", () => {

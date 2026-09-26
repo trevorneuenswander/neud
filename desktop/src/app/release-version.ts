@@ -60,3 +60,59 @@ export function getCanonicalReleaseVersion(): string {
 export function syncElectronReleaseVersion(): string {
   return getCanonicalReleaseVersion();
 }
+
+export type DesktopBuildInfo = {
+  appVersion: string;
+  gitCommit: string;
+  builtAt: string | null;
+};
+
+let cachedBuildInfo: DesktopBuildInfo | null = null;
+
+export function getDesktopBuildInfo(): DesktopBuildInfo {
+  if (cachedBuildInfo) {
+    return cachedBuildInfo;
+  }
+
+  const candidates = [
+    path.resolve(__dirname, "..", "build-info.json"),
+    path.resolve(app.getAppPath(), "build-info.json"),
+  ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, "utf8")) as {
+        appVersion?: unknown;
+        gitCommit?: unknown;
+        builtAt?: unknown;
+      };
+      cachedBuildInfo = {
+        appVersion:
+          typeof parsed.appVersion === "string" && parsed.appVersion.trim()
+            ? parsed.appVersion.trim()
+            : getCanonicalReleaseVersion(),
+        gitCommit:
+          typeof parsed.gitCommit === "string" && parsed.gitCommit.trim()
+            ? parsed.gitCommit.trim()
+            : "unknown",
+        builtAt:
+          typeof parsed.builtAt === "string" && parsed.builtAt.trim()
+            ? parsed.builtAt.trim()
+            : null,
+      };
+      return cachedBuildInfo;
+    } catch {
+      // try next candidate
+    }
+  }
+
+  cachedBuildInfo = {
+    appVersion: getCanonicalReleaseVersion(),
+    gitCommit: "unknown",
+    builtAt: null,
+  };
+  return cachedBuildInfo;
+}

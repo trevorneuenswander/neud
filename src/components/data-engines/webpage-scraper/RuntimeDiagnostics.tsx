@@ -21,6 +21,7 @@ import {
   findLatestLiveDiagnosticsLog,
 } from "@/lib/data-engines/runtime-diagnostics-from-snapshot";
 import type { BagSnapshotData } from "@/lib/data-engines/types";
+import { formatScraperTransportSummary } from "@/lib/data-engines/scraper-transport-diagnostics";
 
 type RuntimeDiagnosticsProps = {
   status: DataEngineStatus | null;
@@ -152,6 +153,7 @@ export function RuntimeDiagnostics({
   };
   const consistency = buildStateConsistencyDiagnostics(snapshotData, metadata);
   const photoDiagnostics = buildCurrentLotPhotoDiagnostics(snapshotData);
+  const transport = formatScraperTransportSummary(liveFeedRuntime, metadata);
 
   const lastSuccessfulPoll =
     sessionLastPollAt ??
@@ -242,15 +244,48 @@ export function RuntimeDiagnostics({
           label="Polling interval"
           value={formatPollInterval(pollIntervalMs)}
         />
+        <DiagnosticRow label="Transport" value={transport.activeTransport} />
+        <DiagnosticRow label="Requested mode" value={transport.requestedMode} />
         <DiagnosticRow
-          label="Live feed mode"
+          label="Event-driven live"
           value={
-            typeof liveFeedRuntime?.liveFeedMode === "string"
-              ? String(liveFeedRuntime.liveFeedMode)
-              : typeof metadata?.liveFeedMode === "string"
-                ? metadata.liveFeedMode
+            transport.eventDrivenLiveEnabled === true
+              ? "enabled"
+              : transport.eventDrivenLiveEnabled === false
+                ? "disabled (legacy poll loop)"
                 : "—"
           }
+        />
+        {transport.engineRunId ? (
+          <DiagnosticRow label="Current run" value={transport.engineRunId} />
+        ) : null}
+        {liveFeedRuntime?.workerBuild &&
+        typeof liveFeedRuntime.workerBuild === "object" &&
+        liveFeedRuntime.workerBuild !== null ? (
+          <DiagnosticRow
+            label="Worker build"
+            value={[
+              typeof (liveFeedRuntime.workerBuild as { gitCommit?: string }).gitCommit ===
+              "string"
+                ? String((liveFeedRuntime.workerBuild as { gitCommit?: string }).gitCommit)
+                : null,
+              typeof (liveFeedRuntime.workerBuild as { builtAt?: string }).builtAt === "string"
+                ? String((liveFeedRuntime.workerBuild as { builtAt?: string }).builtAt)
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "—"}
+          />
+        ) : null}
+        {transport.fallbackSummary ? (
+          <DiagnosticRow label="Transport fallback" value={transport.fallbackSummary} />
+        ) : null}
+        {transport.fallbackTimestamp ? (
+          <DiagnosticRow label="Fallback at" value={transport.fallbackTimestamp} />
+        ) : null}
+        <DiagnosticRow
+          label="UI detail refresh"
+          value="1–2s while engine active (not scraper transport)"
         />
         <DiagnosticRow
           label="Live feed status"
@@ -259,6 +294,36 @@ export function RuntimeDiagnostics({
               ? String(liveFeedRuntime.liveFeedHealth)
               : typeof metadata?.liveFeedHealth === "string"
                 ? metadata.liveFeedHealth
+                : "—"
+          }
+        />
+        <DiagnosticRow
+          label="Faye connected"
+          value={
+            liveFeedRuntime?.fayeConnected === true
+              ? "yes"
+              : liveFeedRuntime?.fayeConnected === false
+                ? "no"
+                : "—"
+          }
+        />
+        <DiagnosticRow
+          label="DOM observer"
+          value={
+            liveFeedRuntime?.domObserverActive === true
+              ? "active"
+              : liveFeedRuntime?.domObserverActive === false
+                  ? "inactive"
+                  : "—"
+          }
+        />
+        <DiagnosticRow
+          label="Legacy polling"
+          value={
+            liveFeedRuntime?.legacyPollingActive === true
+              ? "active"
+              : liveFeedRuntime?.legacyPollingActive === false
+                ? "inactive"
                 : "—"
           }
         />

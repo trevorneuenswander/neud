@@ -1,11 +1,41 @@
 /** Pure helpers for Broad Arrow event-driven live feed (worker + tests). */
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+let cachedWorkerBuildIdentity = undefined;
+
+export function readWorkerBuildIdentity() {
+  if (cachedWorkerBuildIdentity !== undefined) {
+    return cachedWorkerBuildIdentity;
+  }
+  try {
+    const pkgPath = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "package.json",
+    );
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    cachedWorkerBuildIdentity = pkg.neudBuildInfo ?? {
+      version: pkg.version ?? null,
+    };
+  } catch {
+    cachedWorkerBuildIdentity = null;
+  }
+  return cachedWorkerBuildIdentity;
+}
+
 export function isBagEventDrivenLiveEnabled() {
   const flag = process.env.NEUD_BAG_EVENT_DRIVEN_LIVE;
   if (flag === "0" || flag === "false") {
     return false;
   }
   if (flag === "1" || flag === "true") {
+    return true;
+  }
+  // Packaged NEUD sets NODE_ENV=production; event-driven Faye must stay enabled there.
+  if (process.env.NEUD_PACKAGED === "1") {
     return true;
   }
   return process.env.NODE_ENV !== "production";
@@ -433,6 +463,8 @@ export function createInitialLiveFeedRuntimeState() {
     fallbackCount: 0,
     recoveryCount: 0,
     lastFallbackReason: null,
+    lastFallbackFrom: null,
+    lastFallbackAt: null,
     background: {
       intervalMs: null,
       lastRunDurationMs: null,

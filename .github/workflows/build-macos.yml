@@ -56,6 +56,9 @@ jobs:
         run: |
           node --test desktop/scripts/test-neud-macos-packaging.mjs
           node --test desktop/scripts/test-neud-macos-item-1b-parity.mjs
+          node --test desktop/scripts/test-neud-macos-item-1c-parity.mjs
+          node --test desktop/scripts/test-scraper-transport-diagnostics.mjs
+          node --test desktop/scripts/test-packaged-faye-transport-parity.mjs
           node --test desktop/scripts/test-packaged-browser-platform-resolution.mjs
 
       - name: Prefetch Chrome for Testing (darwin arm64)
@@ -68,17 +71,20 @@ jobs:
           npm run build:web 2>&1 | tee /tmp/neud-build-web.log
           test -f .next/standalone/server.js
 
+      - name: Compile desktop host
+        run: |
+          set -euo pipefail
+          npm run build -w @neud/desktop 2>&1 | tee /tmp/neud-build-desktop.log
+          node --test desktop/scripts/test-display-preview-lookup-diagnostic.mjs
+          node --test desktop/scripts/test-engine-session-facing-errors.mjs
+          test -f desktop/dist/bootstrap.js
+
       - name: Stage desktop resources
         run: |
           set -euo pipefail
           node desktop/scripts/stage-standalone.mjs 2>&1 | tee /tmp/neud-stage-standalone.log
           test -f desktop/staging/runtime-config/cloud.json
-
-      - name: Compile desktop host
-        run: |
-          set -euo pipefail
-          npm run build -w @neud/desktop 2>&1 | tee /tmp/neud-build-desktop.log
-          test -f desktop/dist/bootstrap.js
+          test -f desktop/staging/worker/dist/adapters/bag-event-driven-session.js
 
       - name: Electron-pack macOS app directory
         working-directory: desktop

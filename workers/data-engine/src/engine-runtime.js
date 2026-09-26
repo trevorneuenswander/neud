@@ -99,6 +99,7 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
   let activeScrapePromise = null;
   let exportPollTimer = null;
   let eventDrivenLiveStarted = false;
+  let loggedLegacyPollTransport = false;
   let engineRunLifecycleActive = false;
 
   function startExportPollingDuringScrape() {
@@ -541,6 +542,13 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
           if (eventDrivenLive) {
             if (!eventDrivenLiveStarted && typeof adapter.startEventDrivenEngine === "function") {
               eventDrivenLiveStarted = true;
+              loggedLegacyPollTransport = false;
+              await logBagDiagnostic(engineId, "bag.transport", "Broad Arrow event-driven live transport active", {
+                neudBagEventDrivenLive: process.env.NEUD_BAG_EVENT_DRIVEN_LIVE ?? null,
+                neudPackaged: process.env.NEUD_PACKAGED ?? null,
+                nodeEnv: process.env.NODE_ENV ?? null,
+                engineRunId: process.env.NEUD_ENGINE_RUN_ID ?? null,
+              });
               await adapter.startEventDrivenEngine({
                 bundle,
                 engineId,
@@ -576,6 +584,35 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
             await updateEngineStatus(engineId, { actual_state: "running" });
             await interruptibleSleep(500, () => running && !shuttingDown);
             continue;
+          }
+
+          if (
+            bundle?.engine?.config?.adapter === "bag-auction" &&
+            !loggedLegacyPollTransport
+          ) {
+            loggedLegacyPollTransport = true;
+            await logBagDiagnostic(
+              engineId,
+              "bag.transport",
+              "Broad Arrow using legacy poll loop (event-driven live disabled)",
+              {
+                neudBagEventDrivenLive: process.env.NEUD_BAG_EVENT_DRIVEN_LIVE ?? null,
+                neudPackaged: process.env.NEUD_PACKAGED ?? null,
+                nodeEnv: process.env.NODE_ENV ?? null,
+                engineRunId: process.env.NEUD_ENGINE_RUN_ID ?? null,
+              },
+            );
+            await writeLog(engineId, {
+              level: "warn",
+              eventType: "scraper.transport",
+              message:
+                "Legacy poll loop active — Faye event-driven path is disabled for this worker process.",
+              metadata: {
+                pollIntervalMs,
+                neudPackaged: process.env.NEUD_PACKAGED ?? null,
+                neudBagEventDrivenLive: process.env.NEUD_BAG_EVENT_DRIVEN_LIVE ?? null,
+              },
+            });
           }
 
           if (isScraperPerformanceCaptureEnabled()) {

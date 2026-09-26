@@ -50,6 +50,13 @@ const marker = {
   type: "module",
   neudWorkerMode: "local",
   main: "index.js",
+  neudBuildInfo: {
+    gitCommit:
+      process.env.GITHUB_SHA?.trim() ||
+      process.env.NEUD_BUILD_COMMIT?.trim() ||
+      "dev-local",
+    builtAt: new Date().toISOString(),
+  },
   dependencies: {
     puppeteer: "^24.23.0",
   },

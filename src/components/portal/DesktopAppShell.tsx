@@ -8,7 +8,10 @@ import { EmergencySessionRecovery } from "@/components/auth/EmergencySessionReco
 import { NeudAppDialogHost } from "@/components/portal/NeudAppDialogHost";
 import { UpdateAvailableModalHost } from "@/components/settings/UpdateAvailableModal";
 import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
-import { showInWindowApplicationMenu } from "@/lib/desktop/shell-capabilities";
+import {
+  showDesktopTitleBarShell,
+  showInWindowApplicationMenu,
+} from "@/lib/desktop/shell-capabilities";
 import { resolveDisplayViewMode } from "@/lib/displays/display-view-mode";
 import { isHostedFullscreenViewerPath } from "@/lib/routing/hosted-routes";
 
@@ -65,6 +68,7 @@ export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellPro
   const runtime = useShellRuntime(initialRuntime);
   const desktopActive = useDesktopShellActive(runtime);
   const platform = useDesktopPlatform();
+  const showTitleBarShell = showDesktopTitleBarShell(platform, desktopActive);
   const showInWindowMenu =
     desktopActive && platform != null && showInWindowApplicationMenu(platform);
   const pathname = usePathname();
@@ -84,11 +88,11 @@ export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellPro
       data-runtime={runtime}
     >
       <EmergencySessionRecovery />
-      {showInWindowMenu ? <AppTitleBar active /> : null}
+      {showTitleBarShell ? <AppTitleBar active /> : null}
       <div
         id="neud-app-content"
         className="app-body content-viewport absolute inset-x-0 bottom-0 flex flex-col overflow-hidden"
-        style={{ top: showInWindowMenu ? "var(--window-menu-height, 0px)" : 0 }}
+        style={{ top: showTitleBarShell ? "var(--window-menu-height, 0px)" : 0 }}
       >
         {children}
       </div>

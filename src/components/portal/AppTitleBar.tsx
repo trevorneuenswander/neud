@@ -37,7 +37,7 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
   const inWindowMenuEnabled = showInWindowApplicationMenu(platform);
 
   useEffect(() => {
-    if (!active || !inWindowMenuEnabled) return;
+    if (!active) return;
 
     const titleBar = titleBarRef.current;
     if (!titleBar) return;
@@ -53,12 +53,12 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
     const observer = new ResizeObserver(syncTitleBarHeight);
     observer.observe(titleBar);
 
-      return () => {
-        observer.disconnect();
-        document.documentElement.style.removeProperty("--title-bar-height");
-        document.documentElement.style.removeProperty("--window-menu-height");
-      };
-  }, [active, inWindowMenuEnabled]);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--title-bar-height");
+      document.documentElement.style.removeProperty("--window-menu-height");
+    };
+  }, [active]);
 
   const noDragStyle = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
   const dragStyle = { WebkitAppRegion: "drag" } as React.CSSProperties;
@@ -70,10 +70,6 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
         aria-hidden="true"
       />
     );
-  }
-
-  if (!inWindowMenuEnabled) {
-    return null;
   }
 
   const popupMenu = (label: string, event: React.MouseEvent<HTMLButtonElement>) => {
@@ -104,22 +100,26 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
       className="fixed left-0 right-0 top-0 z-[1001] flex h-9 items-center border-b border-border bg-background pl-3 pr-0"
       style={dragStyle}
     >
-      <nav
-        className="flex items-center gap-1"
-        aria-label="Application menu"
-        style={noDragStyle}
-      >
-        {menuLabels.map((label) => (
-          <button
-            key={label}
-            type="button"
-            className="rounded px-2 py-1 text-sm text-foreground hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            onClick={(event) => popupMenu(label, event)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      {inWindowMenuEnabled ? (
+        <nav
+          className="flex items-center gap-1"
+          aria-label="Application menu"
+          style={noDragStyle}
+        >
+          {menuLabels.map((label) => (
+            <button
+              key={label}
+              type="button"
+              className="rounded px-2 py-1 text-sm text-foreground hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={(event) => popupMenu(label, event)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      ) : (
+        <div className="min-w-0 flex-1" aria-hidden="true" />
+      )}
       {showWindowControls ? (
         <div className="ml-auto flex h-full items-stretch" style={noDragStyle}>
           <button

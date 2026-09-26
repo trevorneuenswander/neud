@@ -38,6 +38,7 @@ import {
   normalizeDisplaySize,
 } from "../displays/display-size";
 import type { ProjectCodeStorageService } from "./project-code-storage-service";
+import { buildDisplayViewerLookupDiagnostic } from "../lib/display-viewer-lookup-diagnostic";
 import { validateDisplaySource, validateDisplaySlug } from "./display-code-validation-service";
 import { validateScraperSource } from "./scraper-code-validation-service";
 import type { AuthLicenseManager } from "./auth-license-manager";
@@ -2203,6 +2204,66 @@ export class DeveloperToolsService {
     return { deletedRevisionId: revisionId };
   }
 
+  describeDisplayViewerLookup(
+    projectSegment: string,
+    displaySlug: string,
+    options?: { preview?: boolean },
+  ) {
+    return buildDisplayViewerLookupDiagnostic({
+      routeProjectSegment: projectSegment,
+      routeDisplaySlug: displaySlug,
+      previewMode: options?.preview === true,
+      projects: this.projects,
+      displayCode: this.displayCode,
+      displays: this.displays,
+      displaySyncHooks: this.displaySyncHooks,
+      storage: this.storage,
+    });
+  }
+
+  private resolveViewerPublishedBundle(
+    projectId: string,
+    code: {
+      displayId: string;
+      publishedRevisionId: string | null;
+      draftHtml: string | null;
+      draftCss: string | null;
+      draftJavascript: string | null;
+    },
+    previewMode: boolean,
+  ) {
+    const published = this.storage.readDisplayPublished(projectId, code.displayId);
+    if (published?.html?.trim()) {
+      return published;
+    }
+
+    if (!previewMode) {
+      return null;
+    }
+
+    if (code.publishedRevisionId) {
+      const revision = this.storage.readDisplayRevision(
+        projectId,
+        code.displayId,
+        code.publishedRevisionId,
+      );
+      if (revision?.html?.trim()) {
+        return revision;
+      }
+    }
+
+    if (code.draftHtml?.trim()) {
+      return {
+        html: code.draftHtml,
+        css: code.draftCss ?? "",
+        javascript: code.draftJavascript ?? "",
+        metadata: {},
+      };
+    }
+
+    return null;
+  }
+
   resolveProjectForDisplayRoute(projectSegment: string, displaySlug: string) {
     const trimmedProject = projectSegment.trim();
     const trimmedSlug = displaySlug.trim();
@@ -2277,7 +2338,11 @@ export class DeveloperToolsService {
       };
     }
 
-    const published = this.storage.readDisplayPublished(resolvedProjectId, code.displayId);
+    const published = this.resolveViewerPublishedBundle(
+      resolvedProjectId,
+      code,
+      previewMode,
+    );
     if (!published) {
       return { status: "not_found" as const };
     }

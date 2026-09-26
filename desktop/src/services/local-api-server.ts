@@ -302,9 +302,11 @@ export class LocalApiServer {
           this.data.kickIdentityResolution("meta-background");
         }
 
+        const { getDesktopBuildInfo } = await import("../app/release-version");
         return sendJson(response, 200, {
           ok: true,
           ...this.data.getProjectsListMeta(),
+          build: getDesktopBuildInfo(),
         });
       }
 
@@ -2213,7 +2215,12 @@ export class LocalApiServer {
                 .enabled,
             });
           } catch {
-            return sendJson(response, 404, { error: "Display not found." });
+            const diagnostic = this.developerTools.describeDisplayViewerLookup(
+              projectId,
+              displaySlug,
+              { preview: url.searchParams.get("preview") === "1" },
+            );
+            return sendJson(response, 404, { error: "Display not found.", diagnostic });
           }
         }
 
@@ -2223,7 +2230,11 @@ export class LocalApiServer {
               ...this.developerTools.getDisplayViewerMeta(projectId, displaySlug),
             });
           } catch {
-            return sendJson(response, 404, { error: "Display not found." });
+            const diagnostic = this.developerTools.describeDisplayViewerLookup(
+              projectId,
+              displaySlug,
+            );
+            return sendJson(response, 404, { error: "Display not found.", diagnostic });
           }
         }
 
@@ -2248,7 +2259,12 @@ export class LocalApiServer {
               });
             }
           } catch {
-            return sendJson(response, 404, { error: "Display not found." });
+            const diagnostic = this.developerTools.describeDisplayViewerLookup(
+              projectId,
+              displaySlug,
+              { preview: previewMode },
+            );
+            return sendJson(response, 404, { error: "Display not found.", diagnostic });
           }
 
           this.touchDisplayViewer(request, projectId, displaySlug);
@@ -2277,7 +2293,15 @@ export class LocalApiServer {
             output: outputMode,
           });
           if (resolved.status === "not_found") {
-            return sendJson(response, 404, { error: "Display not found." });
+            const diagnostic = this.developerTools.describeDisplayViewerLookup(
+              projectId,
+              displaySlug,
+              { preview: previewMode },
+            );
+            return sendJson(response, 404, {
+              error: "Display not found.",
+              diagnostic,
+            });
           }
           if (resolved.status === "disabled") {
             return sendHtml(response, 403, renderDisabledDisplayPage());

@@ -5,6 +5,23 @@ const STALE_TRANSIENT_ERROR_PATTERNS = [
   /internet disconnected/i,
 ];
 
+export function isStalePackagedBrowserErrorForPlatform(
+  message: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (platform === "darwin" && /chrome-win64[\\/]chrome\.exe/i.test(trimmed)) {
+    return true;
+  }
+  if (platform === "win32" && /chrome-mac-arm64/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
 export function isStaleTransientEngineError(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed) {
@@ -42,6 +59,9 @@ export function resolveSessionFacingEngineLastError(
     return message;
   }
   if (isStaleTransientEngineError(message)) {
+    return null;
+  }
+  if (isStalePackagedBrowserErrorForPlatform(message)) {
     return null;
   }
   const actualState = status?.actualState ?? "stopped";
