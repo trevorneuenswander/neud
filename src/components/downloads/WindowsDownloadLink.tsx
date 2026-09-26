@@ -7,15 +7,16 @@ import {
 type WindowsDownloadLinkProps = {
   children: ReactNode;
   className?: string;
+  href?: string;
 };
 
 /**
  * Direct GitHub Releases download link for the Windows installer.
  * Uses a stable asset filename (NEUD-Setup-latest-x64.exe) by default.
  */
-export function WindowsDownloadLink({ children, className }: WindowsDownloadLinkProps) {
+export function WindowsDownloadLink({ children, className, href }: WindowsDownloadLinkProps) {
   return (
-    <a href={getWindowsInstallerDownloadUrl()} className={className}>
+    <a href={href ?? getWindowsInstallerDownloadUrl()} className={className}>
       {children}
     </a>
   );
@@ -38,13 +39,15 @@ export function WindowsDownloadButton({
 export function WindowsDownloadReleaseNotesLink({
   className = "text-sm font-medium text-primary hover:underline",
   children = "View release notes on GitHub",
+  href,
 }: {
   className?: string;
   children?: ReactNode;
+  href?: string;
 }) {
   return (
     <a
-      href={getGitHubReleasePageUrl()}
+      href={href ?? getGitHubReleasePageUrl()}
       className={className}
       target="_blank"
       rel="noopener noreferrer"

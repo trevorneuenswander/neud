@@ -10,6 +10,26 @@ The Vercel-hosted portal does **not** store a second copy of the installer.
 
 Repository: [trevorneuenswander/neud](https://github.com/trevorneuenswander/neud)
 
+## Release notes parity (GitHub ↔ neud.io)
+
+Authoritative release metadata for the public download page lives in:
+
+```text
+src/lib/releases/neud-releases.ts
+```
+
+When publishing a new tag:
+
+1. Update `NEUD_RELEASES` (highlights, platforms, dates, signing status).
+2. Add or update `docs/release-notes-vX.Y.Z.md` with the same highlight bullets.
+3. Paste the doc into the GitHub Release description, or run:
+
+   ```bash
+   node desktop/scripts/print-github-release-body.mjs
+   ```
+
+4. Deploy Vercel so `/download` renders the same version history and summaries.
+
 ## Download URL strategy (Option A — stable asset filename)
 
 The website uses a **stable GitHub Release asset name** so the portal does not need redeploying on every version bump:

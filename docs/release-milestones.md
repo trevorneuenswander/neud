@@ -6,26 +6,38 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.2.0** | Last shipped Windows installer / GitHub release before v0.2.1 |
-| **Current release** | **v0.2.1** | Access fixes, pinned stacks, collapsible sidebar, LED Display (Quail) |
+| **Latest published release** | **v0.2.1** | Last shipped Windows-only release before v0.2.2 |
+| **Current release** | **v0.2.2** | Cross-platform Windows x64 + macOS Apple Silicon; packaged Faye parity, display hydration, Mac shell parity |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2
 ```
 
-Expected packaged installer name for v0.2.1:
+Expected packaged artifacts for v0.2.2:
 
 ```text
-NEUD-Setup-0.2.1-x64.exe
+NEUD-Setup-0.2.2-x64.exe
+NEUD-0.2.2-arm64.dmg
+NEUD-0.2.2-arm64.zip
 ```
 
-Canonical application version is **`0.2.1`** in root and `@neud/desktop` `package.json`.
+Canonical application version is **`0.2.2`** in root and `@neud/desktop` `package.json`.
+
+## Alpha v0.2.2
+
+Cross-platform hardening release: Apple Silicon macOS desktop, packaged Chrome for Testing on macOS, native application menu / in-window title bar parity, fresh-install display output hydration, packaged Faye/event-driven Broad Arrow transport, scraper transport diagnostics, and packaged worker/build identity diagnostics. Includes all v0.2.1 functionality.
 
 ## Alpha v0.2.1
 
 Shipped scope includes activity/teams/owner access fixes, persistent pinned display stacking, collapsible desktop navigation, and the initial Broad Arrow LED Display (Quail) at 9216×1536. Stream Bid / Stream Ticker visuals and scraper architecture are unchanged.
+
+Expected packaged installer name for v0.2.1 (historical):
+
+```text
+NEUD-Setup-0.2.1-x64.exe
+```
 
 ## Alpha v0.2.0 (published)
 

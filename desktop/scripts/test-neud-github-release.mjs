@@ -32,8 +32,10 @@ test("hosted web download components use centralized GitHub URL", () => {
   const settings = read("src/app/portal/settings/page.tsx");
   const login = read("src/app/(public)/login/page.tsx");
 
-  assert.match(downloadPage, /WindowsDownloadButton/);
-  assert.match(downloadPage, /windows-installer/);
+  assert.match(downloadPage, /getCurrentNeudRelease/);
+  assert.match(downloadPage, /ReleaseDownloadSection/);
+  assert.match(downloadPage, /Previous versions/);
+  assert.match(read("src/lib/releases/neud-releases.ts"), /NEUD_RELEASES/);
   assert.match(sidebar, /WindowsDownloadLink/);
   assert.match(topBar, /WindowsDownloadLink/);
   assert.match(settings, /WindowsDownloadLink/);
