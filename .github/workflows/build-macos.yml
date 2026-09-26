@@ -6,11 +6,15 @@ on:
     branches:
       - main
     paths:
+      - "src/**"
       - "desktop/**"
-      - "shared/browser/**"
-      - "workers/data-engine/**"
+      - "workers/**"
+      - "shared/**"
+      - "public/**"
       - "package.json"
       - "package-lock.json"
+      - "next.config.*"
+      - "tsconfig*.json"
       - ".github/workflows/build-macos.yml"
 
 permissions:
