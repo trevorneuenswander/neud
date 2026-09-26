@@ -6,34 +6,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
 import {
   findMacAppBundleRoot,
   getMacResourcesDir,
   getReleaseDir,
 } from "./lib/packaged-platform-paths.mjs";
+import { hasAsarFile, readAsarFile } from "./lib/asar-inspection.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const desktopRoot = path.join(repoRoot, "desktop");
 
 const PACKAGED_CHROME_PROFILE_ASAR_PATH = "dist/lib/browser/packaged-chrome-profile.js";
 const STARTUP_DIAGNOSTICS_ASAR_PATH = "dist/services/startup-diagnostics.js";
-
-function listAsar(asarPath) {
-  return execSync(`npx --yes @electron/asar list "${asarPath}"`, {
-    encoding: "utf8",
-    cwd: repoRoot,
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-}
-
-function readAsarFile(asarPath, entryPath) {
-  return execSync(`npx --yes @electron/asar extract-file "${asarPath}" "${entryPath}"`, {
-    encoding: "utf8",
-    cwd: repoRoot,
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-}
 
 function verifyDistMainProcessSources() {
   const startupDiagnostics = fs.readFileSync(
@@ -82,19 +66,19 @@ function verifyMacPackagedAsar() {
   const asarPath = path.join(resourcesRoot, "app.asar");
   assert.equal(fs.existsSync(asarPath), true, `Missing app.asar at ${asarPath}`);
 
-  const listing = listAsar(asarPath);
-  assert.match(
-    listing,
-    new RegExp(PACKAGED_CHROME_PROFILE_ASAR_PATH.replace(/\./g, "\\.")),
+  assert.equal(
+    hasAsarFile(asarPath, PACKAGED_CHROME_PROFILE_ASAR_PATH),
+    true,
     "app.asar must contain packaged Chrome profile module",
   );
-  assert.match(
-    listing,
-    new RegExp(STARTUP_DIAGNOSTICS_ASAR_PATH.replace(/\./g, "\\.")),
+  assert.equal(
+    hasAsarFile(asarPath, STARTUP_DIAGNOSTICS_ASAR_PATH),
+    true,
     "app.asar must contain startup-diagnostics",
   );
 
   const startupSource = readAsarFile(asarPath, STARTUP_DIAGNOSTICS_ASAR_PATH);
+  assert.ok(startupSource.length > 0, "startup-diagnostics must be readable from app.asar");
   assert.doesNotMatch(startupSource, /\.\.\/\.\.\/\.\.\/shared\//);
   assert.match(startupSource, /\.\.\/lib\/browser\/packaged-chrome-profile\.js/);
 

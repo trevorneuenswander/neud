@@ -4,6 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
+import {
+  hasAsarFile,
+  readAsarFile,
+  withTemporaryAsarFixture,
+} from "./lib/asar-inspection.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const desktopRoot = path.join(repoRoot, "desktop");
@@ -39,6 +44,20 @@ test("Electron services import desktop-local packaged Chrome profile", () => {
   assert.match(startup, /from "\.\.\/lib\/browser\/packaged-chrome-profile\.js"/);
   assert.match(installed, /from "\.\.\/lib\/browser\/packaged-chrome-profile\.js"/);
   assert.doesNotMatch(startup, /shared\/browser\/packaged-chrome-profile/);
+});
+
+test("asar inspection reads file contents via @electron/asar API", async () => {
+  await withTemporaryAsarFixture(
+    {
+      "dist/services/startup-diagnostics.js":
+        'require("../lib/browser/packaged-chrome-profile.js");',
+    },
+    async (asarPath) => {
+      assert.equal(hasAsarFile(asarPath, "dist/services/startup-diagnostics.js"), true);
+      const contents = readAsarFile(asarPath, "dist/services/startup-diagnostics.js");
+      assert.match(contents, /\.\.\/lib\/browser\/packaged-chrome-profile\.js/);
+    },
+  );
 });
 
 test("desktop dist resolves packaged Chrome profile from lib/browser", () => {

@@ -98,6 +98,9 @@ test("desktop Electron main syncs packaged Chrome profile into app bundle tree",
   const startup = read("desktop/src/services/startup-diagnostics.ts");
   assert.match(startup, /\.\.\/lib\/browser\/packaged-chrome-profile\.js/);
   assert.doesNotMatch(startup, /shared\/browser\/packaged-chrome-profile/);
+  const asarHelper = read("desktop/scripts/lib/asar-inspection.mjs");
+  assert.match(asarHelper, /asar\.extractFile/);
+  assert.match(read("desktop/scripts/verify-mac-package.mjs"), /readAsarFile/);
 });
 
 test("signing secrets are not hardcoded in electron-builder config", () => {

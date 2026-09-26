@@ -13,10 +13,18 @@ import {
   getMacResourcesDir,
   getReleaseDir,
 } from "./lib/packaged-platform-paths.mjs";
+import {
+  hasAsarFile,
+  listAsarFiles,
+  readAsarFile,
+} from "./lib/asar-inspection.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const desktopRoot = path.join(repoRoot, "desktop");
 const releaseDir = getReleaseDir();
+
+const STARTUP_DIAGNOSTICS_ASAR_PATH = "dist/services/startup-diagnostics.js";
+const PACKAGED_CHROME_PROFILE_ASAR_PATH = "dist/lib/browser/packaged-chrome-profile.js";
 
 const appBundle = findMacAppBundleRoot();
 assert.ok(appBundle, "Missing NEUD.app under desktop/release. Run package:mac first.");
@@ -45,21 +53,26 @@ assert.equal(fs.existsSync(appUpdatePath), true, "Missing app-update.yml in macO
 
 const asarPath = path.join(resourcesRoot, "app.asar");
 if (fs.existsSync(asarPath)) {
-  const asarListing = execSync(`npx --yes @electron/asar list "${asarPath}"`, {
-    encoding: "utf8",
-    cwd: repoRoot,
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  assert.match(asarListing, /038_user_pinned_viewer_stacks\.sql/);
-  assert.match(
-    asarListing,
-    /dist\/lib\/browser\/packaged-chrome-profile\.js/,
+  const asarFiles = listAsarFiles(asarPath);
+  assert.ok(
+    asarFiles.some((entry) => entry.includes("038_user_pinned_viewer_stacks.sql")),
+    "app.asar must include SQL migrations",
+  );
+  assert.equal(
+    hasAsarFile(asarPath, PACKAGED_CHROME_PROFILE_ASAR_PATH),
+    true,
     "app.asar must ship synced packaged Chrome profile for Electron main",
   );
+  assert.equal(
+    hasAsarFile(asarPath, STARTUP_DIAGNOSTICS_ASAR_PATH),
+    true,
+    "app.asar must ship startup-diagnostics",
+  );
 
-  const startupDiagnostics = execSync(
-    `npx --yes @electron/asar extract-file "${asarPath}" dist/services/startup-diagnostics.js`,
-    { encoding: "utf8", cwd: repoRoot, stdio: ["ignore", "pipe", "inherit"] },
+  const startupDiagnostics = readAsarFile(asarPath, STARTUP_DIAGNOSTICS_ASAR_PATH);
+  assert.ok(
+    startupDiagnostics.length > 0,
+    "startup-diagnostics.js must be readable from app.asar (not empty)",
   );
   assert.doesNotMatch(
     startupDiagnostics,
@@ -79,6 +92,7 @@ console.log(
       chromeExe,
       appUpdatePath,
       bundleIdentifier: info.CFBundleIdentifier ?? null,
+      releaseDir,
     },
     null,
     2,
