@@ -59,6 +59,7 @@ type DeveloperHtmlDisplayCardProps = {
   display: Pick<
     ProjectDisplaySource,
     | "id"
+    | "projectId"
     | "name"
     | "slug"
     | "displayKey"
