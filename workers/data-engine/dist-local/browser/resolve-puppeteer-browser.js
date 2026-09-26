@@ -326,10 +326,18 @@ function findSystemBrowser(candidates, source) {
 
 function buildResolutionFailure(diagnostics) {
   const packagedMode = diagnostics.packagedMode === true;
+  const timestamp = new Date().toISOString();
   const message = packagedMode
     ? [
         "Unable to resolve the bundled Chrome executable for the packaged NEUD application.",
         "Reinstall NEUD or rebuild the desktop installer with Chrome for Testing included.",
+        `Recorded at: ${timestamp}`,
+        diagnostics.runtimePlatform && diagnostics.runtimeArch
+          ? `Runtime platform: ${diagnostics.runtimePlatform}/${diagnostics.runtimeArch}`
+          : null,
+        diagnostics.runtimePlatformKey
+          ? `Runtime platformKey: ${diagnostics.runtimePlatformKey}`
+          : null,
         diagnostics.packagedBrowserPathChecked
           ? `Expected packaged browser at: ${diagnostics.packagedBrowserPathChecked}`
           : null,

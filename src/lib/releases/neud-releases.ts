@@ -45,14 +45,14 @@ export function getVersionedWindowsDownloadUrl(version: string): string {
 }
 
 const V022_HIGHLIGHTS = [
-  "Added Apple Silicon macOS support",
-  "Restored Faye/event-driven Broad Arrow transport in packaged builds",
-  "Added explicit scraper transport and fallback diagnostics",
-  "Improved packaged Chrome resolution on Windows and macOS",
-  "Improved fresh-install display output hydration",
-  "Added macOS-native application menu/window behavior",
-  "Improved packaged runtime / worker validation",
-  "Continued LED Display (Quail) support and compatibility",
+  "NEUD is now available for Windows and Apple Silicon Macs",
+  "Apple Silicon macOS desktop support with native menu and window behavior",
+  "LED Display (Quail) for Broad Arrow workflows",
+  "Improved Faye live-data support in packaged apps",
+  "Cross-platform bundled Chrome runtime",
+  "Improved display recovery on fresh installations",
+  "Authentication and packaged runtime configuration hardening",
+  "Display transport, SSE reliability, and expanded diagnostics",
 ] as const;
 
 /** Authoritative NEUD desktop release catalog for neud.io and release-note parity. */
@@ -63,7 +63,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     status: "current",
     current: true,
     summary:
-      "Cross-platform Alpha release with Apple Silicon macOS support, packaged Faye transport parity, display output hydration, and macOS shell parity.",
+      "Cross-platform Alpha release: Windows x64 and Apple Silicon macOS, with improved live-data reliability, authentication, packaged browser support, display recovery, and diagnostics.",
     highlights: [...V022_HIGHLIGHTS],
     platforms: {
       windows: {
@@ -81,8 +81,9 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     },
     githubReleaseUrl: getGitHubReleaseTagUrl("0.2.2"),
     knownLimitations: [
+      "Windows packaged live graphics can update more slowly than macOS during live Faye workflows; further Windows display transport optimization is planned.",
       "Alpha software; Windows builds may show SmartScreen warnings when unsigned.",
-      "macOS builds from CI are unsigned until Developer ID signing and notarization secrets are configured.",
+      "macOS builds from CI are unsigned and not notarized until Developer ID signing secrets are configured — Gatekeeper may require manual approval on first open.",
       "Intel Macs are not supported.",
       "macOS auto-update feed exists (latest-mac.yml) but treat Mac updater as preview until signing is verified in production.",
     ],

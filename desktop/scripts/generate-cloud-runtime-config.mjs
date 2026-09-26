@@ -43,24 +43,60 @@ const PUBLIC_KEYS = [
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
 ];
 
+function isPlaceholderSupabasePublishableKey(key) {
+  const trimmed = key?.trim() ?? "";
+  if (!trimmed) return true;
+  const lower = trimmed.toLowerCase();
+  if (trimmed.endsWith(".test")) return true;
+  if (lower.includes("example") || lower.includes("placeholder") || lower === "test") {
+    return true;
+  }
+  if (lower.includes("service_role")) return true;
+  return false;
+}
+
+function isValidSupabasePublishableKey(key) {
+  const trimmed = key?.trim() ?? "";
+  if (isPlaceholderSupabasePublishableKey(trimmed)) return false;
+  if (trimmed.startsWith("sb_publishable_")) return trimmed.length >= 20;
+  if (trimmed.startsWith("eyJ")) return trimmed.length >= 80;
+  return trimmed.length >= 20;
+}
+
 function resolvePublicConfigValues() {
   const envLocal = parseEnvFile(path.join(repoRoot, ".env.local"));
   const merged = {};
+  const sources = [];
 
   for (const key of PUBLIC_KEYS) {
-    if (envLocal[key]) {
-      merged[key] = envLocal[key];
+    if (envLocal[key]?.trim()) {
+      merged[key] = envLocal[key].trim();
+    }
+  }
+  if (Object.keys(merged).length > 0) {
+    sources.push(".env.local");
+  }
+
+  for (const key of PUBLIC_KEYS) {
+    const processValue = process.env[key]?.trim();
+    if (!processValue) continue;
+    if (
+      key === "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" &&
+      !isValidSupabasePublishableKey(processValue)
+    ) {
+      continue;
+    }
+    // .env.local wins over stale shell exports during local package builds.
+    if (merged[key]?.trim()) {
+      continue;
+    }
+    merged[key] = processValue;
+    if (!sources.includes("process_env")) {
+      sources.push("process_env");
     }
   }
 
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    merged.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  }
-  if (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
-    merged.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  }
-
+  merged.__sources = sources;
   return merged;
 }
 
@@ -86,8 +122,10 @@ function main() {
     );
   }
 
-  if (supabasePublishableKey.toLowerCase().includes("service_role")) {
-    throw new Error("Refusing to package a service-role Supabase key.");
+  if (!isValidSupabasePublishableKey(supabasePublishableKey)) {
+    throw new Error(
+      "Refusing to package an invalid or placeholder Supabase publishable key. Check .env.local and remove stale NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY process overrides.",
+    );
   }
 
   let urlHost = "invalid";
@@ -102,7 +140,7 @@ function main() {
     supabaseUrl,
     supabasePublishableKey,
     generatedAt: new Date().toISOString(),
-    source: ".env.local",
+    source: values.__sources?.join("+") || "unknown",
     urlHost,
   };
 

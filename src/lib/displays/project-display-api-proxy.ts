@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getLocalApiBaseUrl, shouldUseLocalData } from "@/lib/local/mode";
+import {
+  appendDisplayDataProxyPipelineLog,
+  readDisplayDataProxyTraceHeaders,
+} from "@/lib/displays/display-data-proxy-pipeline";
 
 type ProjectDisplayRouteContext = {
   params: Promise<{ projectId: string; slug: string }>;
@@ -24,8 +28,20 @@ function forwardDisplayClientHeaders(request: Request): HeadersInit {
   const headers: Record<string, string> = {};
   const clientSource = request.headers.get("x-neud-display-client");
   const referer = request.headers.get("referer");
+  const traceEventId = request.headers.get("x-neud-trace-event-id");
+  const displayClientId = request.headers.get("x-neud-display-client-id");
+  const fetchRequestId = request.headers.get("x-neud-display-fetch-request-id");
   if (clientSource) {
     headers["X-NEUD-Display-Client"] = clientSource;
+  }
+  if (traceEventId) {
+    headers["X-NEUD-Trace-Event-Id"] = traceEventId;
+  }
+  if (displayClientId) {
+    headers["X-NEUD-Display-Client-Id"] = displayClientId;
+  }
+  if (fetchRequestId) {
+    headers["X-NEUD-Display-Fetch-Request-Id"] = fetchRequestId;
   }
   if (referer) {
     headers.Referer = referer;
@@ -42,6 +58,21 @@ export async function proxyProjectDisplayDataRoute(
 
   if (shouldUseLocalData()) {
     try {
+      const trace = readDisplayDataProxyTraceHeaders(request);
+      const receivedAt = Date.now();
+      appendDisplayDataProxyPipelineLog({
+        stage: "next_proxy_request_received",
+        atMs: receivedAt,
+        ...trace,
+        detail: { projectId, slug },
+      });
+      const localFetchStart = Date.now();
+      appendDisplayDataProxyPipelineLog({
+        stage: "next_proxy_fetch_started",
+        atMs: localFetchStart,
+        ...trace,
+        detail: { localUrl: buildLocalDisplayActionPath(projectId, slug, "data", query) },
+      });
       const response = await fetch(
         buildLocalDisplayActionPath(projectId, slug, "data", query),
         {
@@ -49,12 +80,44 @@ export async function proxyProjectDisplayDataRoute(
           headers: forwardDisplayClientHeaders(request),
         },
       );
+      const localFetchFinished = Date.now();
+      appendDisplayDataProxyPipelineLog({
+        stage: "next_proxy_fetch_finished",
+        atMs: localFetchFinished,
+        ...trace,
+        detail: {
+          localFetchMs: localFetchFinished - localFetchStart,
+          status: response.status,
+        },
+      });
       const payload = await response.json().catch(() => null);
       if (payload !== null) {
-        return NextResponse.json(payload, {
+        const responseStart = Date.now();
+        appendDisplayDataProxyPipelineLog({
+          stage: "next_proxy_response_started",
+          atMs: responseStart,
+          ...trace,
+          revision:
+            typeof payload === "object" &&
+            payload !== null &&
+            typeof (payload as { revision?: unknown }).revision === "number"
+              ? ((payload as { revision: number }).revision as number)
+              : undefined,
+          detail: {
+            responseBytes: JSON.stringify(payload).length,
+          },
+        });
+        const nextResponse = NextResponse.json(payload, {
           status: response.status,
           headers: { "Cache-Control": "no-store" },
         });
+        appendDisplayDataProxyPipelineLog({
+          stage: "next_proxy_response_finished",
+          atMs: Date.now(),
+          ...trace,
+          detail: { totalProxyMs: Date.now() - receivedAt },
+        });
+        return nextResponse;
       }
     } catch {
       // Fall through to safe defaults below.

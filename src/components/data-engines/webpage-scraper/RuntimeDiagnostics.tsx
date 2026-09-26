@@ -327,6 +327,45 @@ export function RuntimeDiagnostics({
                 : "—"
           }
         />
+        {liveFeedRuntime?.liveDisplayLatency &&
+        typeof liveFeedRuntime.liveDisplayLatency === "object" ? (
+          <>
+            <DiagnosticRow
+              label="Last Faye event"
+              value={formatLatencyTimestamp(
+                (liveFeedRuntime.liveDisplayLatency as { fayeReceivedAt?: number })
+                  .fayeReceivedAt,
+              )}
+            />
+            <DiagnosticRow
+              label="Last display bridge push"
+              value={formatLatencyTimestamp(
+                (liveFeedRuntime.liveDisplayLatency as { displayBridgeEmittedAt?: number })
+                  .displayBridgeEmittedAt,
+              )}
+            />
+            <DiagnosticRow
+              label="Display delivery lag"
+              value={
+                typeof liveFeedRuntime.liveDisplayDeliveryLagMs === "number"
+                  ? `${liveFeedRuntime.liveDisplayDeliveryLagMs} ms`
+                  : typeof (
+                        liveFeedRuntime.liveDisplayLatency as {
+                          displayDeliveryLagMs?: number;
+                        }
+                      ).displayDeliveryLagMs === "number"
+                    ? `${
+                        (
+                          liveFeedRuntime.liveDisplayLatency as {
+                            displayDeliveryLagMs: number;
+                          }
+                        ).displayDeliveryLagMs
+                      } ms`
+                    : "—"
+              }
+            />
+          </>
+        ) : null}
         <DiagnosticRow
           label="Current lot photos"
           value={
@@ -401,4 +440,20 @@ export function RuntimeDiagnostics({
 function formatList(values: string[] | null | undefined): string {
   if (!values?.length) return "—";
   return values.join(", ");
+}
+
+function formatLatencyTimestamp(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  try {
+    return new Date(value).toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      fractionalSecondDigits: 3,
+    });
+  } catch {
+    return String(value);
+  }
 }

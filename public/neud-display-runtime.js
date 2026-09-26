@@ -128,7 +128,13 @@
   var latestRevision = null;
   var fetchInFlight = false;
   var pendingFetch = false;
+  var fetchGeneration = 0;
+  var latestAppliedFetchRequestId = null;
   var displayChangeListenersAttached = false;
+  var displayClientId =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : "dc-" + String(Date.now()) + "-" + Math.random().toString(16).slice(2);
   var runtimeDiagnostics = {
     displayUpdateMode: "event-driven",
     initialFetchCount: 0,
@@ -136,8 +142,79 @@
     dataFetchesTriggeredByEvent: 0,
     coalescedEvents: 0,
     pollTimerActive: false,
+    displayBridgeEventsConnected: false,
     lastChangeEventAt: null,
     lastAppliedAt: null,
+    lastTraceEventId: null,
+    lastBridgeEmittedAtMs: null,
+    lastBridgeReceivedAtMs: null,
+    lastDataFetchedAtMs: null,
+    lastDisplayDeliveryLagMs: null,
+    lastScheduleFetchBlockedInFlight: null,
+    lastFetchStartedAtMs: null,
+    lastFetchCompletedAtMs: null,
+    displayClientId: displayClientId,
+    displayBridgeEventSourceReadyState: null,
+    displayBridgeReconnectCount: 0,
+    displayBridgeOpenedAtMs: null,
+    lastSseDeliveryLagMs: null,
+    liveFetchSupersededInFlight: 0,
+    lastFetchRequestId: null,
+  };
+
+  var activeLatencyTraceEventId = null;
+
+  function reportDisplayLatency(patch) {
+    if (!projectId) {
+      return;
+    }
+    var payload = {
+      traceEventId: patch.traceEventId ?? activeLatencyTraceEventId,
+      displayClientId: displayClientId,
+      displaySlug: displayInfo.slug || null,
+      sseDeliveryLagMs: patch.sseDeliveryLagMs ?? null,
+      fetchRequestId: patch.fetchRequestId ?? runtimeDiagnostics.lastFetchRequestId ?? null,
+      displayBridgeReceivedAt: patch.displayBridgeReceivedAt ?? null,
+      displayFetchStartedAt: patch.displayFetchStartedAt ?? null,
+      displayFetchCompletedAt: patch.displayFetchCompletedAt ?? null,
+      displayDataFetchedAt: patch.displayDataFetchedAt ?? null,
+      displayRenderedAt: patch.displayRenderedAt ?? null,
+      fetchInFlight: patch.fetchInFlight ?? fetchInFlight,
+      pendingFetch: patch.pendingFetch ?? pendingFetch,
+    };
+    if (!payload.traceEventId) {
+      return;
+    }
+    try {
+      void fetch(
+        localApiBase +
+          "/api/projects/" +
+          encodeURIComponent(projectId) +
+          "/live-display-latency",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-NEUD-Display-Client": "neud-display-runtime",
+          },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        },
+      );
+    } catch (_) {}
+  }
+
+  window.__NEUD_REPORT_DISPLAY_LATENCY__ = function (patch) {
+    if (!patch || typeof patch !== "object") {
+      return;
+    }
+    if (typeof patch.displayRenderedAt === "number") {
+      runtimeDiagnostics.lastDisplayDeliveryLagMs =
+        runtimeDiagnostics.lastBridgeReceivedAtMs != null
+          ? Math.max(0, patch.displayRenderedAt - runtimeDiagnostics.lastBridgeReceivedAtMs)
+          : null;
+      reportDisplayLatency(patch);
+    }
   };
 
   function reportError(message, error) {
@@ -212,11 +289,21 @@
       runtimeDiagnostics.lastChangeEventAt = new Date().toISOString();
     }
     if (fetchInFlight) {
+      if (fromEvent) {
+        runtimeDiagnostics.liveFetchSupersededInFlight += 1;
+        runtimeDiagnostics.lastScheduleFetchBlockedInFlight = Date.now();
+        if (activeRequest) {
+          activeRequest.abort();
+        }
+        void fetchLatest(true);
+        return;
+      }
       pendingFetch = true;
       runtimeDiagnostics.coalescedEvents += 1;
+      runtimeDiagnostics.lastScheduleFetchBlockedInFlight = Date.now();
       return;
     }
-    void fetchLatest();
+    void fetchLatest(fromEvent === true);
   }
 
   function resumePolling() {
@@ -415,6 +502,23 @@
       runtimeDiagnostics.coalescedEvents += 1;
       return;
     }
+    if (payload && payload.traceEventId) {
+      activeLatencyTraceEventId = payload.traceEventId;
+      runtimeDiagnostics.lastTraceEventId = payload.traceEventId;
+    }
+    if (payload && typeof payload.emittedAtMs === "number") {
+      runtimeDiagnostics.lastBridgeEmittedAtMs = payload.emittedAtMs;
+    }
+    runtimeDiagnostics.lastBridgeReceivedAtMs = Date.now();
+    var sseDeliveryLagMs =
+      typeof payload.emittedAtMs === "number"
+        ? Math.max(0, runtimeDiagnostics.lastBridgeReceivedAtMs - payload.emittedAtMs)
+        : null;
+    runtimeDiagnostics.lastSseDeliveryLagMs = sseDeliveryLagMs;
+    reportDisplayLatency({
+      displayBridgeReceivedAt: runtimeDiagnostics.lastBridgeReceivedAtMs,
+      sseDeliveryLagMs: sseDeliveryLagMs,
+    });
     scheduleFetch(true);
   }
 
@@ -446,20 +550,40 @@
     } catch (_) {}
   }
 
-  async function fetchLatest() {
+  async function fetchLatest(fromLiveEvent) {
     if (!dataUrl || window.__NEUD_DISPLAY_DATA_DISCONNECTED__) {
       stopPolling();
       return;
     }
 
+    var myGeneration = ++fetchGeneration;
     fetchInFlight = true;
+    runtimeDiagnostics.lastFetchStartedAtMs = Date.now();
+    var fetchRequestId = String(myGeneration);
+    runtimeDiagnostics.lastFetchRequestId = fetchRequestId;
+    if (fromLiveEvent) {
+      reportDisplayLatency({
+        displayBridgeReceivedAt: runtimeDiagnostics.lastBridgeReceivedAtMs,
+        traceEventId: activeLatencyTraceEventId,
+        displayFetchStartedAt: runtimeDiagnostics.lastFetchStartedAtMs,
+        fetchRequestId: fetchRequestId,
+        fetchInFlight: true,
+        pendingFetch: pendingFetch,
+      });
+    }
     activeRequest && activeRequest.abort();
     activeRequest = new AbortController();
     try {
+      var fetchHeaders = { "X-NEUD-Display-Client": "neud-display-runtime" };
+      fetchHeaders["X-NEUD-Display-Client-Id"] = displayClientId;
+      fetchHeaders["X-NEUD-Display-Fetch-Request-Id"] = fetchRequestId;
+      if (activeLatencyTraceEventId) {
+        fetchHeaders["X-NEUD-Trace-Event-Id"] = activeLatencyTraceEventId;
+      }
       var response = await fetch(dataUrl, {
         cache: "no-store",
         signal: activeRequest.signal,
-        headers: { "X-NEUD-Display-Client": "neud-display-runtime" },
+        headers: fetchHeaders,
       });
       if (response.status === 409 || response.status === 423 || response.status === 403) {
         stopPolling();
@@ -469,32 +593,45 @@
         return;
       }
       var payload = await response.json();
+      if (myGeneration !== fetchGeneration) {
+        return;
+      }
       if (
         payload.enabled === false ||
         payload.status === "display_disabled" ||
         payload.dataConnected === false
       ) {
-        applyPayload(payload);
+        applyPayload(payload, fetchRequestId);
         stopPolling();
         return;
       }
-      applyPayload(payload);
+      applyPayload(payload, fetchRequestId);
     } catch (error) {
       if (error && error.name === "AbortError") {
         return;
       }
       reportError("data fetch failed", error);
     } finally {
+      if (myGeneration !== fetchGeneration) {
+        return;
+      }
       fetchInFlight = false;
       activeRequest = null;
       if (pendingFetch) {
         pendingFetch = false;
-        void fetchLatest();
+        void fetchLatest(false);
       }
     }
   }
 
-  function applyPayload(payload) {
+  function applyPayload(payload, fetchRequestId) {
+    if (
+      fetchRequestId &&
+      latestAppliedFetchRequestId &&
+      Number(fetchRequestId) < Number(latestAppliedFetchRequestId)
+    ) {
+      return;
+    }
     if (
       payload.revision != null &&
       latestRevision != null &&
@@ -508,6 +645,9 @@
     }
     latestSnapshot = snapshot;
     latestRevision = payload.revision != null ? payload.revision : null;
+    if (fetchRequestId) {
+      latestAppliedFetchRequestId = fetchRequestId;
+    }
     if (payload.contentHash && typeof payload.contentHash === "string") {
       lastAppliedContentHash = payload.contentHash;
     }
@@ -516,6 +656,13 @@
       return;
     }
     runtimeDiagnostics.lastAppliedAt = new Date().toISOString();
+    runtimeDiagnostics.lastDataFetchedAtMs = Date.now();
+    runtimeDiagnostics.lastFetchCompletedAtMs = runtimeDiagnostics.lastDataFetchedAtMs;
+    reportDisplayLatency({
+      displayDataFetchedAt: runtimeDiagnostics.lastDataFetchedAtMs,
+      displayFetchCompletedAt: runtimeDiagnostics.lastFetchCompletedAtMs,
+      fetchRequestId: fetchRequestId || runtimeDiagnostics.lastFetchRequestId,
+    });
     publishSnapshot(snapshot, {
       projectId: displayInfo.projectId || null,
       displayId: displayInfo.displayId || null,
@@ -554,7 +701,17 @@
           scheduleFetch(false);
         }
       });
+      displayBridgeEventSource.onopen = function () {
+        runtimeDiagnostics.displayBridgeEventsConnected = true;
+        runtimeDiagnostics.displayBridgeOpenedAtMs = Date.now();
+        runtimeDiagnostics.displayBridgeEventSourceReadyState = displayBridgeEventSource.readyState;
+      };
       displayBridgeEventSource.onerror = function () {
+        runtimeDiagnostics.displayBridgeEventsConnected = false;
+        runtimeDiagnostics.displayBridgeReconnectCount += 1;
+        runtimeDiagnostics.displayBridgeEventSourceReadyState = displayBridgeEventSource
+          ? displayBridgeEventSource.readyState
+          : null;
         debugLog("display bridge events disconnected; recovery watchdog active");
         startRecoveryWatchdog();
       };

@@ -30,7 +30,14 @@ export class NextServerService {
 
   async start(
     isDev: boolean,
-    options?: { devUrl?: string; localApiUrl?: string },
+    options?: {
+      devUrl?: string;
+      localApiUrl?: string;
+      supabasePublicConfig?: {
+        supabaseUrl: string;
+        supabasePublishableKey: string;
+      } | null;
+    },
   ): Promise<string> {
     const devUrl = options?.devUrl ?? "http://127.0.0.1:3000";
     if (isDev) {
@@ -54,6 +61,15 @@ export class NextServerService {
     const localApiUrl =
       normalizeLocalApiOrigin(options?.localApiUrl) ?? DEFAULT_LOCAL_API_ORIGIN;
 
+    const supabaseEnv =
+      options?.supabasePublicConfig != null
+        ? {
+            NEXT_PUBLIC_SUPABASE_URL: options.supabasePublicConfig.supabaseUrl,
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+              options.supabasePublicConfig.supabasePublishableKey,
+          }
+        : {};
+
     const child = spawnNodeProcess({
       name: "next-server",
       entryPath: serverEntry,
@@ -61,6 +77,7 @@ export class NextServerService {
       logFile,
       env: {
         ...process.env,
+        ...supabaseEnv,
         NODE_ENV: "production",
         PORT: String(port),
         HOSTNAME: "127.0.0.1",

@@ -40,6 +40,8 @@ test("hosted web download components use centralized GitHub URL", () => {
   assert.match(topBar, /WindowsDownloadLink/);
   assert.match(settings, /WindowsDownloadLink/);
   assert.match(marketing, /href="\/download"/);
+  assert.doesNotMatch(marketing, /macOS packaging is planned for Beta/i);
+  assert.match(marketing, /Apple Silicon/i);
   assert.match(login, /href="\/download"/);
 });
 

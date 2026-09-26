@@ -210,8 +210,8 @@ test("release versioning policy is documented", () => {
   assert.match(doc, /package\.json/);
   assert.match(doc, /getCanonicalReleaseVersion\(\)/);
   assert.match(doc, /Do not add automatic version bumps/);
-  assert.match(doc, /Latest published release.*v0\.2\.1/);
-  assert.match(milestones, /Latest published release.*v0\.2\.1/);
+  assert.match(doc, /Latest published release.*v0\.2\.2/);
+  assert.match(milestones, /Latest published release.*v0\.2\.2/);
   assert.match(milestones, /v0\.2\.1 → v0\.2\.2/);
   assert.match(milestones, /v0\.3\.0.*LAN-accessible/);
   assert.match(milestones, /v0\.4\.0.*modular project packages/);

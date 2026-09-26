@@ -6,7 +6,7 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.2.1** | Last shipped Windows-only release before v0.2.2 |
+| **Latest published release** | **v0.2.2** | Cross-platform Windows x64 + macOS Apple Silicon |
 | **Current release** | **v0.2.2** | Cross-platform Windows x64 + macOS Apple Silicon; packaged Faye parity, display hydration, Mac shell parity |
 
 There is **no** published v0.1.5 release. Historical update paths:

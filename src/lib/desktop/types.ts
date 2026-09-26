@@ -184,6 +184,22 @@ export type NeudDesktopAPI = {
     onCloseRequested(
       callback: (payload: { shutdownFailed?: boolean }) => void,
     ): () => void;
+    getSupabasePublicConfig(): Promise<{
+      supabaseUrl: string | null;
+      supabasePublishableKey: string | null;
+      diagnostic: {
+        configPresent: boolean;
+        urlHost: string | null;
+        keyPresent: boolean;
+        source: string;
+        validationResult: string;
+        configPath: string | null;
+      };
+    }>;
+    recordAuthLoginDiagnostic(payload: {
+      stage: string;
+      [key: string]: unknown;
+    }): Promise<{ ok: boolean }>;
   };
   engines: {
     getLocalStatus(engineId: string): Promise<LocalEngineStatus | null>;

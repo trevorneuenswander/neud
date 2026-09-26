@@ -6,6 +6,8 @@ import {
   type CloudRuntimeConfigDiagnostic,
   type CloudRuntimeConfigSource,
 } from "./cloud-runtime-config";
+import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
+import { isValidSupabasePublishableKey } from "../lib/supabase-public-config-validation";
 
 export type SupabasePublicConfig = {
   supabaseUrl: string;
@@ -62,11 +64,32 @@ function loadFromServerEnvFile(paths: AppPaths): SupabasePublicConfig | null {
   };
 }
 
+function isUsablePublicConfig(config: SupabasePublicConfig | null): config is SupabasePublicConfig {
+  if (!config?.supabaseUrl?.trim() || !config.supabasePublishableKey?.trim()) {
+    return false;
+  }
+  return isValidSupabasePublishableKey(config.supabasePublishableKey);
+}
+
 export function loadSupabasePublicConfigWithSource(
   paths: AppPaths,
 ): SupabasePublicConfigLoadResult {
+  if (isPackagedDesktopRuntime()) {
+    const fromPackaged = loadPackagedCloudRuntimeConfig();
+    if (isUsablePublicConfig(fromPackaged)) {
+      return {
+        config: fromPackaged,
+        source: "packaged_runtime_json",
+        diagnostic: describeCloudRuntimeConfig({
+          config: fromPackaged,
+          source: "packaged_runtime_json",
+        }),
+      };
+    }
+  }
+
   const fromEnv = loadFromProcessEnv();
-  if (fromEnv) {
+  if (isUsablePublicConfig(fromEnv)) {
     return {
       config: fromEnv,
       source: "process_env",
@@ -78,7 +101,7 @@ export function loadSupabasePublicConfigWithSource(
   }
 
   const fromPackaged = loadPackagedCloudRuntimeConfig();
-  if (fromPackaged) {
+  if (isUsablePublicConfig(fromPackaged)) {
     return {
       config: fromPackaged,
       source: "packaged_runtime_json",

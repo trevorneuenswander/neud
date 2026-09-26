@@ -1,0 +1,56 @@
+name: Build macOS Development
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to build (default: selected branch)"
+        required: false
+        type: string
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-dev:
+    runs-on: macos-14
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEUD_USE_LOCAL_DATA: "1"
+      NEXT_PUBLIC_NEUD_USE_LOCAL_DATA: "1"
+      NODE_OPTIONS: --max-old-space-size=8192
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Static macOS tests
+        run: |
+          node --test desktop/scripts/test-neud-macos-packaging.mjs
+          node --test desktop/scripts/test-packaged-faye-transport-parity.mjs
+
+      - name: Build macOS package
+        run: npm run package:mac
+
+      - name: Upload engineering artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neud-macos-dev-${{ github.sha }}
+          path: |
+            desktop/release/NEUD-*-arm64.dmg
+            desktop/dist/build-info.json

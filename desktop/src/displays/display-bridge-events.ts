@@ -5,18 +5,27 @@ export type DisplayBridgeUpdatedEvent = {
   projectId: string;
   revision: number;
   contentHash: string | null;
+  traceEventId?: string | null;
+  emittedAtMs?: number;
 };
 
 export class DisplayBridgeEvents extends EventEmitter {
   publishDisplayDataChanged(
     projectId: string,
-    input: { revision: number; contentHash: string | null },
+    input: {
+      revision: number;
+      contentHash: string | null;
+      traceEventId?: string | null;
+      emittedAtMs?: number;
+    },
   ) {
     const event: DisplayBridgeUpdatedEvent = {
       type: "neud-display-data-changed",
       projectId,
       revision: input.revision,
       contentHash: input.contentHash,
+      traceEventId: input.traceEventId ?? null,
+      emittedAtMs: input.emittedAtMs ?? Date.now(),
     };
     this.emit("update", event);
     this.emit(`update:${projectId}`, event);

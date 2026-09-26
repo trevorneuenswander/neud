@@ -9,6 +9,14 @@ export function toAuthErrorMessage(error: { message?: string } | null): string {
     return "Incorrect email or password.";
   }
 
+  if (message.includes("invalid api key") || message.includes("invalid jwt")) {
+    return "NEUD could not reach Supabase with a valid publishable key. Reinstall from a current release build or contact support.";
+  }
+
+  if (message.includes("fetch failed") || message.includes("failed to fetch")) {
+    return "Unable to reach Supabase. Check your internet connection and try again.";
+  }
+
   if (message.includes("user already registered")) {
     return "An account with this email already exists.";
   }

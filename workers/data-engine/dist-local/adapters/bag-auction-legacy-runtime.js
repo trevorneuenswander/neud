@@ -17,6 +17,20 @@ import {
 } from "../browser/resolve-puppeteer-browser.js";
 import { fetchLotDetailData } from "./bag-lot-detail-page.js";
 import { setLifecycleActualState } from "../lifecycle-state.js";
+import { getActiveScraperPerformanceRecorder } from "../scraper-performance-instrumentation.js";
+import { createBagEventDrivenSession } from "./bag-event-driven-session.js";
+import {
+  beginGracefulStop,
+  getBagLifecycleDiagnostics,
+  markBrowserClosed,
+  markBrowserLaunched,
+  markEngineStopped,
+  markEventDrivenSessionStarted,
+  markLivePageCreated,
+  markLivePageNavigation,
+  resetBagLifecycleDiagnostics,
+} from "./bag-lifecycle-diagnostics.js";
+import { disableLiveFeedBridgeOnPage } from "./bag-live-feed-bridge.js";
 
 export const LEGACY_RUNTIME_VERSION = "legacy-v5.1-direct-port";
 
@@ -314,6 +328,10 @@ export function createBagAuctionLegacyRuntime(options) {
     currentSession: "Unknown",
   };
   let lastScrapeStats = null;
+  let bidDisplayPersistentReady = false;
+  let liveFeedSession = null;
+  let liveFeedRuntimeState = null;
+  let liveFeedSessionPublish = null;
   let runtimeMatchInfo = {
     ...runtimeInfo,
     headless: HEADLESS !== false && String(HEADLESS) !== "false",
@@ -606,8 +624,132 @@ export function createBagAuctionLegacyRuntime(options) {
     return record;
   }
 
+  async function ensureBidDisplayPersistent() {
+    if (bidDisplayPersistentReady || stopping) {
+      return;
+    }
+    await scrapeAuctionDisplayPage();
+    bidDisplayPersistentReady = true;
+  }
+
+  async function refreshCatalogOnly() {
+    if (stopping) {
+      return cache;
+    }
+
+    await logStage("legacy.catalog.refresh", "Refreshing vehicle catalog");
+    if (stopping) {
+      return cache;
+    }
+    await page.reload({
+      waitUntil: stopping ? "domcontentloaded" : "networkidle2",
+      timeout: stopping ? 5000 : LEGACY_PAGE_TIMEOUT_MS,
+    });
+    if (stopping) {
+      return cache;
+    }
+    await page.waitForSelector("#main-container table", { timeout: LEGACY_TABLE_MS });
+
+    const data = await page.evaluate(() => {
+      const table = document.querySelector("#main-container table");
+      if (!table) return { lots: [], activeIndex: -1 };
+
+      const rows = Array.from(table.querySelectorAll("tbody tr"));
+      const lots = rows
+        .map((tr) => {
+          const tds = tr.querySelectorAll("td");
+          const statusLabel = tds[4]?.querySelector(".label");
+          const status = statusLabel ? (statusLabel.textContent || "").trim() : null;
+          const editA = tr.querySelector('td a.btn[href^="/vehicles/"][href$="/edit"]');
+          const editHref = editA?.getAttribute("href") || null;
+          return {
+            lot: tds[0]?.textContent.trim() || null,
+            title: tds[1]?.textContent.trim() || null,
+            price: tds[2]?.textContent.trim() || "",
+            status,
+            editHref,
+          };
+        })
+        .filter((r) => r.lot);
+
+      const activeIndex = lots.findIndex((r) => r.status && /active/i.test(r.status));
+      return { lots, activeIndex };
+    });
+
+    if (!data.lots.length) {
+      return cache;
+    }
+
+    const { mergeCatalogRefreshIntoCache } = await import("./bag-live-feed-utils.js");
+    cache = mergeCatalogRefreshIntoCache(cache, { lots: data.lots, activeIndex: data.activeIndex });
+    cache.sourceUrl = AUCTION_URL;
+    cache.listingUrl = AUCTION_URL;
+    return cache;
+  }
+
+  async function queuePreviousLotSoldCheck(previousLotRow) {
+    if (stopping || !previousLotRow?.editHref) {
+      return;
+    }
+    const editUrl = absUrl(previousLotRow.editHref, AUCTION_URL);
+    if (!editUrl) {
+      return;
+    }
+    try {
+      await fetchVehicleDetails(editUrl);
+      const detail = detailsCache.get(editUrl);
+      const { mergeLastSoldFromDetailCheck } = await import("./bag-live-feed-utils.js");
+      cache = mergeLastSoldFromDetailCheck(cache, previousLotRow, detail, editUrl);
+      if (typeof liveFeedSessionPublish === "function") {
+        await liveFeedSessionPublish(cache, { reason: "sold_check_complete" });
+      }
+      liveFeedRuntimeState = {
+        ...(liveFeedRuntimeState ?? {}),
+        sold: {
+          ...(liveFeedRuntimeState?.sold ?? {}),
+          lastTransitionLotChecked: previousLotRow.lot ?? null,
+        },
+      };
+    } catch {
+      // background sold check is best-effort
+    }
+  }
+
+  async function queueReserveForCurrentLot() {
+    if (stopping) {
+      return;
+    }
+    const current = cache.current;
+    if (!current?.editHref) {
+      return;
+    }
+    const editUrl = absUrl(current.editHref, AUCTION_URL);
+    if (!editUrl) {
+      return;
+    }
+    try {
+      await fetchVehicleDetails(editUrl);
+      const detail = detailsCache.get(editUrl);
+      const { enrichAuctionDisplayPhotosFromDetail } = await import("./bag-live-feed-utils.js");
+      if (detail?.photoUrls?.length) {
+        cache = enrichAuctionDisplayPhotosFromDetail(cache, detail);
+        if (typeof liveFeedSessionPublish === "function") {
+          await liveFeedSessionPublish(cache, { reason: "reserve_detail_complete" });
+        }
+      }
+    } catch {
+      // reserve fetch is best-effort and non-blocking
+    }
+  }
+
   async function scrapeAuctionDisplayPage() {
     try {
+      const perf = getActiveScraperPerformanceRecorder();
+      if (perf) {
+        perf.attachNetworkMonitoring(auctionPage);
+      }
+      const navigationStartedAt = Date.now();
+      markLivePageNavigation();
       await auctionPage.goto(AUCTIONS_DISPLAY_URL, {
         waitUntil: "networkidle2",
         timeout: LEGACY_PAGE_TIMEOUT_MS,
@@ -621,8 +763,12 @@ export function createBagAuctionLegacyRuntime(options) {
         });
       }
 
+      perf?.markStage("bidDisplayNavigationMs", Date.now() - navigationStartedAt);
+      const waitStartedAt = Date.now();
       await auctionPage.waitForSelector("#vehicle-content", { timeout: LEGACY_TABLE_MS });
+      perf?.markStage("bidDisplayWaitMs", Date.now() - waitStartedAt);
 
+      const extractStartedAt = Date.now();
       const data = await auctionPage.evaluate(() => {
         const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
 
@@ -663,6 +809,7 @@ export function createBagAuctionLegacyRuntime(options) {
           scrapedAt: new Date().toISOString(),
         };
       });
+      perf?.markStage("bidDisplayExtractionMs", Date.now() - extractStartedAt);
 
       console.log(
         `[auctionDisplay] ${data.lot} | ${data.year || "—"} ${data.title || ""} | ${data.biddingPrice} | ${data.reserveStatus} | ${data.photos.length} imgs`,
@@ -678,17 +825,20 @@ export function createBagAuctionLegacyRuntime(options) {
     }
   }
 
-  async function scrape() {
+  async function scrape(options = {}) {
+    const includeBidDisplayNavigation = options.includeBidDisplayNavigation !== false;
     if (stopping) {
       return cache;
     }
 
     const pollStartedAt = Date.now();
+    const perf = getActiveScraperPerformanceRecorder();
     let tablePageDurationMs = 0;
     let displayPageDurationMs = 0;
     let detailChecksAttempted = 0;
     let detailChecksSucceeded = 0;
     let lastSoldDetailChecks = 0;
+    let soldStatusMs = 0;
 
     try {
       await logStage("legacy.scrape.listing", "Starting listing scrape");
@@ -697,9 +847,13 @@ export function createBagAuctionLegacyRuntime(options) {
       const tableStartedAt = Date.now();
       await page.reload({ waitUntil: "networkidle2", timeout: LEGACY_PAGE_TIMEOUT_MS });
       if (stopping) return cache;
+      perf?.markStage("vehicleListNavigationMs", Date.now() - tableStartedAt);
+      const tableWaitStartedAt = Date.now();
       await page.waitForSelector("#main-container table", { timeout: LEGACY_TABLE_MS });
+      perf?.markStage("vehicleListWaitMs", Date.now() - tableWaitStartedAt);
       tablePageDurationMs = Date.now() - tableStartedAt;
 
+      const listExtractStartedAt = Date.now();
       const data = await page.evaluate(() => {
         const table = document.querySelector("#main-container table");
         if (!table) return { lots: [], activeIndex: -1 };
@@ -727,6 +881,7 @@ export function createBagAuctionLegacyRuntime(options) {
         const activeIndex = lots.findIndex((r) => r.status && /active/i.test(r.status));
         return { lots, activeIndex };
       });
+      perf?.markStage("vehicleListExtractionMs", Date.now() - listExtractStartedAt);
 
       if (!data.lots.length) {
         console.log("[scrape] no rows found (table missing or selectors changed)");
@@ -764,6 +919,7 @@ export function createBagAuctionLegacyRuntime(options) {
       const lastSoldTtl = Number(DETAILS_TTL_MS);
       const lastSoldNow = Date.now();
 
+      const soldStatusStartedAt = Date.now();
       for (const lotRow of scanLots) {
         if (lastSoldDetailChecks >= maxLastSoldChecks || stopping) break;
         const u = absUrl(lotRow.editHref, AUCTION_URL);
@@ -772,13 +928,24 @@ export function createBagAuctionLegacyRuntime(options) {
         if (cached && lastSoldNow - cached.checkedAt <= lastSoldTtl) continue;
         lastSoldDetailChecks += 1;
         detailChecksAttempted += 1;
+        const detailStartedAt = Date.now();
         try {
           await fetchVehicleDetails(u);
           detailChecksSucceeded += 1;
+          perf?.markStage("vehicleDetailTotalMs", Date.now() - detailStartedAt, {
+            incrementVisits: true,
+          });
         } catch {
+          perf?.markStage("vehicleDetailTotalMs", Date.now() - detailStartedAt, {
+            incrementVisits: true,
+          });
           // legacy continues lastSold detail checks silently
         }
       }
+      soldStatusMs = Date.now() - soldStatusStartedAt;
+      perf?.markStage("soldStatusMs", soldStatusMs, {
+        vehicleDetailPagesVisited: lastSoldDetailChecks,
+      });
 
       for (const lotRow of scanLots) {
         const u = absUrl(lotRow.editHref, AUCTION_URL);
@@ -800,10 +967,14 @@ export function createBagAuctionLegacyRuntime(options) {
         return cache;
       }
 
-      await logStage("legacy.scrape.auction_display", "Starting auction display scrape");
-      const displayStartedAt = Date.now();
-      const auctionDisplay = stopping ? cache.auctionDisplay || null : await scrapeAuctionDisplayPage();
-      displayPageDurationMs = Date.now() - displayStartedAt;
+      let auctionDisplay = cache.auctionDisplay || null;
+      if (includeBidDisplayNavigation) {
+        await logStage("legacy.scrape.auction_display", "Starting auction display scrape");
+        const displayStartedAt = Date.now();
+        auctionDisplay = stopping ? cache.auctionDisplay || null : await scrapeAuctionDisplayPage();
+        displayPageDurationMs = Date.now() - displayStartedAt;
+        bidDisplayPersistentReady = Boolean(auctionDisplay);
+      }
 
       const totalPollDurationMs = Date.now() - pollStartedAt;
       const snapshotDurationMs = Math.max(
@@ -840,9 +1011,16 @@ export function createBagAuctionLegacyRuntime(options) {
           tablePageDurationMs,
           snapshotDurationMs,
           totalPollDurationMs,
+          soldStatusMs,
           detailPagesVisited: lastSoldDetailChecks,
           photosDownloaded: 0,
         },
+        performanceCapture: perf
+          ? {
+              stages: perf.cycle.stages,
+              networkSummary: perf.cycle.network,
+            }
+          : null,
       };
 
       const logPrev = prev ? `${prev.lot} ${prev.price || ""}` : "—";
@@ -904,6 +1082,7 @@ export function createBagAuctionLegacyRuntime(options) {
     });
 
     browser = await puppeteer.launch(launchOptions);
+    markBrowserLaunched();
     runtimeMatchInfo = {
       ...runtimeMatchInfo,
       browserExecutable: resolvedBrowser.executablePath ?? null,
@@ -959,6 +1138,7 @@ export function createBagAuctionLegacyRuntime(options) {
     await logStage("legacy.boot.auction_page", "Creating auction display page");
     auctionPage = await browser.newPage();
     auctionPage.setDefaultTimeout(LEGACY_PAGE_TIMEOUT_MS);
+    markLivePageCreated();
 
     await login();
     booted = true;
@@ -970,17 +1150,39 @@ export function createBagAuctionLegacyRuntime(options) {
     }
 
     stopping = true;
+    beginGracefulStop();
+
+    if (liveFeedSession) {
+      await liveFeedSession.stop();
+      liveFeedSession = null;
+    }
 
     try {
-      if (browser) await browser.close();
+      await disableLiveFeedBridgeOnPage(auctionPage);
+    } catch {
+      // ignore bridge disable errors during shutdown
+    }
+
+    try {
+      if (browser) {
+        await Promise.race([
+          browser.close(),
+          new Promise((resolve) => {
+            setTimeout(resolve, 2500);
+          }),
+        ]);
+      }
     } catch {
       // legacy cleanup swallows close errors
     }
+    markBrowserClosed();
     browser = undefined;
     page = undefined;
     detailPage = undefined;
     auctionPage = undefined;
     booted = false;
+    bidDisplayPersistentReady = false;
+    markEngineStopped();
   }
 
   function isStopping() {
@@ -992,6 +1194,7 @@ export function createBagAuctionLegacyRuntime(options) {
     async start() {
       if (!booted) {
         stopping = false;
+        resetBagLifecycleDiagnostics();
         await boot();
       }
     },
@@ -1005,6 +1208,7 @@ export function createBagAuctionLegacyRuntime(options) {
       }
       return scrape();
     },
+    refreshCatalogOnly,
     getCache() {
       return cache;
     },
@@ -1019,6 +1223,58 @@ export function createBagAuctionLegacyRuntime(options) {
     },
     getLoginSubmitDiagnostics() {
       return loginSubmitDiagnostics;
+    },
+    getLiveFeedRuntimeState() {
+      const runtimeState =
+        liveFeedSession?.getRuntimeState?.() ?? liveFeedRuntimeState ?? null;
+      return runtimeState
+        ? {
+            ...runtimeState,
+            lifecycle: getBagLifecycleDiagnostics(),
+          }
+        : { lifecycle: getBagLifecycleDiagnostics() };
+    },
+    getLifecycleDiagnostics() {
+      return getBagLifecycleDiagnostics();
+    },
+    async startEventDrivenLiveFeed(sessionOptions) {
+      if (liveFeedSession) {
+        return;
+      }
+      markEventDrivenSessionStarted();
+      if (!booted) {
+        stopping = false;
+        await boot();
+      }
+      liveFeedSession = createBagEventDrivenSession({
+        engineId,
+        getCache: () => cache,
+        setCache: (next) => {
+          cache = next;
+        },
+        getAuctionPage: () => auctionPage,
+        ensureBidDisplayPersistent,
+        refreshCatalog: refreshCatalogOnly,
+        runLegacyFullScrape: () => scrape({ includeBidDisplayNavigation: true }),
+        queuePreviousLotSoldCheck,
+        queueReserveForCurrentLot,
+        onPublishSnapshot: sessionOptions.onPublishSnapshot,
+        onExecutionLog: sessionOptions.onExecutionLog,
+        onActivityTransition: sessionOptions.onActivityTransition,
+        onPersistLiveFeedMode: sessionOptions.onPersistLiveFeedMode,
+        loadSettings: sessionOptions.loadSettings,
+        shouldContinue: sessionOptions.shouldContinue,
+      });
+      liveFeedSessionPublish = sessionOptions.onPublishSnapshot ?? null;
+      await liveFeedSession.start(sessionOptions.initialSettings ?? {});
+      liveFeedRuntimeState = liveFeedSession.getRuntimeState();
+    },
+    async stopEventDrivenLiveFeed() {
+      if (liveFeedSession) {
+        await liveFeedSession.stop();
+        liveFeedSession = null;
+      }
+      liveFeedSessionPublish = null;
     },
     stop,
     isStopping,

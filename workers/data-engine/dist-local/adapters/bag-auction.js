@@ -17,6 +17,14 @@ import {
 } from "./webpage-scraper/browser.js";
 import { setLifecycleActualState } from "../lifecycle-state.js";
 import { updateEngineStatus } from "../heartbeat.js";
+import {
+  bagAdapterSupportsEventDrivenLive,
+  publishBagLiveSnapshot,
+} from "./bag-auction-event-driven.js";
+import { isBagEventDrivenLiveEnabled } from "./bag-live-feed-utils.js";
+import { writeSnapshot } from "../snapshots.js";
+import { recordRunSuccess, writeHeartbeat } from "../heartbeat.js";
+import { writeLog } from "../logs.js";
 
 const LEGACY_REFERENCE_URLS = {
   auctionTable: "https://bagauction-jumbotron.auctionaccelerate.com/vehicles",
@@ -119,6 +127,7 @@ export function createBagAuctionAdapter() {
   const engineId = process.env.ENGINE_ID ?? "";
   let runtime = null;
   let lastRunMetadata = null;
+  let eventDrivenEngineStarted = false;
 
   async function ensureRuntime(bundle) {
     if (runtime) return runtime;
@@ -204,13 +213,115 @@ export function createBagAuctionAdapter() {
     },
 
     async stop() {
+      if (runtime?.stopEventDrivenLiveFeed) {
+        await runtime.stopEventDrivenLiveFeed();
+      }
+      eventDrivenEngineStarted = false;
       if (runtime) {
         await runtime.stop();
         runtime = null;
       }
     },
 
+    supportsEventDrivenLive(bundle) {
+      return bagAdapterSupportsEventDrivenLive(bundle);
+    },
+
+    isEventDrivenLiveEnabled() {
+      return isBagEventDrivenLiveEnabled();
+    },
+
+    getLiveFeedRuntimeState() {
+      return runtime?.getLiveFeedRuntimeState?.() ?? null;
+    },
+
+    async startEventDrivenEngine(context) {
+      if (eventDrivenEngineStarted) {
+        return;
+      }
+      const { bundle, shouldContinue } = context;
+      const activeRuntime = await ensureRuntime(bundle);
+      eventDrivenEngineStarted = true;
+
+      await activeRuntime.startEventDrivenLiveFeed({
+        initialSettings: bundle.settings ?? {},
+        shouldContinue,
+        loadSettings: () => context.loadBundle().then((next) => next.settings ?? {}),
+        onExecutionLog: async (message) => {
+          await writeLog(engineId, "info", "engine.execution", message, {
+            liveFeed: activeRuntime.getLiveFeedRuntimeState?.() ?? null,
+          }).catch(() => {});
+        },
+        onActivityTransition: async (transition) => {
+          await writeLog(
+            engineId,
+            "info",
+            transition.type,
+            `Live feed switched from ${transition.from} to ${transition.to}.`,
+            { reason: transition.reason },
+          ).catch(() => {});
+        },
+        onPersistLiveFeedMode: async (mode, reason) => {
+          const { persistLiveFeedModeFailover } = await import("../local-client.js");
+          await persistLiveFeedModeFailover(engineId, mode, reason);
+        },
+        onPublishSnapshot: async (cache, meta) => {
+          const { buildRuntimeDiagnosticsFromCache } = await import("./bag-live-feed-utils.js");
+          const liveFeed = meta?.liveFeed ?? activeRuntime.getLiveFeedRuntimeState?.() ?? null;
+          const runtimeFields = buildRuntimeDiagnosticsFromCache(cache, liveFeed);
+          lastRunMetadata = {
+            ...(lastRunMetadata ?? {}),
+            ...runtimeFields,
+            liveFeed,
+            liveTiming: meta?.liveTiming ?? null,
+            runType: meta?.reason ?? "live_event",
+            completedAt: new Date().toISOString(),
+          };
+          await publishBagLiveSnapshot({
+            engineId,
+            workerId: context.workerId,
+            data: cache,
+            meta: {
+              durationMs: 0,
+              liveFeed: lastRunMetadata.liveFeed,
+              liveTiming: meta?.liveTiming ?? null,
+            },
+            writeSnapshot,
+            recordRunSuccess,
+            writeLog,
+          });
+          await writeHeartbeat(engineId, {
+            workerId: context.workerId,
+            workerVersion: context.workerVersion,
+            pollIntervalMs: bundle.settings?.poll_interval_ms ?? 5000,
+            actualState: "running",
+            liveFeed: lastRunMetadata.liveFeed,
+          }).catch(() => {});
+        },
+      });
+    },
+
+    async triggerEventDrivenManualRefresh(bundle, workerContext = {}) {
+      const activeRuntime = await ensureRuntime(bundle);
+      await activeRuntime.refreshCatalogOnly?.();
+      const cache = activeRuntime.getCache();
+      await publishBagLiveSnapshot({
+        engineId,
+        workerId: workerContext.workerId ?? null,
+        data: cache,
+        meta: {
+          durationMs: 0,
+          liveFeed: activeRuntime.getLiveFeedRuntimeState?.() ?? null,
+        },
+        writeSnapshot,
+        recordRunSuccess,
+        writeLog,
+      });
+      return cache;
+    },
+
     async restart(bundle) {
+      eventDrivenEngineStarted = false;
       await this.stop();
       await this.start(bundle);
     },

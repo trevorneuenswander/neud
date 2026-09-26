@@ -8,6 +8,7 @@ import {
   popupApplicationMenuLabel,
 } from "../menu/application-menu";
 import { registerIpcHandler } from "./channels";
+import type { DiagnosticsExportResult } from "../services/diagnostics-export-service";
 
 let applicationMenu: Menu | null = null;
 
@@ -17,6 +18,7 @@ export function registerAppIpc(
   host: MachineRegistration,
   getMainWindow: () => BrowserWindow | null,
   respondCloseRequest?: (action: CloseRequestResponse) => void,
+  exportDiagnostics?: () => Promise<DiagnosticsExportResult>,
 ) {
   applicationMenu = buildApplicationMenu(getMainWindow);
   Menu.setApplicationMenu(applicationMenu);
@@ -85,6 +87,13 @@ export function registerAppIpc(
       );
     },
   );
+
+  registerIpcHandler("neud:app:exportDiagnostics", async () => {
+    if (!exportDiagnostics) {
+      return { ok: false as const, error: "Diagnostics export is unavailable." };
+    }
+    return exportDiagnostics();
+  });
 
   registerIpcHandler("neud:app:respondCloseRequest", (_event, action: unknown) => {
     if (

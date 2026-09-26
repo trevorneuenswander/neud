@@ -1,0 +1,120 @@
+name: Release macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (must match package.json, e.g. 0.2.2)"
+        required: true
+        type: string
+      release_visibility:
+        description: "Create GitHub Release as draft or publish immediately"
+        required: true
+        default: draft
+        type: choice
+        options:
+          - draft
+          - published
+      prerelease:
+        description: "Mark GitHub Release as prerelease"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos:
+    runs-on: macos-14
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEUD_USE_LOCAL_DATA: "1"
+      NEXT_PUBLIC_NEUD_USE_LOCAL_DATA: "1"
+      NODE_OPTIONS: --max-old-space-size=8192
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Verify requested version matches package.json
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$PKG_VERSION" != "${{ inputs.version }}" ]; then
+            echo "Requested version ${{ inputs.version }} does not match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS release package
+        run: npm run package:mac
+
+      - name: Confirm required release artifacts exist
+        run: |
+          VERSION="${{ inputs.version }}"
+          for file in "desktop/release/NEUD-${VERSION}-arm64.dmg" "desktop/release/NEUD-${VERSION}-arm64.zip" "desktop/release/latest-mac.yml"; do
+            if [ ! -f "$file" ]; then
+              echo "Missing required artifact: $file"
+              exit 1
+            fi
+          done
+          node -e "const b=require('./desktop/dist/build-info.json'); if(!b.gitCommit||b.gitCommit==='dev-local'){console.error('build-info missing real git SHA'); process.exit(1)} console.log('gitCommit', b.gitCommit)"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: neud-macos-release-${{ inputs.version }}
+          path: |
+            desktop/release/NEUD-*-arm64.dmg
+            desktop/release/NEUD-*-arm64.zip
+            desktop/release/*.blockmap
+            desktop/release/latest-mac.yml
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          TAG="v${VERSION}"
+          NOTES_FILE="docs/releases/v${VERSION}-github-release-notes.md"
+          if [ ! -f "$NOTES_FILE" ]; then
+            echo "Missing release notes: $NOTES_FILE"
+            exit 1
+          fi
+          TITLE="NEUD v${VERSION}"
+          DMG="desktop/release/NEUD-${VERSION}-arm64.dmg"
+          ZIP="desktop/release/NEUD-${VERSION}-arm64.zip"
+          LATEST="desktop/release/latest-mac.yml"
+          BLOCKMAP="${ZIP}.blockmap"
+
+          ARGS=(--title "$TITLE" --notes-file "$NOTES_FILE")
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          if [ "${{ inputs.release_visibility }}" = "draft" ]; then
+            ARGS+=(--draft)
+          fi
+
+          UPLOAD=("$DMG" "$ZIP" "$LATEST")
+          if [ -f "$BLOCKMAP" ]; then
+            UPLOAD+=("$BLOCKMAP")
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${UPLOAD[@]}" --clobber
+          else
+            gh release create "$TAG" "${ARGS[@]}" "${UPLOAD[@]}"
+          fi
+
+          if [ "${{ inputs.release_visibility }}" = "published" ]; then
+            gh release edit "$TAG" --draft=false
+          fi

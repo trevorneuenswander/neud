@@ -37,6 +37,11 @@ import {
   getLifecycleActualState,
   setLifecycleActualState,
 } from "./lifecycle-state.js";
+import {
+  createScraperPerformanceRecorder,
+  getActiveScraperPerformanceRecorder,
+  isScraperPerformanceCaptureEnabled,
+} from "./scraper-performance-instrumentation.js";
 
 async function recoverFromBrowserFailure(engineId, adapter, error, step) {
   const message = sanitizeError(error);
@@ -93,6 +98,9 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
   let actualState = getLifecycleActualState();
   let activeScrapePromise = null;
   let exportPollTimer = null;
+  let eventDrivenLiveStarted = false;
+  let loggedLegacyPollTransport = false;
+  let engineRunLifecycleActive = false;
 
   function startExportPollingDuringScrape() {
     if (exportPollTimer) return;
@@ -174,6 +182,8 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
         }
       }
       adapter = null;
+      eventDrivenLiveStarted = false;
+      engineRunLifecycleActive = false;
     })();
 
     return shutdownPromise;
@@ -508,14 +518,16 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
         bundle.pendingRunOnce = runOnceRequested;
 
         const startedAt = new Date().toISOString();
-        await logBagDiagnostic(engineId, "engine.start", "Starting engine", {
-          runType: runOnceRequested ? "run_once" : "automatic",
-        });
-
-        await updateEngineStatus(engineId, {
-          actual_state: actualState,
-          last_run_started_at: startedAt,
-        });
+        if (!engineRunLifecycleActive) {
+          engineRunLifecycleActive = true;
+          await logBagDiagnostic(engineId, "engine.start", "Starting engine", {
+            runType: runOnceRequested ? "run_once" : "automatic",
+          });
+          await updateEngineStatus(engineId, {
+            actual_state: actualState,
+            last_run_started_at: startedAt,
+          });
+        }
 
         try {
           if (shuttingDown) {
@@ -523,11 +535,103 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
             break;
           }
 
+          const eventDrivenLive =
+            typeof adapter.supportsEventDrivenLive === "function" &&
+            adapter.supportsEventDrivenLive(bundle);
+
+          if (eventDrivenLive) {
+            if (!eventDrivenLiveStarted && typeof adapter.startEventDrivenEngine === "function") {
+              eventDrivenLiveStarted = true;
+              loggedLegacyPollTransport = false;
+              await logBagDiagnostic(engineId, "bag.transport", "Broad Arrow event-driven live transport active", {
+                neudBagEventDrivenLive: process.env.NEUD_BAG_EVENT_DRIVEN_LIVE ?? null,
+                neudPackaged: process.env.NEUD_PACKAGED ?? null,
+                nodeEnv: process.env.NODE_ENV ?? null,
+                engineRunId: process.env.NEUD_ENGINE_RUN_ID ?? null,
+              });
+              await adapter.startEventDrivenEngine({
+                bundle,
+                engineId,
+                workerId,
+                workerVersion,
+                shouldContinue: () => running && !shuttingDown,
+                loadBundle: () => loadEngineBundle(engineId),
+              });
+            }
+
+            if (runOnceRequested) {
+              if (typeof adapter.triggerEventDrivenManualRefresh === "function") {
+                await adapter.triggerEventDrivenManualRefresh(bundle, { workerId });
+              }
+              await finalizeRunOnceCommand(null);
+              runOnceRequested = false;
+              if (desiredState === "stopped") {
+                if (adapter?.stop) {
+                  await adapter.stop();
+                }
+                adapter = null;
+                eventDrivenLiveStarted = false;
+                engineRunLifecycleActive = false;
+                actualState = "stopped";
+                setLifecycleActualState("stopped");
+                await updateEngineStatus(engineId, { actual_state: "stopped" });
+                continue;
+              }
+            }
+
+            actualState = "running";
+            setLifecycleActualState("running");
+            await updateEngineStatus(engineId, { actual_state: "running" });
+            await interruptibleSleep(500, () => running && !shuttingDown);
+            continue;
+          }
+
+          if (
+            bundle?.engine?.config?.adapter === "bag-auction" &&
+            !loggedLegacyPollTransport
+          ) {
+            loggedLegacyPollTransport = true;
+            await logBagDiagnostic(
+              engineId,
+              "bag.transport",
+              "Broad Arrow using legacy poll loop (event-driven live disabled)",
+              {
+                neudBagEventDrivenLive: process.env.NEUD_BAG_EVENT_DRIVEN_LIVE ?? null,
+                neudPackaged: process.env.NEUD_PACKAGED ?? null,
+                nodeEnv: process.env.NODE_ENV ?? null,
+                engineRunId: process.env.NEUD_ENGINE_RUN_ID ?? null,
+              },
+            );
+            await writeLog(engineId, {
+              level: "warn",
+              eventType: "scraper.transport",
+              message:
+                "Legacy poll loop active — Faye event-driven path is disabled for this worker process.",
+              metadata: {
+                pollIntervalMs,
+                neudPackaged: process.env.NEUD_PACKAGED ?? null,
+                neudBagEventDrivenLive: process.env.NEUD_BAG_EVENT_DRIVEN_LIVE ?? null,
+              },
+            });
+          }
+
+          if (isScraperPerformanceCaptureEnabled()) {
+            const existing = getActiveScraperPerformanceRecorder();
+            if (!existing) {
+              createScraperPerformanceRecorder().beginCycle({
+                cycleScheduledAt: new Date(loopStart).toISOString(),
+                configuredPollIntervalMs: pollIntervalMs,
+              });
+            }
+          }
+
+          const scrapeStartedAt = Date.now();
           activeScrapePromise = adapter.scrapeOnce(bundle);
           startExportPollingDuringScrape();
           const data = await activeScrapePromise;
           stopExportPollingDuringScrape();
           activeScrapePromise = null;
+          const scrapeCompletedAt = Date.now();
 
           if (shuttingDown) {
             await finalizeRunOnceCommand(null);
@@ -535,6 +639,35 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
           }
 
           const durationMs = Date.now() - loopStart;
+          const perf = getActiveScraperPerformanceRecorder();
+          if (perf) {
+            const runMetadata =
+              typeof adapter.getLastRunMetadata === "function"
+                ? adapter.getLastRunMetadata()
+                : null;
+            perf.markStage("normalizationMs", 0);
+            perf.setSchedulerMetrics({
+              schedulerModel: "fixed-interval-after-cycle-completion",
+              pollOverlapAllowed: false,
+              pollQueuedWhileBusy: false,
+              pollSkippedWhileBusy: false,
+              configuredPollIntervalMs: pollIntervalMs,
+              scrapeDurationMs: scrapeCompletedAt - scrapeStartedAt,
+              engineLoopDurationMs: durationMs,
+              queueDelayMs: Math.max(0, scrapeStartedAt - loopStart),
+            });
+            perf.markStage("sqliteWriteMs", 0, {
+              note: "Worker posts snapshot via local API; desktop persists asynchronously",
+            });
+            perf.finalizeCycle({
+              effectiveDataUpdateIntervalMsEstimate: durationMs + pollIntervalMs,
+              vehicleDetailPagesVisited:
+                runMetadata?.detailChecksAttempted ??
+                runMetadata?.pollTiming?.detailPagesVisited ??
+                null,
+              pollTiming: runMetadata?.pollTiming ?? null,
+            });
+          }
           const payload = JSON.stringify(data);
           const runMetadata =
             typeof adapter.getLastRunMetadata === "function"
@@ -672,6 +805,8 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
         });
         if (adapter?.stop) await adapter.stop();
         adapter = null;
+        eventDrivenLiveStarted = false;
+        engineRunLifecycleActive = false;
         actualState = "stopped";
         await updateEngineStatus(engineId, { actual_state: "stopped" });
       }
@@ -683,12 +818,22 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
       }
 
       const pollCompletedAt = Date.now();
-      await waitUntilNextPoll(
-        engineId,
-        pollCompletedAt,
-        pollIntervalMs,
-        () => running && !shuttingDown,
-      );
+      const skipPollWait =
+        adapter &&
+        typeof adapter.supportsEventDrivenLive === "function" &&
+        (await loadEngineBundle(engineId).then((nextBundle) =>
+          adapter.supportsEventDrivenLive(nextBundle),
+        ));
+      if (!skipPollWait) {
+        await waitUntilNextPoll(
+          engineId,
+          pollCompletedAt,
+          pollIntervalMs,
+          () => running && !shuttingDown,
+        );
+      } else {
+        await interruptibleSleep(500, () => running && !shuttingDown);
+      }
     } catch (error) {
       if (shuttingDown) {
         break;

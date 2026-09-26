@@ -179,10 +179,14 @@ jobs:
           BLOCKMAP="${INSTALLER}.blockmap"
           STABLE="desktop/release/NEUD-Setup-latest-x64.exe"
           LATEST="desktop/release/latest.yml"
-          TITLE="NEUD Alpha ${VERSION}"
-          NOTES="Windows Alpha release ${VERSION}. Upload includes versioned installer, stable download alias, blockmap, and latest.yml for auto-update."
+          NOTES_FILE="docs/releases/v${VERSION}-github-release-notes.md"
+          if [ ! -f "$NOTES_FILE" ]; then
+            echo "Missing release notes: $NOTES_FILE"
+            exit 1
+          fi
+          TITLE="NEUD v${VERSION}"
 
-          ARGS=(--title "$TITLE" --notes "$NOTES")
+          ARGS=(--title "$TITLE" --notes-file "$NOTES_FILE")
           if [ "${{ inputs.prerelease }}" = "true" ]; then
             ARGS+=(--prerelease)
           fi

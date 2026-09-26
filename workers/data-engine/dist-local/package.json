@@ -5,6 +5,10 @@
   "type": "module",
   "neudWorkerMode": "local",
   "main": "index.js",
+  "neudBuildInfo": {
+    "gitCommit": "dev-local",
+    "builtAt": "2026-09-26T08:01:08.908Z"
+  },
   "dependencies": {
     "puppeteer": "^24.23.0"
   }

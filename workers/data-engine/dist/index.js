@@ -14,6 +14,7 @@ import {
   logWorkerBoot,
 } from "./lifecycle-diagnostics.js";
 import { setLifecycleActualState } from "./lifecycle-state.js";
+import { markWorkerStarted } from "./scraper-runtime-diagnostics.js";
 
 const WORKER_VERSION = "0.1.0";
 
@@ -77,6 +78,7 @@ async function main() {
   }
 
   logWorkerBoot({ stage: "index-main", engineId, workerId, correlationId });
+  markWorkerStarted();
 
   if (process.env.DRY_RUN === "true") {
     console.log("[dry-run] Configuration looks valid. Exiting.");
@@ -114,6 +116,7 @@ async function main() {
     `[boot] Worker ${workerId} running for engine ${engineId} (protocolTimeout=${getProtocolTimeoutMs()}ms)`,
   );
   await runEngineLoop({ engineId, workerId, workerVersion: WORKER_VERSION });
+  process.exit(0);
 }
 
 main().catch((error) => {

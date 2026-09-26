@@ -3,6 +3,7 @@ import path from "path";
 import { app } from "electron";
 import type { SupabasePublicConfig } from "./supabase-public-config";
 import { isPackagedDesktopRuntime } from "../lib/packaged-runtime";
+import { isValidSupabasePublishableKey } from "../lib/supabase-public-config-validation";
 
 export type CloudRuntimeConfigSource =
   | "process_env"
@@ -49,7 +50,7 @@ export function loadPackagedCloudRuntimeConfig(): SupabasePublicConfig | null {
     if (!parsed.supabaseUrl || !parsed.supabasePublishableKey) {
       return null;
     }
-    if (parsed.supabasePublishableKey.toLowerCase().includes("service_role")) {
+    if (!isValidSupabasePublishableKey(parsed.supabasePublishableKey)) {
       return null;
     }
     return {

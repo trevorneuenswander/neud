@@ -4,9 +4,14 @@ import { triggerHelpMenuCheckForUpdates } from "../services/auto-update-service"
 export const APPLICATION_MENU_LABELS = ["File", "Edit", "View", "Window", "Help"] as const;
 
 let clearLocalSessionHandler: (() => void) | null = null;
+let exportDiagnosticsHandler: (() => void) | null = null;
 
 export function setClearLocalSessionHandler(handler: (() => void) | null) {
   clearLocalSessionHandler = handler;
+}
+
+export function setExportDiagnosticsHandler(handler: (() => void) | null) {
+  exportDiagnosticsHandler = handler;
 }
 
 export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null): Menu {
@@ -99,6 +104,12 @@ export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null):
           label: "Check for Updates…",
           click: () => {
             triggerHelpMenuCheckForUpdates();
+          },
+        },
+        {
+          label: "Export Diagnostics…",
+          click: () => {
+            exportDiagnosticsHandler?.();
           },
         },
         { type: "separator" },

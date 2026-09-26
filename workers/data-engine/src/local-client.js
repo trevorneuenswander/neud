@@ -166,6 +166,7 @@ export async function writeSnapshot(engineId, data, meta) {
       payloadSizeBytes: meta.payloadSizeBytes ?? Buffer.byteLength(payload, "utf8"),
       durationMs: meta.durationMs,
       liveFeedRuntime: meta.liveFeedRuntime ?? null,
+      liveTiming: meta.liveTiming ?? null,
     }),
   });
 }

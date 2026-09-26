@@ -48,6 +48,12 @@ assert.equal(typeof config.supabaseUrl, "string");
 assert.ok(config.supabaseUrl.startsWith("https://"));
 assert.equal(typeof config.supabasePublishableKey, "string");
 assert.ok(config.supabasePublishableKey.length > 20);
+assert.equal(
+  config.supabasePublishableKey.endsWith(".test"),
+  false,
+  "Packaged publishable key must not be a placeholder .test value",
+);
+assert.doesNotMatch(config.supabasePublishableKey, /service_role/i);
 assert.equal(typeof config.urlHost, "string");
 assert.ok(config.urlHost.length > 0);
 

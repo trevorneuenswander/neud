@@ -83,6 +83,13 @@ export async function loadWorkerCredentials(engineId) {
   };
 }
 
+export async function persistLiveFeedModeFailover(engineId, mode, reason = "failover") {
+  await request(`/api/data-sources/${encodeURIComponent(engineId)}/live-feed-mode-failover`, {
+    method: "PATCH",
+    body: JSON.stringify({ mode, reason }),
+  }).catch(() => {});
+}
+
 export async function loadEngineBundle(engineId) {
   const payload = await request(
     `/api/data-sources/${encodeURIComponent(engineId)}/worker-bundle`,
@@ -158,6 +165,8 @@ export async function writeSnapshot(engineId, data, meta) {
       recordCount: meta.recordCount,
       payloadSizeBytes: meta.payloadSizeBytes ?? Buffer.byteLength(payload, "utf8"),
       durationMs: meta.durationMs,
+      liveFeedRuntime: meta.liveFeedRuntime ?? null,
+      liveTiming: meta.liveTiming ?? null,
     }),
   });
 }

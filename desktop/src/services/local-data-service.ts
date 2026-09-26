@@ -51,6 +51,16 @@ import {
 } from "../displays/new-auction-graphic-data";
 import type { BagSourceService } from "./bag-source-service";
 import { resolveEffectiveDisplayData } from "../displays/resolve-effective-display-data";
+import {
+  computeDisplayDeliveryLagMs,
+  createEmptyLiveDisplayLatencyTrace,
+  mergeLiveDisplayLatencyTrace,
+  readLiveEventFieldsFromSnapshot,
+  readWorkerLiveTiming,
+  readWorkerTraceEventId,
+  type LiveDisplayLatencyTrace,
+} from "./live-display-latency-diagnostics";
+import { appendLiveDisplayPipelineLog } from "./live-display-pipeline-log";
 import { LOCAL_CONTROLLER_WAITING_STATUS } from "../displays/resolve-local-controller-display-data";
 import { sanitizePylonFeedPayload, type PylonFeedPayload } from "../displays/pylon-data";
 import {
@@ -331,6 +341,15 @@ export class LocalDataService {
   private controllerStateRevision = 0;
   private scraperStateRevision = 0;
   private liveFeedRuntimeByEngine = new Map<string, Record<string, unknown>>();
+  private liveDisplayLatencyByEngine = new Map<string, LiveDisplayLatencyTrace>();
+  private liveDisplayLatencyByProject = new Map<string, LiveDisplayLatencyTrace>();
+  private pendingDisplayBridgeTraceEventId: string | null = null;
+  private inMemoryLatestScraperPayloadByEngine = new Map<
+    string,
+    { snapshotId: string; data: Record<string, unknown>; capturedAt: string }
+  >();
+  private liveDisplayNotificationsByTrace = new Map<string, number>();
+  private activeLiveDisplayPipelineTraceEventId: string | null = null;
   private canonicalRevisionTrackers = new Map<string, CanonicalRevisionTracker>();
   private canonicalSnapshotLogHashes = new Map<string, string>();
   private lastObservedCanonicalSnapshot = new Map<string, Record<string, unknown>>();
@@ -924,9 +943,13 @@ export class LocalDataService {
   private broadcastProjectDisplayDataChanged(projectId: string): void {
     const revision = this.displayDataRevision;
     const contentHash = this.lastLocalDisplayBroadcastHash.get(projectId) ?? null;
+    const emittedAtMs = Date.now();
+    const traceEventId = this.pendingDisplayBridgeTraceEventId;
     this.displayBridgeEvents?.publishDisplayDataChanged(projectId, {
       revision,
       contentHash,
+      traceEventId,
+      emittedAtMs,
     });
     for (const window of BrowserWindowRuntime.getAllWindows()) {
       if (!window.isDestroyed()) {
@@ -934,9 +957,191 @@ export class LocalDataService {
           projectId,
           revision,
           contentHash,
+          traceEventId,
+          emittedAtMs,
         });
       }
     }
+    if (traceEventId) {
+      this.logLiveDisplayPipeline({
+        traceEventId,
+        stage: "desktop.sse_notify_published",
+        revision,
+        displayDataRevision: revision,
+        detail: { emittedAtMs },
+      });
+      const engine = this.getBagEngineForProject(projectId);
+      if (engine) {
+        const existing = this.liveDisplayLatencyByEngine.get(engine.id);
+        if (existing?.eventId === traceEventId) {
+          const merged = mergeLiveDisplayLatencyTrace(existing, { displayBridgeEmittedAt: emittedAtMs });
+          this.storeLiveDisplayLatencyTrace(engine.id, projectId, merged);
+        }
+      }
+    }
+  }
+
+  getLiveDisplayLatencyForEngine(engineId: string): LiveDisplayLatencyTrace | null {
+    return this.liveDisplayLatencyByEngine.get(engineId) ?? null;
+  }
+
+  getLiveDisplayLatencyForProject(projectId: string): LiveDisplayLatencyTrace | null {
+    return this.liveDisplayLatencyByProject.get(projectId) ?? null;
+  }
+
+  recordLiveDisplayClientLatencyReport(
+    projectId: string,
+    input: {
+      traceEventId?: string | null;
+      displayClientId?: string | null;
+      fetchRequestId?: string | null;
+      sseDeliveryLagMs?: number | null;
+      displayBridgeReceivedAt?: number | null;
+      displayFetchStartedAt?: number | null;
+      displayFetchCompletedAt?: number | null;
+      displayDataFetchedAt?: number | null;
+      displayRenderedAt?: number | null;
+      fetchInFlight?: boolean;
+      pendingFetch?: boolean;
+    },
+  ): LiveDisplayLatencyTrace | null {
+    const engine = this.getBagEngineForProject(projectId);
+    if (!engine) {
+      return null;
+    }
+    const existing =
+      (input.traceEventId
+        ? this.liveDisplayLatencyByEngine.get(engine.id)?.eventId === input.traceEventId
+          ? this.liveDisplayLatencyByEngine.get(engine.id)
+          : null
+        : this.liveDisplayLatencyByEngine.get(engine.id)) ?? null;
+    const traceEventId = input.traceEventId ?? existing?.eventId ?? null;
+    const serverReceivedAt = Date.now();
+    const displayClientId = input.displayClientId ?? null;
+
+    if (traceEventId) {
+      if (input.displayBridgeReceivedAt) {
+        this.logLiveDisplayPipeline({
+          traceEventId,
+          stage: "browser.sse_received",
+          atMs: input.displayBridgeReceivedAt,
+          fetchInFlight: input.fetchInFlight,
+          pendingFetch: input.pendingFetch,
+          displayClientId,
+          fetchRequestId: input.fetchRequestId ?? null,
+          detail: {
+            serverReceivedAt,
+            sseDeliveryLagMs: input.sseDeliveryLagMs ?? null,
+          },
+        });
+      }
+      if (input.displayFetchStartedAt) {
+        this.logLiveDisplayPipeline({
+          traceEventId,
+          stage: "browser.fetch_started",
+          atMs: input.displayFetchStartedAt,
+          fetchInFlight: input.fetchInFlight,
+          pendingFetch: input.pendingFetch,
+          displayClientId,
+          fetchRequestId: input.fetchRequestId ?? null,
+          detail: { serverReceivedAt: Date.now() },
+        });
+      }
+      if (input.displayFetchCompletedAt ?? input.displayDataFetchedAt) {
+        const completedAt = input.displayFetchCompletedAt ?? input.displayDataFetchedAt ?? serverReceivedAt;
+        this.logLiveDisplayPipeline({
+          traceEventId,
+          stage: "browser.fetch_finished",
+          atMs: completedAt,
+          fetchInFlight: input.fetchInFlight,
+          pendingFetch: input.pendingFetch,
+          displayClientId,
+          detail: { serverReceivedAt: Date.now() },
+        });
+      }
+      if (input.displayRenderedAt) {
+        this.logLiveDisplayPipeline({
+          traceEventId,
+          stage: "browser.bridge_rendered",
+          atMs: input.displayRenderedAt,
+          displayDataRevision: this.displayDataRevision,
+          displayClientId,
+          detail: { serverReceivedAt: Date.now() },
+        });
+      }
+    }
+    if (!existing) {
+      return null;
+    }
+    const merged = mergeLiveDisplayLatencyTrace(existing, {
+      displayBridgeReceivedAt:
+        input.displayBridgeReceivedAt ?? existing.displayBridgeReceivedAt,
+      displayDataFetchedAt: input.displayDataFetchedAt ?? existing.displayDataFetchedAt,
+      displayRenderedAt: input.displayRenderedAt ?? existing.displayRenderedAt,
+    });
+    this.storeLiveDisplayLatencyTrace(engine.id, projectId, merged);
+    return merged;
+  }
+
+  private getBagEngineForProject(projectId: string) {
+    return this.dataSources
+      .listByProject(projectId)
+      .find((entry) => entry.sourceType === "webpage-scraper") ?? null;
+  }
+
+  private bumpLiveDisplayNotificationIndex(traceEventId: string): number {
+    const next = (this.liveDisplayNotificationsByTrace.get(traceEventId) ?? 0) + 1;
+    this.liveDisplayNotificationsByTrace.set(traceEventId, next);
+    return next;
+  }
+
+  private logLiveDisplayPipeline(
+    entry: Parameters<typeof appendLiveDisplayPipelineLog>[1],
+  ): void {
+    appendLiveDisplayPipelineLog(this.paths.logs, entry);
+  }
+
+  private promoteInMemoryLiveScraperPayload(
+    engineId: string,
+    snapshotId: string,
+    data: Record<string, unknown>,
+    capturedAt: string,
+    traceEventId: string | null,
+  ): void {
+    this.inMemoryLatestScraperPayloadByEngine.set(engineId, {
+      snapshotId,
+      data,
+      capturedAt,
+    });
+    if (traceEventId) {
+      this.logLiveDisplayPipeline({
+        traceEventId,
+        stage: "desktop.memory_promoted",
+        lotNumber: readLiveEventFieldsFromSnapshot(data).lotNumber,
+        bidLabel: readLiveEventFieldsFromSnapshot(data).bidLabel,
+      });
+    }
+  }
+
+  logLiveDisplayPipelineFromApi(
+    entry: Parameters<typeof appendLiveDisplayPipelineLog>[1],
+  ): void {
+    this.logLiveDisplayPipeline(entry);
+  }
+
+  private storeLiveDisplayLatencyTrace(
+    engineId: string,
+    projectId: string,
+    trace: LiveDisplayLatencyTrace,
+  ) {
+    this.liveDisplayLatencyByEngine.set(engineId, trace);
+    this.liveDisplayLatencyByProject.set(projectId, trace);
+    const runtime = this.liveFeedRuntimeByEngine.get(engineId) ?? {};
+    this.liveFeedRuntimeByEngine.set(engineId, {
+      ...runtime,
+      liveDisplayLatency: trace,
+      liveDisplayDeliveryLagMs: computeDisplayDeliveryLagMs(trace),
+    });
   }
 
   tryNotifyProjectDisplayDataChanged(
@@ -946,13 +1151,44 @@ export class LocalDataService {
     const snapshot = this.getActiveCanonicalProjectSnapshot(projectId);
     const hash = snapshot ? hashCanonicalProjectDataForPublish(snapshot) : null;
     const previous = this.lastLocalDisplayBroadcastHash.get(projectId) ?? null;
+    const bidProbe = readLiveEventFieldsFromSnapshot(
+      this.getLatestBagSnapshotPayloadForProject(projectId),
+    );
+    const traceEventId =
+      this.pendingDisplayBridgeTraceEventId ??
+      this.activeLiveDisplayPipelineTraceEventId ??
+      null;
     if (!options?.force && hash !== null && hash === previous) {
+      if (traceEventId) {
+        this.logLiveDisplayPipeline({
+          traceEventId,
+          stage: "desktop.notify_skipped",
+          lotNumber: bidProbe.lotNumber,
+          bidLabel: bidProbe.bidLabel,
+          notifyReturned: false,
+          detail: { reason: "canonical_hash_unchanged" },
+        });
+      }
       return false;
     }
     if (hash !== null) {
       this.lastLocalDisplayBroadcastHash.set(projectId, hash);
     }
     this.displayDataRevision += 1;
+    const notificationIndex =
+      traceEventId != null ? this.bumpLiveDisplayNotificationIndex(traceEventId) : undefined;
+    if (traceEventId) {
+      this.logLiveDisplayPipeline({
+        traceEventId,
+        stage: "desktop.notify_called",
+        notificationIndex,
+        lotNumber: bidProbe.lotNumber,
+        bidLabel: bidProbe.bidLabel,
+        bidAtGet: bidProbe.bidLabel,
+        notifyReturned: true,
+        displayDataRevision: this.displayDataRevision,
+      });
+    }
     this.broadcastProjectDisplayDataChanged(projectId);
     return true;
   }
@@ -4886,6 +5122,7 @@ export class LocalDataService {
         ? { adapter: adapterContamination.adapter }
         : null,
       liveFeedRuntime: this.liveFeedRuntimeByEngine.get(engineId) ?? null,
+      liveDisplayLatency: this.liveDisplayLatencyByEngine.get(engineId) ?? null,
     };
   }
 
@@ -5274,12 +5511,87 @@ export class LocalDataService {
       durationMs?: number | null;
       capturedAt?: string;
       liveFeedRuntime?: Record<string, unknown> | null;
+      liveTiming?: Record<string, unknown> | null;
     },
   ) {
+    const desktopReceivedAt = Date.now();
+    const isLiveScraperSnapshot = Boolean(input.liveFeedRuntime);
+    const traceEventIdFromWorker = readWorkerTraceEventId(input.liveTiming);
     if (input.liveFeedRuntime && typeof input.liveFeedRuntime === "object") {
       this.liveFeedRuntimeByEngine.set(engineId, input.liveFeedRuntime);
     }
+    const engine = this.dataSources.getById(engineId);
+    const projectId = engine?.projectId ?? null;
+    const provisionalTraceEventId =
+      traceEventIdFromWorker ??
+      `${engineId}-${desktopReceivedAt}`;
+    if (isLiveScraperSnapshot) {
+      this.activeLiveDisplayPipelineTraceEventId = provisionalTraceEventId;
+      this.logLiveDisplayPipeline({
+        traceEventId: provisionalTraceEventId,
+        stage: "desktop.snapshot_received",
+        lotNumber: readLiveEventFieldsFromSnapshot(input.data).lotNumber,
+        bidLabel: readLiveEventFieldsFromSnapshot(input.data).bidLabel,
+        detail: readWorkerLiveTiming(input.liveTiming),
+      });
+      this.promoteInMemoryLiveScraperPayload(
+        engineId,
+        provisionalTraceEventId,
+        input.data,
+        input.capturedAt ?? new Date().toISOString(),
+        provisionalTraceEventId,
+      );
+    }
+    const sqliteInsertStartedAt = Date.now();
+    if (isLiveScraperSnapshot) {
+      this.logLiveDisplayPipeline({
+        traceEventId: provisionalTraceEventId,
+        stage: "desktop.sqlite_insert_started",
+      });
+    }
     const snapshot = this.dataSources.insertSnapshot(engineId, input);
+    const sqliteInsertEndAt = Date.now();
+    const traceEventId = traceEventIdFromWorker ?? snapshot.id;
+    if (isLiveScraperSnapshot) {
+      this.promoteInMemoryLiveScraperPayload(
+        engineId,
+        snapshot.id,
+        input.data,
+        snapshot.capturedAt,
+        traceEventId,
+      );
+      this.logLiveDisplayPipeline({
+        traceEventId,
+        stage: "desktop.sqlite_insert_finished",
+        sqliteInsertMs: sqliteInsertEndAt - sqliteInsertStartedAt,
+      });
+    }
+    let liveDisplayTrace: LiveDisplayLatencyTrace | null = null;
+    if (isLiveScraperSnapshot) {
+      const eventFields = readLiveEventFieldsFromSnapshot(input.data);
+      liveDisplayTrace = mergeLiveDisplayLatencyTrace(
+        createEmptyLiveDisplayLatencyTrace(traceEventId),
+        {
+          ...readWorkerLiveTiming(input.liveTiming),
+          ...eventFields,
+          desktopReceivedAt,
+          sqliteInsertEndAt,
+        },
+      );
+    }
+
+    if (
+      isLiveScraperSnapshot &&
+      projectId &&
+      this.getDisplayDataSource() === "webpage-scraper"
+    ) {
+      this.scraperStateRevision += 1;
+      this.pendingDisplayBridgeTraceEventId = traceEventId;
+      this.activeLiveDisplayPipelineTraceEventId = traceEventId;
+      this.tryNotifyProjectDisplayDataChanged(projectId);
+      this.pendingDisplayBridgeTraceEventId = null;
+    }
+
     // Counters are owned by recordRunSuccess / recordRunFailure to avoid double-count.
     this.dataSources.upsertStatus(engineId, {
       lastSuccessAt: snapshot.capturedAt,
@@ -5291,6 +5603,18 @@ export class LocalDataService {
     });
     this.pushEngineStatusSnapshot(engineId);
     const liveStateResult = this.bagLiveState.processSnapshot(engineId, snapshot);
+    if (isLiveScraperSnapshot && traceEventId) {
+      const bidAfterProcess = readLiveEventFieldsFromSnapshot(
+        projectId ? this.getLatestBagSnapshotPayloadForProject(projectId) : input.data,
+      );
+      this.logLiveDisplayPipeline({
+        traceEventId,
+        stage: "desktop.process_snapshot_finished",
+        lotNumber: bidAfterProcess.lotNumber,
+        bidLabel: bidAfterProcess.bidLabel,
+        bidAtGet: bidAfterProcess.bidLabel,
+      });
+    }
     if (liveStateResult) {
       const engine = this.dataSources.getById(engineId);
       const projectId = engine?.projectId ?? liveStateResult.state.projectId;
@@ -5313,6 +5637,12 @@ export class LocalDataService {
           projectId,
         },
       });
+    }
+    if (liveDisplayTrace && projectId) {
+      this.storeLiveDisplayLatencyTrace(engineId, projectId, liveDisplayTrace);
+    }
+    if (isLiveScraperSnapshot) {
+      this.activeLiveDisplayPipelineTraceEventId = null;
     }
     return toPortalSnapshot(snapshot);
   }
@@ -6029,6 +6359,10 @@ export class LocalDataService {
   private getLatestBagSnapshotPayloadForProject(projectId: string): Record<string, unknown> | null {
     const engines = this.dataSources.listByProject(projectId);
     for (const engine of engines) {
+      const inMemory = this.inMemoryLatestScraperPayloadByEngine.get(engine.id);
+      if (inMemory?.data && typeof inMemory.data === "object") {
+        return inMemory.data;
+      }
       const snapshot = this.dataSources.getLatestSnapshot(engine.id);
       if (snapshot?.data && typeof snapshot.data === "object") {
         return snapshot.data as Record<string, unknown>;

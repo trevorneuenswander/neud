@@ -13,6 +13,7 @@ import { registerAppIpc, type CloseRequestResponse } from "./ipc/app";
 import { registerUpdateIpc } from "./ipc/updates";
 import { sendToRenderer } from "./ipc/channels";
 import { registerAuthIpc } from "./ipc/auth";
+import { registerSupabasePublicConfigIpc } from "./ipc/supabase-public-config";
 import { AUTH_EXPLICITLY_SIGNED_OUT_KEY } from "./auth/session-recovery-keys";
 import { LOCAL_API_URL_SETTING_KEY } from "./auth/local-session-token";
 import {
@@ -23,7 +24,11 @@ import {
   CLOUD_SESSION_DIAGNOSTICS_KEY,
   createDefaultCloudSessionDiagnostics,
 } from "./services/cloud-session-diagnostics";
-import { setClearLocalSessionHandler } from "./menu/application-menu";
+import {
+  setClearLocalSessionHandler,
+  setExportDiagnosticsHandler,
+} from "./menu/application-menu";
+import { exportDiagnosticsBundle } from "./services/diagnostics-export-service";
 import {
   checkForUpdates,
   initializeAutoUpdateService,
@@ -573,7 +578,12 @@ async function createMainWindow() {
 
   const credentials = new CredentialStore(paths);
   const host = new MachineRegistration(paths);
-  registerAppIpc(host, () => mainWindow, handleCloseRequestResponse);
+  registerAppIpc(
+    host,
+    () => mainWindow,
+    handleCloseRequestResponse,
+    () => exportDiagnosticsBundle(paths),
+  );
   registerUpdateIpc();
 
   const authLicenseManager = new AuthLicenseManager(
@@ -589,6 +599,7 @@ async function createMainWindow() {
   const supabasePublicConfigLoad = loadSupabasePublicConfigWithSource(paths);
   const supabasePublicConfig = supabasePublicConfigLoad.config;
   writeCloudRuntimeConfigDiagnostic(paths.logs, supabasePublicConfigLoad.diagnostic);
+  registerSupabasePublicConfigIpc(paths, () => loadSupabasePublicConfigWithSource(paths));
   const authenticatedCloud = new AuthenticatedCloudCoordinator(
     supabaseUserSessionService,
     supabasePublicConfig,
@@ -1453,7 +1464,10 @@ async function createMainWindow() {
   logStartupCheckpoint("startup.next_server_start", { devMode });
   const appUrl = devMode
     ? getDevServerUrl()
-    : await nextServer.start(false, { localApiUrl: canonicalLocalApiOrigin });
+    : await nextServer.start(false, {
+        localApiUrl: canonicalLocalApiOrigin,
+        supabasePublicConfig,
+      });
   logStartupCheckpoint("startup.next_server_ready", { appUrl });
 
   const trustedPortal = resolveTrustedPortalOrigin({
@@ -1632,6 +1646,31 @@ async function createMainWindow() {
 
   setClearLocalSessionHandler(() => {
     void forceSignOutFromMain?.();
+  });
+
+  setExportDiagnosticsHandler(() => {
+    void (async () => {
+      const result = await exportDiagnosticsBundle(paths);
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      if (!result.ok) {
+        await dialog.showMessageBox(mainWindow, {
+          type: "error",
+          title: "Export Diagnostics",
+          message: "Could not export diagnostics.",
+          detail: result.error,
+        });
+        return;
+      }
+      await dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: "Export Diagnostics",
+        message: "Diagnostics exported.",
+        detail: `${result.fileName}\n${result.filePath}`,
+      });
+      shell.showItemInFolder(result.filePath);
+    })();
   });
 
   if (postUpdateSignInRequired) {

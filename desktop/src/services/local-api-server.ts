@@ -103,6 +103,10 @@ export class LocalApiServer {
       this.server!.listen(port, "127.0.0.1", () => resolve());
     });
 
+    // SSE connections must outlive Node's default 5s keepAliveTimeout between writes.
+    this.server.keepAliveTimeout = 120_000;
+    this.server.headersTimeout = 125_000;
+
     this.baseUrl = `http://127.0.0.1:${port}`;
     return { baseUrl: this.baseUrl, port };
   }
@@ -2018,6 +2022,8 @@ export class LocalApiServer {
           capturedAt: readOptionalString(body, "capturedAt", "captured_at"),
           liveFeedRuntime:
             (body.liveFeedRuntime as Record<string, unknown> | null | undefined) ?? null,
+          liveTiming:
+            (body.liveTiming as Record<string, unknown> | null | undefined) ?? null,
         });
         return sendJson(response, 201, { snapshot });
       }
@@ -2243,6 +2249,29 @@ export class LocalApiServer {
           if (denied) return denied;
 
           const previewMode = url.searchParams.get("preview") === "1";
+          const traceHeader = request.headers["x-neud-trace-event-id"];
+          const traceEventIdEarly =
+            typeof traceHeader === "string" && traceHeader.trim() ? traceHeader.trim() : null;
+          const fetchRequestHeader = request.headers["x-neud-display-fetch-request-id"];
+          const fetchRequestId =
+            typeof fetchRequestHeader === "string" && fetchRequestHeader.trim()
+              ? fetchRequestHeader.trim()
+              : null;
+          const displayClientHeader = request.headers["x-neud-display-client-id"];
+          const displayClientId =
+            typeof displayClientHeader === "string" && displayClientHeader.trim()
+              ? displayClientHeader.trim()
+              : null;
+          const displayGetReceivedAt = Date.now();
+          if (traceEventIdEarly) {
+            this.data.logLiveDisplayPipelineFromApi({
+              traceEventId: traceEventIdEarly,
+              stage: "local_api.display_get_received",
+              atMs: displayGetReceivedAt,
+              fetchRequestId,
+              displayClientId,
+            });
+          }
 
           let viewerState: { enabled: boolean; archived: boolean };
           try {
@@ -2273,6 +2302,48 @@ export class LocalApiServer {
               ? this.data.getStreamTickerDisplayBridgeData(projectId)
               : this.data.getGenericDisplayBridgeData(projectId);
           const dataConnected = previewMode || viewerState.enabled;
+          const traceEventId = traceEventIdEarly;
+          if (traceEventId) {
+            this.data.logLiveDisplayPipelineFromApi({
+              traceEventId,
+              stage: "local_api.display_get_response_started",
+              atMs: Date.now(),
+              fetchRequestId,
+              displayClientId,
+              revision:
+                typeof (bridgeData as { revision?: unknown }).revision === "number"
+                  ? ((bridgeData as { revision: number }).revision as number)
+                  : undefined,
+              detail: {
+                localProcessingMs: Date.now() - displayGetReceivedAt,
+              },
+            });
+            const snapshot =
+              bridgeData &&
+              typeof bridgeData === "object" &&
+              "snapshot" in bridgeData &&
+              bridgeData.snapshot &&
+              typeof bridgeData.snapshot === "object"
+                ? (bridgeData.snapshot as Record<string, unknown>)
+                : null;
+            const auctionDisplay =
+              snapshot?.auctionDisplay && typeof snapshot.auctionDisplay === "object"
+                ? (snapshot.auctionDisplay as Record<string, unknown>)
+                : null;
+            const bidAtGet =
+              (typeof auctionDisplay?.biddingPrice === "string" && auctionDisplay.biddingPrice) ||
+              (typeof auctionDisplay?.price === "string" && auctionDisplay.price) ||
+              null;
+            this.data.logLiveDisplayPipelineFromApi({
+              traceEventId,
+              stage: "desktop.display_get_served",
+              revision:
+                typeof (bridgeData as { revision?: unknown }).revision === "number"
+                  ? ((bridgeData as { revision: number }).revision as number)
+                  : undefined,
+              bidAtGet,
+            });
+          }
           return sendJsonNoStore(response, 200, {
             ...bridgeData,
             enabled: previewMode ? true : viewerState.enabled,
@@ -2485,11 +2556,89 @@ export class LocalApiServer {
         return sendJson(response, 200, { enabled });
       }
 
+      if (url.pathname === "/api/internal/live-display-pipeline" && request.method === "POST") {
+        if (!isLoopbackClient(request)) {
+          return sendJson(response, 403, { error: "Forbidden." });
+        }
+        const body = await readJsonBody(request);
+        this.data.logLiveDisplayPipelineFromApi({
+          traceEventId: readOptionalString(body, "traceEventId", "trace_event_id"),
+          stage:
+            typeof body.stage === "string"
+              ? (body.stage as import("./live-display-pipeline-log").LiveDisplayPipelineStage)
+              : "next_proxy_request_received",
+          atMs: readOptionalNumber(body, "atMs", "at_ms") ?? Date.now(),
+          revision: readOptionalNumber(body, "revision", "revision") ?? undefined,
+          displayClientId: readOptionalString(body, "displayClientId", "display_client_id"),
+          fetchRequestId: readOptionalString(body, "fetchRequestId", "fetch_request_id"),
+          detail:
+            body.detail && typeof body.detail === "object"
+              ? (body.detail as Record<string, unknown>)
+              : undefined,
+        });
+        return sendJson(response, 200, { ok: true });
+      }
+
+      const liveDisplayLatencyMatch = url.pathname.match(
+        /^\/api\/projects\/([^/]+)\/live-display-latency$/,
+      );
+      if (liveDisplayLatencyMatch && request.method === "POST") {
+        const projectId = decodeURIComponent(liveDisplayLatencyMatch[1]);
+        if (!this.data.projectExistsForRoutes(projectId)) {
+          return sendJson(response, 404, { error: "Project not found." });
+        }
+        const body = await readJsonBody(request);
+        const trace = this.data.recordLiveDisplayClientLatencyReport(projectId, {
+          traceEventId: readOptionalString(body, "traceEventId", "trace_event_id"),
+          displayClientId: readOptionalString(body, "displayClientId", "display_client_id"),
+          fetchRequestId: readOptionalString(body, "fetchRequestId", "fetch_request_id"),
+          sseDeliveryLagMs: readOptionalNumber(body, "sseDeliveryLagMs", "sse_delivery_lag_ms"),
+          displayBridgeReceivedAt: readOptionalNumber(
+            body,
+            "displayBridgeReceivedAt",
+            "display_bridge_received_at",
+          ),
+          displayFetchStartedAt: readOptionalNumber(
+            body,
+            "displayFetchStartedAt",
+            "display_fetch_started_at",
+          ),
+          displayFetchCompletedAt: readOptionalNumber(
+            body,
+            "displayFetchCompletedAt",
+            "display_fetch_completed_at",
+          ),
+          displayDataFetchedAt: readOptionalNumber(
+            body,
+            "displayDataFetchedAt",
+            "display_data_fetched_at",
+          ),
+          displayRenderedAt: readOptionalNumber(
+            body,
+            "displayRenderedAt",
+            "display_rendered_at",
+          ),
+          fetchInFlight: body.fetchInFlight === true,
+          pendingFetch: body.pendingFetch === true,
+        });
+        return sendJson(response, 200, { ok: true, trace });
+      }
+
       if (
         await handleDisplayBridgeRoute(request, response, url, {
           displayBridgeEvents: this.displayBridgeEvents,
           projectExists: (projectId) => this.data.projectExistsForRoutes(projectId),
           getSyncState: (projectId) => this.data.getProjectDisplayBridgeSyncState(projectId),
+          onPipelineEvent: (entry) => {
+            this.data.logLiveDisplayPipelineFromApi({
+              traceEventId: entry.traceEventId ?? undefined,
+              stage: entry.stage,
+              atMs: entry.atMs,
+              revision: entry.revision,
+              connectionId: entry.connectionId,
+              detail: entry.detail,
+            });
+          },
         })
       ) {
         return;
@@ -2771,8 +2920,13 @@ function setCors(response: http.ServerResponse) {
   response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   response.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, x-neud-local-session",
+    "Content-Type, x-neud-local-session, x-neud-display-client, x-neud-trace-event-id, x-neud-display-client-id, x-neud-display-fetch-request-id",
   );
+}
+
+function isLoopbackClient(request: IncomingMessage): boolean {
+  const remote = request.socket.remoteAddress ?? "";
+  return remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
 }
 
 function resolveOfflineAssetContentType(filePath: string): string {

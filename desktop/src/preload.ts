@@ -64,8 +64,30 @@ const neudDesktop = {
   app: {
     isDesktop: () => true as const,
     getVersion: () => ipcRenderer.invoke("neud:app:getVersion") as Promise<string>,
+    exportDiagnostics: () =>
+      ipcRenderer.invoke("neud:app:exportDiagnostics") as Promise<
+        | { ok: true; filePath: string; fileName: string }
+        | { ok: false; error: string }
+      >,
     getPlatform: () => ipcRenderer.invoke("neud:app:getPlatform") as Promise<string>,
     getHostId: () => ipcRenderer.invoke("neud:app:getHostId") as Promise<string>,
+    getSupabasePublicConfig: () =>
+      ipcRenderer.invoke("neud:app:getSupabasePublicConfig") as Promise<{
+        supabaseUrl: string | null;
+        supabasePublishableKey: string | null;
+        diagnostic: {
+          configPresent: boolean;
+          urlHost: string | null;
+          keyPresent: boolean;
+          source: string;
+          validationResult: string;
+          configPath: string | null;
+        };
+      }>,
+    recordAuthLoginDiagnostic: (payload: { stage: string; [key: string]: unknown }) =>
+      ipcRenderer.invoke("neud:app:recordAuthLoginDiagnostic", payload) as Promise<{
+        ok: boolean;
+      }>,
     openExternal: (url: string) =>
       ipcRenderer.invoke("neud:app:openExternal", url) as Promise<
         { ok: true } | { ok: false; error: string }

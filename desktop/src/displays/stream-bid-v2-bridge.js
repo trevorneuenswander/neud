@@ -614,6 +614,9 @@
           renderCompleted: true,
           skipReason: skipReason,
         });
+        if (typeof window.__NEUD_REPORT_DISPLAY_LATENCY__ === "function") {
+          window.__NEUD_REPORT_DISPLAY_LATENCY__({ displayRenderedAt: Date.now() });
+        }
       },
     });
 
