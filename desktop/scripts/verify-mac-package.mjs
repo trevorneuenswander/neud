@@ -51,6 +51,22 @@ if (fs.existsSync(asarPath)) {
     stdio: ["ignore", "pipe", "inherit"],
   });
   assert.match(asarListing, /038_user_pinned_viewer_stacks\.sql/);
+  assert.match(
+    asarListing,
+    /dist\/lib\/browser\/packaged-chrome-profile\.js/,
+    "app.asar must ship synced packaged Chrome profile for Electron main",
+  );
+
+  const startupDiagnostics = execSync(
+    `npx --yes @electron/asar extract-file "${asarPath}" dist/services/startup-diagnostics.js`,
+    { encoding: "utf8", cwd: repoRoot, stdio: ["ignore", "pipe", "inherit"] },
+  );
+  assert.doesNotMatch(
+    startupDiagnostics,
+    /\.\.\/\.\.\/\.\.\/shared\//,
+    "startup-diagnostics must not escape app.asar to repo shared/",
+  );
+  assert.match(startupDiagnostics, /\.\.\/lib\/browser\/packaged-chrome-profile\.js/);
 }
 
 console.log(

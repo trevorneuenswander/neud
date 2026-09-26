@@ -89,6 +89,17 @@ test("resolve puppeteer browser uses shared packaged chrome profile", () => {
   assert.match(resolver, /resolvePackagingProfile/);
 });
 
+test("desktop Electron main syncs packaged Chrome profile into app bundle tree", () => {
+  const sync = read("desktop/scripts/sync-packaged-chrome-profile.mjs");
+  assert.match(sync, /desktop", "src", "lib", "browser", "packaged-chrome-profile\.js"/);
+  const copyAssets = read("desktop/scripts/copy-runtime-assets.mjs");
+  assert.match(copyAssets, /copyPackagedChromeProfile/);
+  assert.match(copyAssets, /dist", "lib", "browser", "packaged-chrome-profile\.js"/);
+  const startup = read("desktop/src/services/startup-diagnostics.ts");
+  assert.match(startup, /\.\.\/lib\/browser\/packaged-chrome-profile\.js/);
+  assert.doesNotMatch(startup, /shared\/browser\/packaged-chrome-profile/);
+});
+
 test("signing secrets are not hardcoded in electron-builder config", () => {
   const config = read("desktop/electron-builder.yml");
   assert.doesNotMatch(config, /APPLE_APP_SPECIFIC_PASSWORD:/);

@@ -9,7 +9,7 @@ import {
   isUsableChromeExecutable,
   resolvePackagedBrowserExecutable,
   resolvePackagingProfileForPackagedRuntime,
-} from "../../../shared/browser/packaged-chrome-profile.js";
+} from "../lib/browser/packaged-chrome-profile.js";
 import { resolveBagLotDetailAdapterPath } from "./bag-detail-adapter-path";
 import { resolvePuppeteerModule } from "./resolve-puppeteer-module";
 

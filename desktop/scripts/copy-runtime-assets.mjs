@@ -325,6 +325,22 @@ function copyBootstrapEntry() {
   );
 }
 
+function copyPackagedChromeProfile() {
+  const source = path.join(desktopRoot, "src", "lib", "browser", "packaged-chrome-profile.js");
+  const target = path.join(desktopRoot, "dist", "lib", "browser", "packaged-chrome-profile.js");
+
+  if (!fs.existsSync(source)) {
+    console.error(
+      `Missing synced packaged Chrome profile: ${source}. Run sync-packaged-chrome-profile.mjs first.`,
+    );
+    process.exit(1);
+  }
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  console.log(`Copied packaged Chrome profile to ${target}`);
+}
+
 function copyBagRuntimeConfig() {
   const source = path.join(repoRoot, "shared", "bag", "bag-runtime-config.json");
   const target = path.join(desktopRoot, "dist", "bag", "config", "bag-runtime-config.json");
@@ -348,6 +364,7 @@ function syncRuntimeAssets() {
 }
 
 copyBootstrapEntry();
+copyPackagedChromeProfile();
 copyBagRuntimeConfig();
 syncRuntimeAssets();
 copyMigrations();

@@ -119,6 +119,9 @@ jobs:
       - name: Verify macOS package layout
         run: npm run verify:mac-package
 
+      - name: Verify packaged Electron main dependencies
+        run: node desktop/scripts/verify-packaged-electron-main-deps.mjs
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
