@@ -2203,18 +2203,43 @@ export class DeveloperToolsService {
     return { deletedRevisionId: revisionId };
   }
 
+  resolveProjectForDisplayRoute(projectSegment: string, displaySlug: string) {
+    const trimmedProject = projectSegment.trim();
+    const trimmedSlug = displaySlug.trim();
+
+    let project =
+      this.projects.getById(trimmedProject) ??
+      this.projects.getBySlug(trimmedProject) ??
+      null;
+
+    if (project && trimmedSlug && this.displayCode.getBySlug(project.id, trimmedSlug)) {
+      return project;
+    }
+
+    if (trimmedSlug) {
+      for (const candidate of this.projects.list()) {
+        if (this.displayCode.getBySlug(candidate.id, trimmedSlug)) {
+          return candidate;
+        }
+      }
+    }
+
+    return project;
+  }
+
   resolveDisplayViewer(
     projectId: string,
     slug: string,
     options?: { preview?: boolean; output?: boolean },
   ) {
     assertSafeResourceId(projectId, "project ID");
-    const project = this.projects.getById(projectId);
+    const project = this.resolveProjectForDisplayRoute(projectId, slug);
     if (!project) {
       return { status: "not_found" as const };
     }
+    const resolvedProjectId = project.id;
 
-    const code = this.displayCode.getBySlug(projectId, slug);
+    const code = this.displayCode.getBySlug(resolvedProjectId, slug);
     if (!code) {
       return { status: "not_found" as const };
     }
@@ -2246,13 +2271,13 @@ export class DeveloperToolsService {
           viewportHeight: display.displayHeight,
         }),
         displayId: code.displayId,
-        projectId,
+        projectId: resolvedProjectId,
         slug,
         name: display.name,
       };
     }
 
-    const published = this.storage.readDisplayPublished(projectId, code.displayId);
+    const published = this.storage.readDisplayPublished(resolvedProjectId, code.displayId);
     if (!published) {
       return { status: "not_found" as const };
     }
@@ -2260,14 +2285,14 @@ export class DeveloperToolsService {
     const settings =
       display.settings && typeof display.settings === "object" ? display.settings : {};
     const adapterContext = {
-      projectId,
+      projectId: resolvedProjectId,
       projectSlug: project.slug,
       displayId: code.displayId,
       slug: code.slug,
       displayKey: display.displayKey,
       settings,
       runtimeAdapterKey: resolveDisplayRuntimeAdapterKey({
-        projectId,
+        projectId: resolvedProjectId,
         projectSlug: project.slug,
         displayId: code.displayId,
         slug: code.slug,
@@ -2287,7 +2312,7 @@ export class DeveloperToolsService {
       /^<!doctype html/i.test(servedHtml) ||
       /^<html[\s>]/i.test(servedHtml)
     ) {
-      const dataUrl = this.buildDisplayDataUrl(projectId, slug, previewMode);
+      const dataUrl = this.buildDisplayDataUrl(resolvedProjectId, slug, previewMode);
       const localApiBase = this.resolveLocalApiBase();
       const pollIntervalMs = normalizeDisplayRefreshRateMs(display.refreshRateMs);
       return {
@@ -2296,7 +2321,7 @@ export class DeveloperToolsService {
           html: servedHtml,
           dataUrl,
           displayInfo: {
-            projectId,
+            projectId: resolvedProjectId,
             displayId: code.displayId,
             slug,
             name: display.name,
@@ -2310,13 +2335,13 @@ export class DeveloperToolsService {
           previewMode,
         }),
         displayId: code.displayId,
-        projectId,
+        projectId: resolvedProjectId,
         slug,
         name: display.name,
       };
     }
 
-    const dataUrl = this.buildDisplayDataUrl(projectId, slug, previewMode);
+    const dataUrl = this.buildDisplayDataUrl(resolvedProjectId, slug, previewMode);
     const localApiBase = this.resolveLocalApiBase();
     const pollIntervalMs = normalizeDisplayRefreshRateMs(display.refreshRateMs);
     const html = buildDisplayDocument({
@@ -2326,7 +2351,7 @@ export class DeveloperToolsService {
       title: display.name,
       dataUrl,
       displayInfo: {
-        projectId,
+        projectId: resolvedProjectId,
         displayId: code.displayId,
         slug,
         name: display.name,
@@ -2343,14 +2368,18 @@ export class DeveloperToolsService {
       status: "ok" as const,
       html,
       displayId: code.displayId,
-      projectId,
+      projectId: resolvedProjectId,
       slug,
       name: display.name,
     };
   }
 
   getDisplayViewerEnabled(projectId: string, slug: string) {
-    const code = this.displayCode.getBySlug(projectId, slug);
+    const project = this.resolveProjectForDisplayRoute(projectId, slug);
+    if (!project) {
+      throw new Error("Display not found.");
+    }
+    const code = this.displayCode.getBySlug(project.id, slug);
     if (!code) {
       throw new Error("Display not found.");
     }
@@ -2365,7 +2394,12 @@ export class DeveloperToolsService {
   }
 
   getDisplayViewerMeta(projectId: string, slug: string) {
-    const code = this.displayCode.getBySlug(projectId, slug);
+    const project = this.resolveProjectForDisplayRoute(projectId, slug);
+    if (!project) {
+      throw new Error("Display not found.");
+    }
+    const resolvedProjectId = project.id;
+    const code = this.displayCode.getBySlug(resolvedProjectId, slug);
     if (!code) {
       throw new Error("Display not found.");
     }
@@ -2374,13 +2408,12 @@ export class DeveloperToolsService {
       throw new Error("Display not found.");
     }
 
-    const project = this.projects.getById(projectId);
-    const projectSlug = project?.slug ?? projectId;
+    const projectSlug = project.slug;
 
     const settings =
       display.settings && typeof display.settings === "object" ? display.settings : {};
     const runtimeAdapterKey = resolveDisplayRuntimeAdapterKey({
-      projectId,
+      projectId: resolvedProjectId,
       projectSlug,
       displayId: code.displayId,
       slug: code.slug,

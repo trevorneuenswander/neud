@@ -36,6 +36,7 @@ import {
   requestDisplayViewerReload,
 } from "@/lib/displays/display-connection-client";
 import { buildProjectDisplayOutputPath, buildProjectDisplayPreviewPath } from "@/lib/local/developer-tools-api";
+import { resolveDisplayPreviewProjectId } from "@/lib/displays/resolve-display-preview-project-id";
 import { buildDisplayWindowFitPath } from "@/lib/displays/display-view-mode";
 import { localSetDeveloperDisplayEnabled } from "@/lib/local/developer-tools-api";
 import { localSetDisplaySize } from "@/lib/local/displays-api";
@@ -132,16 +133,17 @@ export function DeveloperHtmlDisplayCard({
   onDeleted,
   onDuplicated,
 }: DeveloperHtmlDisplayCardProps) {
-  const htmlViewerPath = `/api/display-html/${encodeURIComponent(projectId)}/${encodeURIComponent(display.slug)}`;
+  const previewProjectId = resolveDisplayPreviewProjectId(projectId, display.projectId);
+  const htmlViewerPath = `/api/display-html/${encodeURIComponent(previewProjectId)}/${encodeURIComponent(display.slug)}`;
   const initialSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
 
   const [enabled, setEnabled] = useState(display.enabled);
   const localDisplayUrl =
     typeof window !== "undefined"
-      ? buildProjectDisplayOutputPath(projectId, display.slug, {
+      ? buildProjectDisplayOutputPath(previewProjectId, display.slug, {
           origin: window.location.origin,
         })
-      : buildProjectDisplayOutputPath(projectId, display.slug);
+      : buildProjectDisplayOutputPath(previewProjectId, display.slug);
   const [displayWidth, setDisplayWidth] = useState(initialSize.displayWidth);
   const [displayHeight, setDisplayHeight] = useState(initialSize.displayHeight);
   const [saving, setSaving] = useState(false);
@@ -295,7 +297,7 @@ export function DeveloperHtmlDisplayCard({
       const desktop = getDesktopAPI();
       if (desktop?.displays?.openPreview) {
         void desktop.displays.openPreview({
-          projectId,
+          projectId: previewProjectId,
           displayId: display.id,
           title: display.name,
           viewerUrl: outputTargetUrl,

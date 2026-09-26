@@ -167,6 +167,7 @@
     "verify:mac-bundled-browser": "node desktop/scripts/verify-bundled-browser.mjs",
     "verify:mac-package": "node desktop/scripts/verify-mac-package.mjs",
     "test:neud-macos-packaging": "node --test desktop/scripts/test-neud-macos-packaging.mjs",
+    "test:neud-macos-item-1b-parity": "node --test desktop/scripts/test-neud-macos-item-1b-parity.mjs",
     "verify:win-package": "node desktop/scripts/verify-win-package.mjs",
     "verify:packaged-runtime-assets": "node desktop/scripts/verify-packaged-runtime-assets.mjs",
     "smoke:packaged-app": "node desktop/scripts/smoke-packaged-app.mjs && node desktop/scripts/smoke-packaged-startup.mjs",

@@ -7,7 +7,8 @@ import { AppTitleBar } from "@/components/portal/AppTitleBar";
 import { EmergencySessionRecovery } from "@/components/auth/EmergencySessionRecovery";
 import { NeudAppDialogHost } from "@/components/portal/NeudAppDialogHost";
 import { UpdateAvailableModalHost } from "@/components/settings/UpdateAvailableModal";
-import { isDesktopEnvironment } from "@/lib/desktop/client";
+import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
+import { showInWindowApplicationMenu } from "@/lib/desktop/shell-capabilities";
 import { resolveDisplayViewMode } from "@/lib/displays/display-view-mode";
 import { isHostedFullscreenViewerPath } from "@/lib/routing/hosted-routes";
 
@@ -43,9 +44,29 @@ function useDesktopShellActive(runtime: "desktop" | "hosted"): boolean {
   return runtime === "desktop" && electronActive;
 }
 
+function useDesktopPlatform(): string | null {
+  const [platform, setPlatform] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isDesktopEnvironment()) {
+      return;
+    }
+    void getDesktopAPI()?.app?.getPlatform?.().then((value) => {
+      const resolved = value ?? "win32";
+      setPlatform(resolved);
+      document.documentElement.dataset.platform = resolved;
+    });
+  }, []);
+
+  return platform;
+}
+
 export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellProps) {
   const runtime = useShellRuntime(initialRuntime);
   const desktopActive = useDesktopShellActive(runtime);
+  const platform = useDesktopPlatform();
+  const showInWindowMenu =
+    desktopActive && platform != null && showInWindowApplicationMenu(platform);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const outputRoute =
@@ -63,11 +84,11 @@ export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellPro
       data-runtime={runtime}
     >
       <EmergencySessionRecovery />
-      {desktopActive ? <AppTitleBar active /> : null}
+      {showInWindowMenu ? <AppTitleBar active /> : null}
       <div
         id="neud-app-content"
         className="app-body content-viewport absolute inset-x-0 bottom-0 flex flex-col overflow-hidden"
-        style={{ top: desktopActive ? "var(--window-menu-height, 0px)" : 0 }}
+        style={{ top: showInWindowMenu ? "var(--window-menu-height, 0px)" : 0 }}
       >
         {children}
       </div>

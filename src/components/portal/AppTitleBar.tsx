@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
+import { showInWindowApplicationMenu } from "@/lib/desktop/shell-capabilities";
 
 type AppTitleBarProps = {
   /** When false, render a same-size placeholder to preserve layout during SSR/hydration. */
@@ -26,13 +27,17 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
       api.getWindowState?.() ?? Promise.resolve({ isMaximized: false }),
     ]).then(([labels, nextPlatform, windowState]) => {
       setMenuLabels(labels ?? []);
-      setPlatform(nextPlatform ?? "win32");
+      const resolvedPlatform = nextPlatform ?? "win32";
+      setPlatform(resolvedPlatform);
+      document.documentElement.dataset.platform = resolvedPlatform;
       setIsMaximized(windowState?.isMaximized ?? false);
     });
   }, [active]);
 
+  const inWindowMenuEnabled = showInWindowApplicationMenu(platform);
+
   useEffect(() => {
-    if (!active) return;
+    if (!active || !inWindowMenuEnabled) return;
 
     const titleBar = titleBarRef.current;
     if (!titleBar) return;
@@ -53,7 +58,7 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
         document.documentElement.style.removeProperty("--title-bar-height");
         document.documentElement.style.removeProperty("--window-menu-height");
       };
-  }, [active]);
+  }, [active, inWindowMenuEnabled]);
 
   const noDragStyle = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
   const dragStyle = { WebkitAppRegion: "drag" } as React.CSSProperties;
@@ -65,6 +70,10 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
         aria-hidden="true"
       />
     );
+  }
+
+  if (!inWindowMenuEnabled) {
+    return null;
   }
 
   const popupMenu = (label: string, event: React.MouseEvent<HTMLButtonElement>) => {

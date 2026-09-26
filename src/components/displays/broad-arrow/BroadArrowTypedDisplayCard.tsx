@@ -38,6 +38,7 @@ import {
 import { useBroadArrowDisplayData } from "@/lib/displays/broad-arrow/useBroadArrowDisplayData";
 import type { BroadArrowRendererKey } from "@/lib/displays/broad-arrow/renderer-keys";
 import { buildProjectDisplayOutputPath } from "@/lib/local/developer-tools-api";
+import { resolveDisplayPreviewProjectId } from "@/lib/displays/resolve-display-preview-project-id";
 import { buildDisplayWindowFitPath } from "@/lib/displays/display-view-mode";
 import { localSetDeveloperDisplayEnabled } from "@/lib/local/developer-tools-api";
 import { localSetDisplaySize } from "@/lib/local/displays-api";
@@ -58,7 +59,15 @@ type BroadArrowTypedDisplayCardProps = {
   activeVersionCreatedAt?: string | null;
   display: Pick<
     ProjectDisplaySource,
-    "id" | "name" | "slug" | "displayKey" | "description" | "sourceType" | "archived" | "enabled"
+    | "id"
+    | "projectId"
+    | "name"
+    | "slug"
+    | "displayKey"
+    | "description"
+    | "sourceType"
+    | "archived"
+    | "enabled"
   >;
   onArchived?: (displayId: string) => void;
   onDeleted?: (displayId: string) => void;
@@ -119,12 +128,13 @@ export function BroadArrowTypedDisplayCard({
   onDuplicated,
 }: BroadArrowTypedDisplayCardProps) {
   const initialSize = normalizeDisplaySize(initialDisplayWidth, initialDisplayHeight);
+  const previewProjectId = resolveDisplayPreviewProjectId(projectId, display.projectId);
   const outputUrl =
     typeof window !== "undefined"
-      ? buildProjectDisplayOutputPath(projectId, display.slug, {
+      ? buildProjectDisplayOutputPath(previewProjectId, display.slug, {
           origin: window.location.origin,
         })
-      : buildProjectDisplayOutputPath(projectId, display.slug);
+      : buildProjectDisplayOutputPath(previewProjectId, display.slug);
 
   const [enabled, setEnabled] = useState(display.enabled);
   const [displayWidth, setDisplayWidth] = useState(initialSize.displayWidth);
@@ -136,7 +146,7 @@ export function BroadArrowTypedDisplayCard({
   const { isExpanded, setExpanded } = useDisplayInlinePreview();
   const previewOpen = isExpanded(projectId, display.id);
   const hasActiveRevision = activeVersionNumber !== null && activeVersionNumber > 0;
-  const { hasLiveContent, connected, loadError } = useBroadArrowDisplayData(projectId);
+  const { hasLiveContent, connected, loadError } = useBroadArrowDisplayData(previewProjectId);
   const onlineViewer = useOnlineViewerSettings(projectSlug, display.id, canDeveloperTools, enabled);
 
   useEffect(() => {
@@ -248,7 +258,7 @@ export function BroadArrowTypedDisplayCard({
       const desktop = getDesktopAPI();
       if (desktop?.displays?.openPreview) {
         void desktop.displays.openPreview({
-          projectId,
+          projectId: previewProjectId,
           displayId: display.id,
           title: display.name,
           viewerUrl: outputTargetUrl,
@@ -421,7 +431,7 @@ export function BroadArrowTypedDisplayCard({
           >
             {previewOpen ? (
               <BroadArrowTypedDisplayPreview
-                projectId={projectId}
+                projectId={previewProjectId}
                 rendererKey={rendererKey}
                 displayWidth={displayWidth}
                 displayHeight={displayHeight}

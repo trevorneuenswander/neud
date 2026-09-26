@@ -27,7 +27,16 @@
   --danger: #ef4444;
 }
 
-html[data-runtime="desktop"] {
+html[data-runtime="desktop"][data-platform="darwin"],
+html[data-runtime="desktop"]:not([data-platform]) {
+  --title-bar-height: 0px;
+  --window-menu-height: 0px;
+  --desktop-titlebar-height: 0px;
+  --app-title-bar-height: 0px;
+}
+
+html[data-runtime="desktop"][data-platform="win32"],
+html[data-runtime="desktop"][data-platform="linux"] {
   --title-bar-height: 2.25rem;
   --window-menu-height: var(--title-bar-height);
   --desktop-titlebar-height: var(--title-bar-height);
