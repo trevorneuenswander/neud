@@ -77,6 +77,7 @@ jobs:
           npm run build -w @neud/desktop 2>&1 | tee /tmp/neud-build-desktop.log
           node --test desktop/scripts/test-display-preview-lookup-diagnostic.mjs
           node --test desktop/scripts/test-engine-session-facing-errors.mjs
+          node --test desktop/scripts/test-packaged-faye-transport-parity-built-worker.mjs
           test -f desktop/dist/bootstrap.js
 
       - name: Stage desktop resources
@@ -85,6 +86,7 @@ jobs:
           node desktop/scripts/stage-standalone.mjs 2>&1 | tee /tmp/neud-stage-standalone.log
           test -f desktop/staging/runtime-config/cloud.json
           test -f desktop/staging/worker/dist/adapters/bag-event-driven-session.js
+          node --test desktop/scripts/test-packaged-faye-transport-parity-staged-worker.mjs
 
       - name: Electron-pack macOS app directory
         working-directory: desktop

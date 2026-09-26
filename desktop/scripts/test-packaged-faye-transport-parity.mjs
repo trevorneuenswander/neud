@@ -33,25 +33,53 @@ test("packaged worker spawn sets NEUD_PACKAGED and run id", () => {
   assert.match(manager, /NEUD_ENGINE_RUN_ID/);
 });
 
-test("staged worker path includes event-driven Faye session module", () => {
-  const stage = read("desktop/scripts/stage-standalone.mjs");
-  assert.match(stage, /dist-local/);
-  const stagedWorker = path.join(
+test("event-driven Faye session source module exists", () => {
+  const sourcePath = path.join(
     repoRoot,
     "workers",
     "data-engine",
-    "dist-local",
+    "src",
     "adapters",
     "bag-event-driven-session.js",
   );
-  assert.equal(
-    fs.existsSync(stagedWorker),
-    true,
-    "Run npm run build -w @neud/desktop to produce dist-local worker",
-  );
-  const source = fs.readFileSync(stagedWorker, "utf8");
+  assert.equal(fs.existsSync(sourcePath), true);
+  const source = fs.readFileSync(sourcePath, "utf8");
   assert.match(source, /installLiveFeedBridgeOnPage/);
   assert.match(source, /fallbackToLegacy/);
+});
+
+test("worker build:local copies src tree into dist-local", () => {
+  const buildLocal = read("workers/data-engine/scripts/build-local-dist.mjs");
+  assert.match(buildLocal, /copyJsTree\(sourceRoot, distRoot\)/);
+});
+
+test("desktop build runs worker build and build:local before tsc", () => {
+  const buildScript = read("desktop/package.json");
+  const match = buildScript.match(/"build": "([^"]+)"/)?.[1] ?? "";
+  const buildLocalIndex = match.indexOf("build:local");
+  const tscIndex = match.indexOf("tsc -p tsconfig.json");
+  assert.ok(buildLocalIndex >= 0, "desktop build must run worker build:local");
+  assert.ok(tscIndex > buildLocalIndex, "worker dist-local must exist before desktop compile");
+});
+
+test("stage-standalone copies dist-local worker into packaged staging", () => {
+  const stage = read("desktop/scripts/stage-standalone.mjs");
+  assert.match(stage, /dist-local/);
+  assert.match(stage, /stageLocalWorker/);
+  assert.match(stage, /copyRecursive\(localWorkerDist, workerDistTarget\)/);
+});
+
+test("macOS workflow verifies Faye session after build and staging", () => {
+  const workflow = read(".github/workflows/build-macos.yml");
+  assert.match(
+    workflow,
+    /test-packaged-faye-transport-parity-built-worker\.mjs/,
+  );
+  assert.match(
+    workflow,
+    /test-packaged-faye-transport-parity-staged-worker\.mjs/,
+  );
+  assert.match(workflow, /bag-event-driven-session\.js/);
 });
 
 test("bag runtime config does not define a separate Faye endpoint URL", () => {
