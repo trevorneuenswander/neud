@@ -134,6 +134,89 @@ export class ProjectCodeStorageService {
     );
   }
 
+  relocateProjectCodeRoot(fromProjectId: string, toProjectId: string): boolean {
+    if (fromProjectId === toProjectId) {
+      return false;
+    }
+    const fromDir = this.getProjectCodeRoot(fromProjectId);
+    const toDir = this.getProjectCodeRoot(toProjectId);
+    if (!fs.existsSync(fromDir)) {
+      return false;
+    }
+    if (!fs.existsSync(toDir)) {
+      fs.mkdirSync(path.dirname(toDir), { recursive: true });
+      fs.renameSync(fromDir, toDir);
+      return true;
+    }
+
+    const fromDisplays = path.join(fromDir, "displays");
+    if (!fs.existsSync(fromDisplays)) {
+      return false;
+    }
+    for (const entry of fs.readdirSync(fromDisplays)) {
+      const source = path.join(fromDisplays, entry);
+      const destination = path.join(toDir, "displays", entry);
+      if (fs.existsSync(destination)) {
+        continue;
+      }
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.renameSync(source, destination);
+    }
+    return true;
+  }
+
+  relocateDisplayTree(
+    projectId: string,
+    fromDisplayId: string,
+    toDisplayId: string,
+  ): boolean {
+    if (fromDisplayId === toDisplayId) {
+      return false;
+    }
+    const fromDir = resolvePathWithinRoot(
+      this.getProjectCodeRoot(projectId),
+      "displays",
+      fromDisplayId,
+    );
+    const toDir = resolvePathWithinRoot(
+      this.getProjectCodeRoot(projectId),
+      "displays",
+      toDisplayId,
+    );
+    assertSafeResourceId(fromDisplayId, "display ID");
+    assertSafeResourceId(toDisplayId, "display ID");
+    if (!fs.existsSync(fromDir) || fs.existsSync(toDir)) {
+      return false;
+    }
+    fs.mkdirSync(path.dirname(toDir), { recursive: true });
+    fs.renameSync(fromDir, toDir);
+    return true;
+  }
+
+  findDisplayRevisionBundle(revisionId: string): DisplayFileBundle | null {
+    assertSafeResourceId(revisionId, "revision ID");
+    const projectsRoot = this.paths.projects;
+    if (!fs.existsSync(projectsRoot)) {
+      return null;
+    }
+
+    for (const projectId of fs.readdirSync(projectsRoot)) {
+      const displaysDir = path.join(projectsRoot, projectId, "displays");
+      if (!fs.existsSync(displaysDir)) {
+        continue;
+      }
+      for (const displayId of fs.readdirSync(displaysDir)) {
+        const bundle = this.readDisplayBundle(
+          path.join(displaysDir, displayId, "revisions", revisionId),
+        );
+        if (bundle?.html?.trim()) {
+          return bundle;
+        }
+      }
+    }
+    return null;
+  }
+
   deleteDisplayRevision(
     projectId: string,
     displayId: string,

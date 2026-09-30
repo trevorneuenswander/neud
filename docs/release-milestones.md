@@ -6,26 +6,38 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.2.2** | Cross-platform Windows x64 + macOS Apple Silicon |
-| **Current release** | **v0.2.2** | Cross-platform Windows x64 + macOS Apple Silicon; packaged Faye parity, display hydration, Mac shell parity |
+| **Latest published release** | **v0.2.3** | Fresh-install published display hydration hotfix |
+| **Current release** | **v0.2.3** | Fresh-install published display hydration; Windows x64 + macOS Apple Silicon |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3
 ```
 
-Expected packaged artifacts for v0.2.2:
+Expected packaged artifacts for v0.2.3:
+
+```text
+NEUD-Setup-0.2.3-x64.exe
+NEUD-0.2.3-arm64.dmg
+NEUD-0.2.3-arm64.zip
+```
+
+Canonical application version is **`0.2.3`** in root and `@neud/desktop` `package.json`.
+
+## Alpha v0.2.3
+
+Reliability hotfix for fresh installations and cross-device display synchronization. Published Stream Bid, Stream Ticker, and LED Display (Quail) recover after cloud sync without a manual republish. Includes all v0.2.2 functionality.
+
+## Alpha v0.2.2
+
+Historical artifacts:
 
 ```text
 NEUD-Setup-0.2.2-x64.exe
 NEUD-0.2.2-arm64.dmg
 NEUD-0.2.2-arm64.zip
 ```
-
-Canonical application version is **`0.2.2`** in root and `@neud/desktop` `package.json`.
-
-## Alpha v0.2.2
 
 Cross-platform hardening release: Apple Silicon macOS desktop, packaged Chrome for Testing on macOS, native application menu / in-window title bar parity, fresh-install display output hydration, packaged Faye/event-driven Broad Arrow transport, scraper transport diagnostics, and packaged worker/build identity diagnostics. Includes all v0.2.1 functionality.
 

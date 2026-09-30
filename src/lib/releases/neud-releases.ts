@@ -44,6 +44,15 @@ export function getVersionedWindowsDownloadUrl(version: string): string {
   return `https://github.com/${NEUD_GITHUB_RELEASE_OWNER}/${NEUD_GITHUB_RELEASE_REPO}/releases/download/v${version}/${filename}`;
 }
 
+const V023_HIGHLIGHTS = [
+  "Fixed published displays failing to load after installing NEUD on a new computer",
+  "Published display revisions now follow project and display identity changes during cloud sync",
+  "Missing local published revisions can be restored from the exact cloud revision",
+  "Stream Bid, Stream Ticker, and LED Display (Quail) recover published output without a manual republish",
+  "Preview, Local URL, Pin, and Fullscreen resolve after a fresh installation",
+  "Clearer diagnostics for missing or repaired published display content",
+] as const;
+
 const V022_HIGHLIGHTS = [
   "NEUD is now available for Windows and Apple Silicon Macs",
   "Apple Silicon macOS desktop support with native menu and window behavior",
@@ -58,10 +67,42 @@ const V022_HIGHLIGHTS = [
 /** Authoritative NEUD desktop release catalog for neud.io and release-note parity. */
 export const NEUD_RELEASES: NeudReleaseEntry[] = [
   {
-    version: "0.2.2",
-    releaseDate: "2026-09-26",
+    version: "0.2.3",
+    releaseDate: "2026-09-30",
     status: "current",
     current: true,
+    summary:
+      "Fresh-install display recovery and cross-device published-display synchronization.",
+    highlights: [...V023_HIGHLIGHTS],
+    platforms: {
+      windows: {
+        supported: true,
+        architecture: "x64",
+        downloadUrl: getWindowsInstallerDownloadUrl(),
+        artifactLabel: getVersionedWindowsInstallerFilename("0.2.3"),
+      },
+      macos: {
+        supported: true,
+        architecture: "Apple Silicon (arm64)",
+        downloadUrl: getMacDmgDownloadUrl("0.2.3"),
+        artifactLabel: "NEUD-0.2.3-arm64.dmg",
+      },
+    },
+    githubReleaseUrl: getGitHubReleaseTagUrl("0.2.3"),
+    knownLimitations: [
+      "Windows packaged live graphics can update more slowly than macOS during live Faye workflows; further Windows display transport optimization is planned.",
+      "Alpha software; Windows builds may show SmartScreen warnings when unsigned.",
+      "macOS builds from CI are unsigned and not notarized until Developer ID signing secrets are configured — Gatekeeper may require manual approval on first open.",
+      "Intel Macs are not supported.",
+      "macOS auto-update feed exists (latest-mac.yml) but treat Mac updater as preview until signing is verified in production.",
+    ],
+    macosSigningStatus: "unsigned-ci",
+  },
+  {
+    version: "0.2.2",
+    releaseDate: "2026-09-26",
+    status: "published",
+    current: false,
     summary:
       "Cross-platform Alpha release: Windows x64 and Apple Silicon macOS, with improved live-data reliability, authentication, packaged browser support, display recovery, and diagnostics.",
     highlights: [...V022_HIGHLIGHTS],
@@ -69,7 +110,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
       windows: {
         supported: true,
         architecture: "x64",
-        downloadUrl: getWindowsInstallerDownloadUrl(),
+        downloadUrl: getVersionedWindowsDownloadUrl("0.2.2"),
         artifactLabel: getVersionedWindowsInstallerFilename("0.2.2"),
       },
       macos: {

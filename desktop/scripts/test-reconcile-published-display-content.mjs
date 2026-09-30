@@ -161,7 +161,7 @@ test("diagnostic published_content_missing state becomes ok after hydration", ()
     storage,
   });
 
-  assert.equal(diagnostic.stage, "ok");
+  assert.equal(diagnostic.stage, "published_content_hydrated");
   assert.equal(diagnostic.hasPublishedBundle, true);
   assert.equal(diagnostic.hasRevisionBundle, true);
 });

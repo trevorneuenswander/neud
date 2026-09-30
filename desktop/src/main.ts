@@ -1159,6 +1159,7 @@ async function createMainWindow() {
   const projectCodeRevisionsRepository = new ProjectCodeRevisionsRepository(localDatabase);
   const projectValidationLogsRepository = new ProjectValidationLogsRepository(localDatabase);
   const projectCodeStorageService = new ProjectCodeStorageService(paths);
+  localDataService.setProjectCodeStorage(projectCodeStorageService);
   const displaySyncQueueRepository = new DisplaySyncQueueRepository(localDatabase);
   const displayDeletionTombstonesRepository = new DisplayDeletionTombstonesRepository(
     localDatabase,

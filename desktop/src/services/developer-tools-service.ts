@@ -2222,6 +2222,7 @@ export class DeveloperToolsService {
       displays: this.displays,
       displaySyncHooks: this.displaySyncHooks,
       storage: this.storage,
+      revisionMetadataExists: (revisionId) => Boolean(this.revisions.getById(revisionId)),
     });
   }
 

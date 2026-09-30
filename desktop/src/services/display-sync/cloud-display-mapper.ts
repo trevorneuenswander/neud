@@ -23,6 +23,7 @@ export function toCloudDisplayRow(input: {
   publicationPhase?: CloudDisplayPublicationPhase;
   publishedRevisionId?: string | null;
   publishedAt?: string | null;
+  activeRevisionId?: string | null;
 }): CloudDisplayRow {
   const publicationPhase = input.publicationPhase ?? "publish";
   const onlineViewerEnabled =
@@ -53,7 +54,10 @@ export function toCloudDisplayRow(input: {
     is_archived: input.code?.archived ?? false,
     archived_at: input.code?.archivedAt ?? null,
     archived_by_user_id: input.code?.archivedByUserId ?? null,
-    active_revision_id: input.code?.publishedRevisionId ?? null,
+    active_revision_id:
+      input.activeRevisionId !== undefined
+        ? input.activeRevisionId
+        : (input.code?.publishedRevisionId ?? null),
     created_at: input.display.createdAt,
     created_by_user_id: input.userId,
     updated_at: input.display.updatedAt,

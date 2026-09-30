@@ -99,8 +99,16 @@ export function importCloudDisplayRevision(input: {
 
   const existingById = input.revisions.getById(input.revision.id);
   if (existingById) {
+    const restored = ensureVerifiedCloudRevisionBundle(
+      input.storage,
+      input.projectId,
+      input.displayId,
+      input.revision,
+    );
     return {
-      outcome: { status: "skipped", reason: "existing_id" },
+      outcome: restored
+        ? { status: "inserted" }
+        : { status: "skipped", reason: "existing_id" },
       diagnostic: null,
     };
   }
@@ -135,6 +143,12 @@ export function importCloudDisplayRevision(input: {
         diagnostic,
       };
     }
+    ensureVerifiedCloudRevisionBundle(
+      input.storage,
+      input.projectId,
+      input.displayId,
+      input.revision,
+    );
     return {
       outcome: { status: "reconciled", reason: "hash_match" },
       diagnostic,
@@ -181,6 +195,12 @@ export function importCloudDisplayRevision(input: {
           diagnostic,
         };
       }
+      ensureVerifiedCloudRevisionBundle(
+        input.storage,
+        input.projectId,
+        input.displayId,
+        input.revision,
+      );
       return {
         outcome: {
           status: "reconciled",
@@ -260,12 +280,42 @@ export function importCloudDisplayRevision(input: {
   return { outcome: { status: "inserted" }, diagnostic: null };
 }
 
+export function cloudRevisionHtmlVerified(revision: CloudDisplayRevisionRow): boolean {
+  if (!revision.html_content?.trim()) {
+    return false;
+  }
+  if (!revision.content_hash?.trim()) {
+    return true;
+  }
+  return revision.content_hash === hashDisplayHtml(revision.html_content);
+}
+
+function ensureVerifiedCloudRevisionBundle(
+  storage: ProjectCodeStorageService,
+  projectId: string,
+  displayId: string,
+  revision: CloudDisplayRevisionRow,
+): boolean {
+  if (!cloudRevisionHtmlVerified(revision)) {
+    return false;
+  }
+  const existing = storage.readDisplayRevision(projectId, displayId, revision.id);
+  if (existing?.html?.trim()) {
+    return false;
+  }
+  writeRevisionStorage(storage, projectId, displayId, revision);
+  return true;
+}
+
 function writeRevisionStorage(
   storage: ProjectCodeStorageService,
   projectId: string,
   displayId: string,
   revision: CloudDisplayRevisionRow,
 ): void {
+  if (!cloudRevisionHtmlVerified(revision)) {
+    return;
+  }
   storage.writeDisplayRevision(projectId, displayId, revision.id, {
     html: revision.html_content,
     css: "",

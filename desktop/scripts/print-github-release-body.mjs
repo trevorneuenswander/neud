@@ -20,7 +20,7 @@ async function main() {
   }
 
   // Next/TSC does not emit this module to dist; evaluate via ts import is not available in CI scripts.
-  // Release managers: paste from docs/release-notes-v0.2.2.md or mirror NEUD_RELEASES highlights in GitHub UI.
+  // Release managers: paste from docs/releases/v0.2.3-github-release-notes.md or mirror NEUD_RELEASES highlights in GitHub UI.
   const catalogSource = fs.readFileSync(modulePath, "utf8");
   const version =
     versionArg ??

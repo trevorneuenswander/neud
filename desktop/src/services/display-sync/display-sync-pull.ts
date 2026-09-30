@@ -20,6 +20,17 @@ import {
   importCloudDisplayRevision,
 } from "./display-revision-cloud-import";
 import { reconcilePublishedDisplayContent } from "../../lib/reconcile-published-display-content";
+import { BROAD_ARROW_STREAM_DISPLAY_SPECS } from "../../displays/broad-arrow-stream-display-specs";
+import { readBundledDisplaySourceFromReference } from "../../lib/bundled-display-sources";
+import {
+  transformLedDisplayQuailHtmlForServing,
+  transformStreamBidHtmlForServing,
+  transformStreamTickerHtmlForServing,
+} from "../../displays/stream-display-v2-transform";
+import {
+  buildProvenBundledRevisionBundle,
+  recoverFreshInstallPublishedRevision,
+} from "./published-revision-content-recovery";
 
 export type DisplaySyncPullResult = {
   displaysExamined: number;
@@ -224,7 +235,9 @@ async function reconcileCloudDisplay(
   if (!existingById) {
     const existingBySlug = ctx.displayCode.getBySlug(projectId, cloudDisplay.slug);
     if (existingBySlug && existingBySlug.displayId !== displayId) {
-      ctx.displays.realignDisplayId(existingBySlug.displayId, displayId);
+      const previousDisplayId = existingBySlug.displayId;
+      ctx.displays.realignDisplayId(previousDisplayId, displayId);
+      ctx.storage.relocateDisplayTree(projectId, previousDisplayId, displayId);
       logPull(
         ctx.paths,
         `pull.realign displaySlug=${cloudDisplay.slug} localId=${existingBySlug.displayId} hostedId=${displayId} collisionType=display_id_realignment`,
@@ -409,6 +422,7 @@ async function reconcileCloudDisplay(
   );
 
   hydratePublishedDisplayBundleFromActiveRevision(ctx, projectId, displayId);
+  await recoverPublishedRevisionAfterPull(ctx, projectId, cloudDisplay);
 
   logPull(
     ctx.paths,
@@ -432,6 +446,75 @@ async function reconcileCloudDisplay(
   );
 
   return { created, publicationUpdated, ...stats };
+}
+
+function restoreProvenBundledRevision(
+  ctx: PullContext,
+  slug: string,
+  revisionId: string,
+) {
+  const revision = ctx.revisions.getById(revisionId);
+  const spec = BROAD_ARROW_STREAM_DISPLAY_SPECS.find((entry) => entry.slug === slug);
+  if (!revision || !spec) {
+    return null;
+  }
+  const importKey =
+    typeof revision.metadata?.importKey === "string" ? revision.metadata.importKey : null;
+  const bundledHtml = readBundledDisplaySourceFromReference(spec.bundledRelativePath);
+  const runtimeHtml =
+    spec.graphicType === "stream-bid"
+      ? transformStreamBidHtmlForServing(bundledHtml)
+      : spec.graphicType === "led-display-quail"
+        ? transformLedDisplayQuailHtmlForServing(bundledHtml)
+        : transformStreamTickerHtmlForServing(bundledHtml);
+  return buildProvenBundledRevisionBundle({
+    slug,
+    revisionId,
+    importKey,
+    sourceHash: revision.sourceHash,
+    bundledHtml,
+    runtimeHtml,
+  });
+}
+
+async function recoverPublishedRevisionAfterPull(
+  ctx: PullContext,
+  projectId: string,
+  cloudDisplay: CloudDisplayRow,
+): Promise<void> {
+  const displayId = cloudDisplay.id;
+  const code = ctx.displayCode.getByDisplayId(displayId);
+  const display = ctx.displays.getById(displayId);
+  const cloudPublishedRevisionId =
+    cloudDisplay.active_revision_id ?? cloudDisplay.online_published_revision_id ?? null;
+  const result = await recoverFreshInstallPublishedRevision({
+    projectId,
+    displayId,
+    slug: cloudDisplay.slug,
+    localPublishedRevisionId: code?.publishedRevisionId ?? null,
+    cloudPublishedRevisionId,
+    knownCloudRevision: null,
+    fetchRevisionById: (revisionId) => ctx.cloudClient.fetchRevisionById(revisionId),
+    revisions: ctx.revisions,
+    displayCode: ctx.displayCode,
+    storage: ctx.storage,
+    actorUserId: ctx.auth.getAuthenticatedUser()?.userId ?? "cloud-sync",
+    pendingLocalActiveRevisionPush: hasPendingActiveRevisionPush(ctx.queue, displayId),
+    localDisplaySyncPending:
+      display?.syncStatus === "pending" || display?.syncStatus === "failed",
+    restoreProvenBundledRevision: (revisionId) =>
+      restoreProvenBundledRevision(ctx, cloudDisplay.slug, revisionId),
+  });
+  logPull(
+    ctx.paths,
+    [
+      "pull.published.recovery",
+      `displayId=${displayId}`,
+      `slug=${cloudDisplay.slug}`,
+      `stage=${result.status}`,
+      `publishedRevisionId=${result.publishedRevisionId ?? "none"}`,
+    ].join(" "),
+  );
 }
 
 export async function pullRemoteDisplayHistory(
@@ -458,6 +541,7 @@ export async function pullRemoteDisplayHistory(
       projects: ctx.projects,
       displays: ctx.displays,
       displayCode: ctx.displayCode,
+      storage: ctx.storage,
       projectId,
     });
     if (!identity.ok) {

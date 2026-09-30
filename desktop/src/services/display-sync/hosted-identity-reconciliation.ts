@@ -3,6 +3,7 @@ import type { AuthenticatedCloudCoordinator } from "../authenticated-cloud-coord
 import type { DisplaysRepository } from "../../repositories/displays-repository";
 import type { ProjectDisplayCodeRepository } from "../../repositories/project-display-code-repository";
 import type { ProjectsRepository } from "../../repositories/projects-repository";
+import type { ProjectCodeStorageService } from "../project-code-storage-service";
 
 export type HostedIdentityReconciliationResult =
   | { ok: true; projectId: string; realignedProjectId: boolean; realignedDisplayIds: string[] }
@@ -73,6 +74,7 @@ export async function reconcileHostedProjectAndDisplayIdentity(input: {
   projects: ProjectsRepository;
   displays: DisplaysRepository;
   displayCode: ProjectDisplayCodeRepository;
+  storage?: ProjectCodeStorageService;
   projectId: string;
   displayIds?: string[];
 }): Promise<HostedIdentityReconciliationResult> {
@@ -108,6 +110,7 @@ export async function reconcileHostedProjectAndDisplayIdentity(input: {
 
     if (hostedProject.id !== localProject.id) {
       input.projects.realignProjectId(localProject.id, hostedProject.id);
+      input.storage?.relocateProjectCodeRoot(localProject.id, hostedProject.id);
       resolvedProjectId = hostedProject.id;
       realignedProjectId = true;
 
@@ -150,8 +153,10 @@ export async function reconcileHostedProjectAndDisplayIdentity(input: {
     const slug = code?.slug ?? display.displayKey;
     const hostedDisplayId = hostedBySlug.get(slug);
     if (hostedDisplayId && hostedDisplayId !== display.id) {
-      input.displays.realignDisplayId(display.id, hostedDisplayId);
-      realignedDisplayIds.push(`${slug}:${display.id}->${hostedDisplayId}`);
+      const previousDisplayId = display.id;
+      input.displays.realignDisplayId(previousDisplayId, hostedDisplayId);
+      input.storage?.relocateDisplayTree(resolvedProjectId, previousDisplayId, hostedDisplayId);
+      realignedDisplayIds.push(`${slug}:${previousDisplayId}->${hostedDisplayId}`);
     }
   }
 
