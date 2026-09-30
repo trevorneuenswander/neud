@@ -915,6 +915,7 @@ export class DisplaySyncService {
         projects: this.projects,
         displays: this.displays,
         displayCode: this.displayCode,
+        storage: this.storage,
         projectId,
       });
       if (!identity.ok) {
@@ -998,6 +999,38 @@ export class DisplaySyncService {
     this.settings.set(DISPLAY_SYNC_LAST_PUSH_KEY, syncedAt);
   }
 
+  private async resolvePushableActiveRevisionId(
+    displayId: string,
+    code: { publishedRevisionId: string | null } | null,
+  ): Promise<string | null> {
+    const localRevisionId = code?.publishedRevisionId ?? null;
+    const remote = await this.cloudClient.fetchDisplayById(displayId);
+    const remoteRevisionId = remote?.active_revision_id ?? null;
+    if (!localRevisionId) {
+      return remoteRevisionId;
+    }
+
+    const localReady = await this.cloudClient.revisionExists(localRevisionId);
+    if (!localReady) {
+      return remoteRevisionId;
+    }
+
+    if (!remoteRevisionId || remoteRevisionId === localRevisionId) {
+      return localRevisionId;
+    }
+
+    const localRevision = this.revisions.getById(localRevisionId);
+    const metadata = localRevision?.metadata;
+    const localIsSeed =
+      metadata?.seeded === true ||
+      (typeof metadata?.importKey === "string" && metadata.importKey.trim().length > 0);
+    if (localIsSeed) {
+      return remoteRevisionId;
+    }
+
+    return localRevisionId;
+  }
+
   private async pushDisplayBaseMetadata(input: {
     reason: string;
     pendingDisplays: LocalDisplay[];
@@ -1010,12 +1043,14 @@ export class DisplaySyncService {
         continue;
       }
       const code = this.displayCode.getByDisplayId(display.id);
+      const activeRevisionId = await this.resolvePushableActiveRevisionId(display.id, code);
       const baseRow = toCloudDisplayRow({
         display,
         code,
         instanceId: this.instanceId,
         userId: input.userId,
         publicationPhase: "base",
+        activeRevisionId,
       });
       const upsertResult = await this.cloudClient.upsertDisplay(baseRow);
       if (upsertResult.errors.length > 0) {
@@ -1174,6 +1209,7 @@ export class DisplaySyncService {
       const onlineViewerEnabled =
         Boolean(code?.onlineViewerEnabled) && display.enabled;
       const targetRevisionId = code?.publishedRevisionId ?? null;
+      const activeRevisionId = await this.resolvePushableActiveRevisionId(display.id, code);
 
       if (targetRevisionId) {
         appendDisplaySyncLog(
@@ -1207,6 +1243,7 @@ export class DisplaySyncService {
         publicationPhase: "publish",
         publishedRevisionId: onlineViewerEnabled ? targetRevisionId : null,
         publishedAt: onlineViewerEnabled && targetRevisionId ? new Date().toISOString() : null,
+        activeRevisionId,
       });
 
       const upsertResult = await this.cloudClient.upsertDisplay(publishRow);

@@ -401,6 +401,8 @@ export class LocalDataService {
   private engineManager: EngineManager | null = null;
   private accessAuthorization: AccessAuthorizationService | null = null;
   private displayCodeRepo: ProjectDisplayCodeRepository | null = null;
+  private projectCodeStorage: import("./project-code-storage-service").ProjectCodeStorageService | null =
+    null;
   private accessManagement: import("./access-management-service").AccessManagementService | null =
     null;
   private supabaseIdentity: SupabaseIdentityService | null = null;
@@ -1362,6 +1364,10 @@ export class LocalDataService {
     this.displayCodeRepo = repository;
   }
 
+  setProjectCodeStorage(storage: import("./project-code-storage-service").ProjectCodeStorageService) {
+    this.projectCodeStorage = storage;
+  }
+
   async ensureHostedProjectRegisteredForSync(projectId: string): Promise<{
     ok: boolean;
     projectId: string;
@@ -1390,6 +1396,7 @@ export class LocalDataService {
       projects: this.projects,
       displays: this.displays,
       displayCode: this.displayCodeRepo,
+      storage: this.projectCodeStorage ?? undefined,
       projectId,
     });
 

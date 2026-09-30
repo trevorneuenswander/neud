@@ -140,6 +140,19 @@ export class CloudDisplayClient {
     return Boolean(data);
   }
 
+  async fetchRevisionById(revisionId: string): Promise<CloudDisplayRevisionRow | null> {
+    const supabase = await this.client();
+    const { data, error } = await supabase
+      .from("display_revisions")
+      .select("*")
+      .eq("id", revisionId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return (data as CloudDisplayRevisionRow | null) ?? null;
+  }
+
   async fetchDisplaysByProject(projectId: string): Promise<
     Array<{
       id: string;
@@ -309,6 +322,7 @@ export class CloudDisplayClient {
     id: string;
     enabled: boolean;
     online_viewer_enabled: boolean;
+    active_revision_id: string | null;
     online_published_revision_id: string | null;
     online_published_at: string | null;
     online_publish_error: string | null;
@@ -318,7 +332,7 @@ export class CloudDisplayClient {
     const { data, error } = await supabase
       .from("displays")
       .select(
-        "id, enabled, online_viewer_enabled, online_published_revision_id, online_published_at, online_publish_error, sync_version",
+        "id, enabled, online_viewer_enabled, active_revision_id, online_published_revision_id, online_published_at, online_publish_error, sync_version",
       )
       .eq("id", displayId)
       .maybeSingle();
@@ -329,6 +343,7 @@ export class CloudDisplayClient {
       id: string;
       enabled: boolean;
       online_viewer_enabled: boolean;
+      active_revision_id: string | null;
       online_published_revision_id: string | null;
       online_published_at: string | null;
       online_publish_error: string | null;

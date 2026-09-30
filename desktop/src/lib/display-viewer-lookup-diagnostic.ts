@@ -3,7 +3,12 @@ export type DisplayViewerLookupStage =
   | "display_code_not_found"
   | "display_row_not_found"
   | "display_deleted"
+  | "published_pointer_missing"
+  | "published_revision_metadata_missing"
+  | "published_revision_content_missing"
+  | "published_content_hydration_failed"
   | "published_content_missing"
+  | "published_content_hydrated"
   | "ok";
 
 export type DisplayViewerLookupDiagnostic = {
@@ -55,13 +60,15 @@ type LookupInput = {
     readDisplayPublished(
       projectId: string,
       displayId: string,
-    ): { html: string } | null;
+    ): { html: string; metadata?: Record<string, unknown> } | null;
     readDisplayRevision(
       projectId: string,
       displayId: string,
       revisionId: string,
     ): { html: string } | null;
   };
+  revisionMetadataExists?: (revisionId: string) => boolean;
+  hydrationFailed?: boolean;
 };
 
 export function buildDisplayViewerLookupDiagnostic(input: LookupInput): DisplayViewerLookupDiagnostic {
@@ -153,25 +160,36 @@ export function buildDisplayViewerLookupDiagnostic(input: LookupInput): DisplayV
   const hasPublishedBundle = Boolean(published?.html?.trim());
   const hasRevisionBundle = Boolean(revision?.html?.trim());
   const hasDraftHtml = Boolean(code.draftHtml?.trim());
+  const publishedFacts = {
+    ...base,
+    displayId: code.displayId,
+    displayProjectId: display.projectId,
+    displaySlug: code.slug,
+    displayKey: display.displayKey,
+    publishedRevisionId: code.publishedRevisionId,
+    hasPublishedBundle,
+    hasRevisionBundle,
+    hasDraftHtml,
+  };
 
   if (!hasPublishedBundle && !(input.previewMode && (hasRevisionBundle || hasDraftHtml))) {
-    return {
-      ...base,
-      stage: "published_content_missing",
-      displayId: code.displayId,
-      displayProjectId: display.projectId,
-      displaySlug: code.slug,
-      displayKey: display.displayKey,
-      publishedRevisionId: code.publishedRevisionId,
-      hasPublishedBundle,
-      hasRevisionBundle,
-      hasDraftHtml,
-    };
+    let stage: DisplayViewerLookupStage = "published_content_missing";
+    if (!code.publishedRevisionId) {
+      stage = "published_pointer_missing";
+    } else if (input.hydrationFailed) {
+      stage = "published_content_hydration_failed";
+    } else if (input.revisionMetadataExists && !input.revisionMetadataExists(code.publishedRevisionId)) {
+      stage = "published_revision_metadata_missing";
+    } else if (!hasRevisionBundle) {
+      stage = "published_revision_content_missing";
+    }
+    return { ...publishedFacts, stage };
   }
 
+  const hydratedFromRevision = published?.metadata?.hydratedFromRevision === true;
   return {
-    ...base,
-    stage: "ok",
+    ...publishedFacts,
+    stage: hydratedFromRevision ? "published_content_hydrated" : "ok",
     displayId: code.displayId,
     displayProjectId: display.projectId,
     displaySlug: code.slug,

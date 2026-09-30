@@ -77,5 +77,8 @@ test("missing published bundle is reported explicitly", () => {
     },
   });
 
-  assert.equal(diagnostic.stage, "published_content_missing");
+  assert.equal(diagnostic.stage, "published_pointer_missing");
+  assert.equal(diagnostic.publishedRevisionId, null);
+  assert.equal(diagnostic.hasPublishedBundle, false);
+  assert.equal(diagnostic.hasRevisionBundle, false);
 });
