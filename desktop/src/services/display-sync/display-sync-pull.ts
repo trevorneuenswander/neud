@@ -277,6 +277,12 @@ async function reconcileCloudDisplay(
     });
     created = true;
   } else {
+    if (!ctx.queue.hasPendingOperation(displayId, "display.update")) {
+      ctx.displays.applyRemoteConfiguration(displayId, {
+        enabled: cloudDisplay.enabled,
+        sortOrder: cloudDisplay.sort_order ?? null,
+      });
+    }
     ctx.displayCode.upsert({
       displayId,
       projectId,

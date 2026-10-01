@@ -72,6 +72,12 @@ export function resolveSessionFacingEngineLastError(
   ) {
     return null;
   }
+  if (
+    (actualState === "running" || actualState === "starting") &&
+    status?.healthState !== "error"
+  ) {
+    return null;
+  }
   return message;
 }
 

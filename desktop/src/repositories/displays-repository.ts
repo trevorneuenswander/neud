@@ -340,6 +340,25 @@ export class DisplaysRepository {
     };
   }
 
+  applyRemoteConfiguration(
+    displayId: string,
+    input: { enabled: boolean; sortOrder: number | null },
+  ): LocalDisplay | null {
+    const existing = this.getById(displayId);
+    if (!existing) {
+      return null;
+    }
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE displays
+         SET enabled = ?, sort_order = ?, updated_at = ?, sync_status = 'synced', sync_error = NULL
+         WHERE id = ?`,
+      )
+      .run(input.enabled ? 1 : 0, input.sortOrder, now, displayId);
+    return this.getById(displayId);
+  }
+
   setEnabled(displayId: string, enabled: boolean): LocalDisplay | null {
     const existing = this.getById(displayId);
     if (!existing) {

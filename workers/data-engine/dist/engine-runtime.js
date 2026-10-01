@@ -756,6 +756,20 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
 
           if (recovered) {
             adapter = null;
+            await writeLog(
+              engineId,
+              "warn",
+              "browser.launch.recovered",
+              failureMessage,
+              { step, priorAttempt: true },
+            ).catch(() => {});
+            await updateEngineStatus(engineId, {
+              actual_state: desiredState === "stopped" ? "stopped" : "starting",
+              last_error: null,
+              health_state: "warning",
+            }).catch(() => {});
+            await finalizeRunOnceCommand(null);
+            continue;
           }
 
           actualState = resolveActualStateAfterFailure(desiredState, recovered);

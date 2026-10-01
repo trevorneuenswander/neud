@@ -34,21 +34,21 @@ export function ActivityTable({
 
   return (
     <div className="overflow-x-auto rounded-md border border-border">
-      <table className="min-w-full divide-y divide-border text-sm">
+      <table className="w-full min-w-[52rem] table-fixed divide-y divide-border text-sm">
         <thead className="bg-surface-raised">
           <tr>
             {showProjectName ? (
-              <th scope="col" className="px-4 py-3 text-left font-medium text-muted">
+              <th scope="col" className="w-56 min-w-48 px-4 py-3 text-left font-medium text-muted">
                 Project Name
               </th>
             ) : null}
-            <th scope="col" className="px-4 py-3 text-left font-medium text-muted">
+            <th scope="col" className="w-52 min-w-40 px-4 py-3 text-left font-medium text-muted">
               User
             </th>
-            <th scope="col" className="px-4 py-3 text-left font-medium text-muted">
+            <th scope="col" className="min-w-0 px-4 py-3 text-left font-medium text-muted">
               Description
             </th>
-            <th scope="col" className="px-4 py-3 text-left font-medium text-muted">
+            <th scope="col" className="w-56 min-w-48 whitespace-nowrap px-4 py-3 text-left font-medium text-muted">
               Date
             </th>
           </tr>
@@ -70,7 +70,7 @@ export function ActivityTable({
             return (
               <tr key={event.id} style={{ minHeight: ACTIVITY_ROW_MIN_HEIGHT_PX }}>
                 {showProjectName ? (
-                  <td className="px-4 py-3 align-top">
+                  <td className="w-56 min-w-48 px-4 py-3 align-top">
                     <ActivityProjectLink
                       projectSlug={event.projectSlug}
                       projectName={event.projectName ?? "Project unavailable"}
@@ -78,7 +78,7 @@ export function ActivityTable({
                     />
                   </td>
                 ) : null}
-                <td className="px-4 py-3 align-top">
+                <td className="w-52 min-w-40 px-4 py-3 align-top">
                   <ActivityUserLink
                     actorId={event.actorId}
                     actorName={userLabel}
@@ -89,7 +89,7 @@ export function ActivityTable({
                 <td className={`activity-message px-4 py-3 align-top ${messageClassName}`}>
                   {event.displayDescription ?? event.message}
                 </td>
-                <td className="px-4 py-3 align-top text-muted">
+                <td className="w-56 min-w-48 whitespace-nowrap px-4 py-3 align-top text-muted">
                   <time dateTime={event.createdAt} title={formatActivityTableDateTitle(event.createdAt)}>
                     {formatActivityTableDate(event.createdAt)}
                   </time>

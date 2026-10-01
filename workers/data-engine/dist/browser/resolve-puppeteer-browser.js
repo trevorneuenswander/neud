@@ -36,6 +36,36 @@ export function isUsableExecutable(candidate) {
   return isUsableChromeExecutableShared(candidate);
 }
 
+/** macOS Chrome fails dlopen when the executable exists but Frameworks/ is missing. */
+export function isCompleteMacChromeApp(executablePath) {
+  if (process.platform !== "darwin" || typeof executablePath !== "string" || !executablePath) {
+    return true;
+  }
+  const marker = `${path.sep}Contents${path.sep}MacOS${path.sep}`;
+  if (!executablePath.includes(marker)) {
+    return true;
+  }
+  const contentsDir = path.resolve(path.dirname(executablePath), "..");
+  return fs.existsSync(path.join(contentsDir, "Frameworks"));
+}
+
+function noteIncompleteMacChrome(diagnostics, executablePath) {
+  diagnostics.skippedIncompleteMacChrome = sanitizeDiagnosticPath(executablePath);
+  diagnostics.firstBrowserFailureStage =
+    diagnostics.firstBrowserFailureStage ?? "incomplete_mac_chrome_bundle";
+}
+
+function canLaunchChrome(candidate, diagnostics) {
+  if (!isUsableExecutable(candidate)) {
+    return false;
+  }
+  if (!isCompleteMacChromeApp(candidate)) {
+    noteIncompleteMacChrome(diagnostics, candidate);
+    return false;
+  }
+  return true;
+}
+
 export function getPuppeteerApi(puppeteerModule) {
   return puppeteerModule?.default ?? puppeteerModule;
 }
@@ -504,7 +534,7 @@ export async function resolvePuppeteerBrowser(options = {}) {
     diagnostics.puppeteerExecutablePathResult = cleanResolution;
     diagnostics.puppeteerExecutableExists = isUsableExecutable(cleanResolution);
 
-    if (isUsableExecutable(cleanResolution)) {
+    if (canLaunchChrome(cleanResolution, diagnostics)) {
       diagnostics.resolvedBrowserSource = "puppeteer-managed";
       diagnostics.browserSource = "puppeteer-managed";
       diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(cleanResolution);
@@ -526,7 +556,7 @@ export async function resolvePuppeteerBrowser(options = {}) {
     diagnostics.puppeteerExecutablePathResult = envResolution;
     diagnostics.puppeteerExecutableExists = isUsableExecutable(envResolution);
 
-    if (isUsableExecutable(envResolution)) {
+    if (canLaunchChrome(envResolution, diagnostics)) {
       diagnostics.resolvedBrowserSource = "puppeteer-managed";
       diagnostics.browserSource = "puppeteer-managed";
       diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(envResolution);
@@ -554,7 +584,10 @@ export async function resolvePuppeteerBrowser(options = {}) {
   ].filter(Boolean);
 
   const installedBrowser = await findInstalledPuppeteerBrowser(cacheDirs);
-  if (installedBrowser) {
+  if (installedBrowser && !canLaunchChrome(installedBrowser.executablePath, diagnostics)) {
+    diagnostics.firstBrowserFailureStage =
+      diagnostics.firstBrowserFailureStage ?? "incomplete_mac_chrome_bundle";
+  } else if (installedBrowser) {
     diagnostics.resolvedBrowserSource = "puppeteer-browsers-cache";
     diagnostics.browserSource = "puppeteer-browsers-cache";
     diagnostics.resolvedExecutablePath = sanitizeDiagnosticPath(installedBrowser.executablePath);

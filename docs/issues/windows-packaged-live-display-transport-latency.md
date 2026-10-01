@@ -1,11 +1,13 @@
 # Windows packaged live display transport latency
 
-**Status:** Deferred (v0.2.2) — not a release blocker  
-**Tracking:** Engineering issue for post–v0.2.2 optimization
+**Status:** Deferred — machine/environment-specific, not a universal Windows defect
+**Tracking:** Keep diagnostics. Do not treat this as a general Windows transport bug unless it is reproduced again.
 
 ## Summary
 
-On **packaged Windows**, live Broad Arrow graphics can update **perceptibly slower** than on **macOS**, even when Faye live data is healthy.
+Latency was observed on one packaged Windows PC. It was **not reproduced** on a clean Windows laptop, where Faye and display updates were essentially immediate. Current evidence points to that original machine or environment, not to a defect in every Windows install.
+
+On that original PC, live Broad Arrow graphics could update **perceptibly slower** than on **macOS**, even when Faye live data was healthy.
 
 ## Observed behavior
 

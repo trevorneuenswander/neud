@@ -635,9 +635,12 @@ export function wrapStandaloneDisplayHtml(input: {
     pollIntervalMs: input.pollIntervalMs,
   });
 
-  const outputStyle = input.outputMode
-    ? `<style>html,body{margin:0;padding:0;width:${input.viewportWidth ?? 1920}px;height:${input.viewportHeight ?? 1080}px;overflow:hidden;background:transparent!important;background-color:transparent!important;}</style>`
-    : "";
+  const outputSlug = String(input.displayInfo.slug ?? input.displayInfo.displayKey ?? "");
+  const outputPaintsOwnBackground = outputSlug === "stream-bid-display";
+  const outputStyle =
+    input.outputMode && !outputPaintsOwnBackground
+      ? `<style>html,body{margin:0;padding:0;width:${input.viewportWidth ?? 1920}px;height:${input.viewportHeight ?? 1080}px;overflow:hidden;background:transparent!important;background-color:transparent!important;}</style>`
+      : "";
 
   const headInjection = [
     outputStyle,

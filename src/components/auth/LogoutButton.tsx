@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { forceLocalSignOut } from "@/lib/auth/force-local-sign-out";
+import { requestDesktopSignOut } from "@/lib/auth/force-local-sign-out";
 import { SidebarSignOutIcon } from "@/lib/portal/sidebar-nav-icons";
 import { sidebarPrimaryNavRowClass } from "@/lib/portal/sidebar-nav-item-classes";
 
@@ -15,7 +15,7 @@ export function LogoutButton({ iconOnly = false }: LogoutButtonProps) {
   function handleClick() {
     console.info("[logout] Sign Out clicked");
     setPending(true);
-    void forceLocalSignOut("sidebar-sign-out").finally(() => {
+    void requestDesktopSignOut("sidebar-sign-out").finally(() => {
       setPending(false);
     });
   }

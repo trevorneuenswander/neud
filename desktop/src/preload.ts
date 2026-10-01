@@ -118,6 +118,8 @@ const neudDesktop = {
   engines: {
     getLocalStatus: (engineId: string) =>
       ipcRenderer.invoke("neud:engines:getLocalStatus", engineId),
+    isSessionActive: () =>
+      ipcRenderer.invoke("neud:engines:isSessionActive") as Promise<boolean>,
     start: (payload: { engineId: string; requestedBy?: string | null }) =>
       ipcRenderer.invoke("neud:engines:start", payload),
     stop: (payload: { engineId: string; requestedBy?: string | null }) =>

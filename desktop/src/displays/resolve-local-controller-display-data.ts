@@ -230,6 +230,8 @@ export function resolveLocalControllerDisplayData(input: {
         ? input.submitted.auctionDisplay.biddingPrice
         : undefined,
   });
+  // Local Controller is authoritative for this path. A cleared manual bid is null/blank,
+  // shown as the no-bid label, and is not replaced by the scraped bid.
   const biddingPrice = normalizeDisplayBid(
     submittedLot?.currentBidLabel ??
       submittedLot?.currentBid ??

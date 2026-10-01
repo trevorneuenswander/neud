@@ -99,6 +99,29 @@ export class ProjectTeamAssignmentsRepository {
     return this.listForProject(input.projectId).find((entry) => entry.id === id)!;
   }
 
+  replaceTeamId(fromTeamId: string, toTeamId: string): void {
+    if (fromTeamId === toTeamId) {
+      return;
+    }
+    const rows = this.db
+      .prepare("SELECT id, project_id FROM project_team_assignments WHERE team_id = ?")
+      .all(fromTeamId) as Array<{ id: string; project_id: string }>;
+    for (const row of rows) {
+      const already = this.db
+        .prepare(
+          "SELECT id FROM project_team_assignments WHERE project_id = ? AND team_id = ?",
+        )
+        .get(row.project_id, toTeamId);
+      if (already) {
+        this.db.prepare("DELETE FROM project_team_assignments WHERE id = ?").run(row.id);
+      } else {
+        this.db
+          .prepare("UPDATE project_team_assignments SET team_id = ? WHERE id = ?")
+          .run(toTeamId, row.id);
+      }
+    }
+  }
+
   remove(projectId: string, teamId: string): void {
     this.db
       .prepare("DELETE FROM project_team_assignments WHERE project_id = ? AND team_id = ?")

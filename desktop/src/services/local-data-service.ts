@@ -4082,6 +4082,16 @@ export class LocalDataService {
     return this.displayDataRevision;
   }
 
+  listLocalEngineIds(): string[] {
+    const ids: string[] = [];
+    for (const project of this.projects.list()) {
+      for (const engine of this.dataSources.listByProject(project.id)) {
+        ids.push(engine.id);
+      }
+    }
+    return ids;
+  }
+
   isAnyEngineSessionActive(): boolean {
     for (const project of this.projects.list()) {
       for (const engine of this.dataSources.listByProject(project.id)) {

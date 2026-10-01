@@ -1618,6 +1618,11 @@ async function createMainWindow() {
 
   forceSignOutFromMain = async () => {
     console.info("[logout] Main process force sign-out started");
+    if (engineManager) {
+      console.info("[logout] Stopping local engines before session teardown");
+      await engineManager.stopAllForSignOut();
+      console.info("[logout] Local engines stopped");
+    }
     appSettingsRepository.set(AUTH_EXPLICITLY_SIGNED_OUT_KEY, true);
     authLicenseManager.clear();
     supabaseUserSessionService.clearSession();

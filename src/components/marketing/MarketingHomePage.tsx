@@ -50,7 +50,7 @@ export function MarketingHomePage() {
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-foreground">Cross-platform Alpha</h2>
           <p className="mt-2 text-sm text-muted">
-            NEUD v0.2.3 is available for Windows x64 and Apple Silicon Macs. Download the
+            NEUD v0.2.4 is available for Windows x64 and Apple Silicon Macs. Download the
             installer for your platform from the download page.
           </p>
         </Card>
