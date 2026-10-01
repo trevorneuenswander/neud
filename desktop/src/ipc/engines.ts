@@ -28,6 +28,10 @@ export function registerEnginesIpc(engineManager: EngineManager) {
     return engineManager.getLocalStatus(assertEngineId(String(engineId)));
   });
 
+  registerIpcHandler("neud:engines:isSessionActive", () => {
+    return engineManager.isScraperSessionActive();
+  });
+
   registerIpcHandler("neud:engines:start", (_event, payload: unknown) => {
     const { engineId, requestedBy } = parseControlPayload(payload);
     return engineManager.start(engineId, requestedBy);

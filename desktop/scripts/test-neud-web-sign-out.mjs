@@ -23,7 +23,7 @@ test("web sign-out awaits Supabase signOut before redirecting", () => {
 test("logout button disables while sign-out is in progress", () => {
   const button = read("src/components/auth/LogoutButton.tsx");
   assert.match(button, /disabled=\{pending\}/);
-  assert.match(button, /forceLocalSignOut\("sidebar-sign-out"\)/);
+  assert.match(button, /requestDesktopSignOut\("sidebar-sign-out"\)/);
 });
 
 test("hosted sign-out redirects after session cleanup on web fallback", () => {

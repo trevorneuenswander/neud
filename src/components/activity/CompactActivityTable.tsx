@@ -152,23 +152,23 @@ export function CompactActivityTable({
           {displayEvents.length === 0 ? (
             <EmptyState title={emptyTitle} />
           ) : (
-            <table className="min-w-full divide-y divide-border text-sm">
+            <table className="w-full min-w-[52rem] table-fixed divide-y divide-border text-sm">
               <thead className="sticky top-0 z-10 bg-surface-raised">
                 <tr>
                   {showProjectColumn ? (
-                    <th scope="col" className="px-3 py-2 text-left font-medium text-muted">
+                    <th scope="col" className="w-56 min-w-48 px-3 py-2 text-left font-medium text-muted">
                       Project
                     </th>
                   ) : null}
-                  <th scope="col" className="px-3 py-2 text-left font-medium text-muted">
+                  <th scope="col" className="w-52 min-w-40 px-3 py-2 text-left font-medium text-muted">
                     User
                   </th>
-                  <th scope="col" className="px-3 py-2 text-left font-medium text-muted">
+                  <th scope="col" className="min-w-0 px-3 py-2 text-left font-medium text-muted">
                     Description
                   </th>
                   <th
                     scope="col"
-                    className="w-40 shrink-0 whitespace-nowrap px-3 py-2 text-left font-medium text-muted"
+                    className="w-56 min-w-48 shrink-0 whitespace-nowrap px-3 py-2 text-left font-medium text-muted"
                   >
                     Date
                   </th>
@@ -195,7 +195,7 @@ export function CompactActivityTable({
                       style={{ minHeight: ACTIVITY_ROW_MIN_HEIGHT_PX }}
                     >
                       {showProjectColumn ? (
-                        <td className="px-3 py-2 align-top">
+                        <td className="w-56 min-w-48 px-3 py-2 align-top">
                           <ActivityProjectLink
                             projectSlug={event.projectSlug}
                             projectName={event.projectName ?? "Project unavailable"}
@@ -203,7 +203,7 @@ export function CompactActivityTable({
                           />
                         </td>
                       ) : null}
-                      <td className="px-3 py-2 align-top">
+                      <td className="w-52 min-w-40 px-3 py-2 align-top">
                         <ActivityUserLink
                           actorId={event.actorId}
                           actorName={userLabel}
@@ -214,7 +214,7 @@ export function CompactActivityTable({
                       <td className={`activity-message px-3 py-2 align-top ${messageClassName}`}>
                         {description}
                       </td>
-                      <td className="w-40 shrink-0 whitespace-nowrap px-3 py-2 align-top text-muted">
+                      <td className="w-56 min-w-48 shrink-0 whitespace-nowrap px-3 py-2 align-top text-muted">
                         <time
                           dateTime={event.createdAt}
                           title={formatActivityTableDateTitle(event.createdAt)}

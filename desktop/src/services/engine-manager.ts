@@ -113,6 +113,7 @@ export type EngineStopOptions = {
 
 export class EngineManager {
   private engines = new Map<string, ManagedEngineProcess>();
+  private signOutShutdown = false;
   private logSubscribers = new Map<number, Set<string>>();
   private executionLogSubscribers = new Map<number, Set<string>>();
   private engineStatusSubscribers = new Map<number, Set<string>>();
@@ -366,6 +367,13 @@ export class EngineManager {
     engineId: string,
     _requestedBy?: string | null,
   ): Promise<EngineControlResult> {
+    if (this.signOutShutdown) {
+      return {
+        ok: false,
+        code: "signed-out",
+        message: "Sign-out is stopping local engines.",
+      };
+    }
     const id = assertEngineId(engineId);
     const correlationId = randomUUID();
     logWorkerLifecycleTimeline("start-button-pressed", {
@@ -428,6 +436,18 @@ export class EngineManager {
 
       const runId = randomUUID();
       const managed = await this.spawnWorker(id, correlationId, runId);
+      if (this.signOutShutdown) {
+        await this.stop(id, "sign-out", {
+          reason: "user-signed-out",
+          gracefulMs: 500,
+          forceMs: 1000,
+        });
+        return {
+          ok: false,
+          code: "signed-out",
+          message: "Sign-out stopped the engine before it became active.",
+        };
+      }
       logWorkerLifecycleTimeline("worker-spawned", {
         engineId: id,
         correlationId,
@@ -545,7 +565,9 @@ export class EngineManager {
       id,
       stopReason === "application-exit"
         ? "Stop requested for application exit"
-        : "Stop requested",
+        : stopReason === "user-signed-out"
+          ? "Scraper stopped — user signed out"
+          : "Stop requested",
     );
 
     try {
@@ -784,6 +806,25 @@ export class EngineManager {
       gracefulMs: STOP_GRACEFUL_MS,
       forceMs: STOP_FORCE_MS,
     });
+  }
+
+  async stopAllForSignOut() {
+    this.signOutShutdown = true;
+    const ids = new Set<string>([
+      ...this.engines.keys(),
+      ...this.data.listLocalEngineIds(),
+    ]);
+    try {
+      for (const engineId of ids) {
+        await this.stop(engineId, "sign-out", {
+          reason: "user-signed-out",
+          gracefulMs: 2000,
+          forceMs: 1500,
+        });
+      }
+    } finally {
+      this.signOutShutdown = false;
+    }
   }
 
   clearSessionLogs(engineId: string) {

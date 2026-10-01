@@ -20,7 +20,7 @@ async function main() {
   }
 
   // Next/TSC does not emit this module to dist; evaluate via ts import is not available in CI scripts.
-  // Release managers: paste from docs/releases/v0.2.3-github-release-notes.md or mirror NEUD_RELEASES highlights in GitHub UI.
+  // Release managers: paste from docs/releases/v${version}-github-release-notes.md or mirror NEUD_RELEASES highlights in GitHub UI.
   const catalogSource = fs.readFileSync(modulePath, "utf8");
   const version =
     versionArg ??
@@ -32,8 +32,11 @@ async function main() {
     process.exit(1);
   }
 
-  const notesPath = path.join(repoRoot, `docs/release-notes-v${version}.md`);
-  if (fs.existsSync(notesPath)) {
+  const notesPath = [
+    path.join(repoRoot, "docs", "releases", `v${version}-github-release-notes.md`),
+    path.join(repoRoot, `docs/release-notes-v${version}.md`),
+  ].find((candidate) => fs.existsSync(candidate));
+  if (notesPath) {
     process.stdout.write(fs.readFileSync(notesPath, "utf8"));
     return;
   }

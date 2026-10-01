@@ -2,7 +2,6 @@ import { getMacDmgDownloadUrl } from "@/lib/downloads/mac-installer";
 import {
   getGitHubReleasePageUrl,
   getVersionedWindowsInstallerFilename,
-  getWindowsInstallerDownloadUrl,
   NEUD_GITHUB_RELEASE_OWNER,
   NEUD_GITHUB_RELEASE_REPO,
 } from "@/lib/downloads/windows-installer";
@@ -44,6 +43,17 @@ export function getVersionedWindowsDownloadUrl(version: string): string {
   return `https://github.com/${NEUD_GITHUB_RELEASE_OWNER}/${NEUD_GITHUB_RELEASE_REPO}/releases/download/v${version}/${filename}`;
 }
 
+const V024_HIGHLIGHTS = [
+  "Stream Bid no longer restores the previous lot photo after a lot change",
+  "macOS recovers when a cached Chrome installation is incomplete",
+  "Manual Bid can be cleared from the Local Controller and live displays",
+  "Signing out warns when a scraper is running and stops active data engines before ending the session",
+  "Project team names appear correctly on user Associated Projects",
+  "Display enabled state and display order follow the project across NEUD installations",
+  "Stream Bid Local URL matches Preview, Fullscreen, and pinned output",
+  "Fresh installations restore published display output from cloud sync",
+] as const;
+
 const V023_HIGHLIGHTS = [
   "Fixed published displays failing to load after installing NEUD on a new computer",
   "Published display revisions now follow project and display identity changes during cloud sync",
@@ -67,10 +77,42 @@ const V022_HIGHLIGHTS = [
 /** Authoritative NEUD desktop release catalog for neud.io and release-note parity. */
 export const NEUD_RELEASES: NeudReleaseEntry[] = [
   {
-    version: "0.2.3",
-    releaseDate: "2026-09-30",
+    version: "0.2.4",
+    releaseDate: "2026-10-01",
     status: "current",
     current: true,
+    summary:
+      "Reliability and workflow update for live auctions, cross-device display settings, and controller polish on Windows and Apple Silicon Macs.",
+    highlights: [...V024_HIGHLIGHTS],
+    platforms: {
+      windows: {
+        supported: true,
+        architecture: "x64",
+        downloadUrl: getVersionedWindowsDownloadUrl("0.2.4"),
+        artifactLabel: getVersionedWindowsInstallerFilename("0.2.4"),
+      },
+      macos: {
+        supported: true,
+        architecture: "Apple Silicon (arm64)",
+        downloadUrl: getMacDmgDownloadUrl("0.2.4"),
+        artifactLabel: "NEUD-0.2.4-arm64.dmg",
+      },
+    },
+    githubReleaseUrl: getGitHubReleaseTagUrl("0.2.4"),
+    knownLimitations: [
+      "Machine/environment-specific latency was observed on one Windows system and was not reproduced on a clean Windows laptop. Diagnostics remain available.",
+      "Alpha software; Windows builds may show SmartScreen warnings when unsigned.",
+      "macOS builds from CI are unsigned and not notarized until Developer ID signing secrets are configured — Gatekeeper may require manual approval on first open.",
+      "Intel Macs are not supported.",
+      "macOS auto-update feed exists (latest-mac.yml) but treat Mac updater as preview until signing is verified in production.",
+    ],
+    macosSigningStatus: "unsigned-ci",
+  },
+  {
+    version: "0.2.3",
+    releaseDate: "2026-09-30",
+    status: "published",
+    current: false,
     summary:
       "Fresh-install display recovery and cross-device published-display synchronization.",
     highlights: [...V023_HIGHLIGHTS],
@@ -78,7 +120,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
       windows: {
         supported: true,
         architecture: "x64",
-        downloadUrl: getWindowsInstallerDownloadUrl(),
+        downloadUrl: getVersionedWindowsDownloadUrl("0.2.3"),
         artifactLabel: getVersionedWindowsInstallerFilename("0.2.3"),
       },
       macos: {

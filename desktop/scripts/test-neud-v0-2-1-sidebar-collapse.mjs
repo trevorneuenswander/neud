@@ -95,9 +95,16 @@ test('expanded close tooltip says "Close sidebar"', () => {
   assert.match(branding, /aria-label="Close sidebar"/);
 });
 
-test("collapsed default shows N brand mark", () => {
+test("collapsed sidebar shows the expand control and no N mark", () => {
   assert.match(branding, /CollapsedSidebarOpenControl/);
-  assert.match(branding, />\s*N\s*</);
+  const collapsedControl = branding.slice(
+    branding.indexOf("function CollapsedSidebarOpenControl"),
+    branding.indexOf("function ExpandedSidebarCloseControl"),
+  );
+  assert.match(collapsedControl, /SidebarPanelLeftIcon/);
+  assert.doesNotMatch(collapsedControl, />\s*N\s*</);
+  const expanded = branding.slice(branding.indexOf("sidebar-brand flex"));
+  assert.match(expanded, /APP_NAME/);
 });
 
 test("collapsed branding uses same full-width center row as nav icons", () => {
@@ -112,14 +119,13 @@ test("collapsed branding uses same full-width center row as nav icons", () => {
   assert.match(classes, /w-full justify-center px-0/);
 });
 
-test("collapsed hover or focus swaps N to panel icon", () => {
+test("collapsed expand control has hover and focus rings", () => {
   const collapsedControl = branding.slice(
     branding.indexOf("function CollapsedSidebarOpenControl"),
     branding.indexOf("function ExpandedSidebarCloseControl"),
   );
-  assert.match(collapsedControl, /group-hover:opacity-0/);
-  assert.match(collapsedControl, /group-hover:opacity-100/);
-  assert.match(collapsedControl, /group-focus-visible:opacity/);
+  assert.match(collapsedControl, /hover:bg-surface/);
+  assert.match(collapsedControl, /focus-visible:ring-2/);
   assert.match(collapsedControl, /SidebarPanelLeftIcon/);
 });
 
@@ -134,7 +140,7 @@ test("collapsed open control is keyboard accessible", () => {
     branding.indexOf("function ExpandedSidebarCloseControl"),
   );
   assert.match(collapsedControl, /<button/);
-  assert.match(collapsedControl, /group-focus-visible:opacity-100/);
+  assert.match(collapsedControl, /focus-visible:ring-2/);
 });
 
 test("Settings nav uses gear icon", () => {

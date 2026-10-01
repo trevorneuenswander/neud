@@ -951,6 +951,7 @@ export class AccessManagementService {
       throw new Error("User not found.");
     }
 
+    this.hydrateDirectoryTeams(options?.cloudDirectory ?? null);
     const targetContext = this.authorization.getAuthorizationContext(targetUserId);
     const teamMemberships = this.teamMemberships.listForUser(targetUserId);
     const teams = teamMemberships
@@ -1014,6 +1015,20 @@ export class AccessManagementService {
       teams,
       projects,
     };
+  }
+
+  private hydrateDirectoryTeams(
+    directory: UserDetailsDirectory | null,
+  ) {
+    for (const team of directory?.teams ?? []) {
+      if (!team.id || !team.name) {
+        continue;
+      }
+      const resolved = this.teams.ensureFromCloud({ id: team.id, name: team.name });
+      if (resolved && resolved.id !== team.id) {
+        this.projectTeams.replaceTeamId(team.id, resolved.id);
+      }
+    }
   }
 
   private buildUserDetailsFromCloudDirectory(
@@ -1231,19 +1246,12 @@ function summarizeProjectAccess(
   const role = pathToProjectRole(primary);
   const accessSource = pathToAccessSource(primary);
   const teamNames = new Set<string>();
-  for (const path of paths) {
-    if (path.teamName) {
-      teamNames.add(path.teamName);
-    }
-  }
-  if (teamNames.size === 0) {
-    const assignedTeamNames = projectTeams
-      .getTeamIdsForProject(projectId)
-      .map((teamId) => teams.getById(teamId)?.name)
-      .filter((name): name is string => Boolean(name));
-    for (const name of assignedTeamNames) {
-      teamNames.add(name);
-    }
+  const assignedTeamNames = projectTeams
+    .getTeamIdsForProject(projectId)
+    .map((teamId) => teams.getById(teamId)?.name)
+    .filter((name): name is string => Boolean(name));
+  for (const name of assignedTeamNames) {
+    teamNames.add(name);
   }
 
   return {

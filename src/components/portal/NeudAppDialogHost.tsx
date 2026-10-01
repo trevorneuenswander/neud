@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { NeudModal } from "@/components/ui/NeudModal";
+import { forceLocalSignOut } from "@/lib/auth/force-local-sign-out";
 import { getDesktopAPI } from "@/lib/desktop/client";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 
 type CloseDialogState =
   | { kind: "idle" }
   | { kind: "confirm" }
+  | { kind: "sign-out"; reason: string }
   | { kind: "shutdown-failed" };
 
 export function NeudAppDialogHost() {
@@ -24,11 +26,29 @@ export function NeudAppDialogHost() {
   }, []);
 
   useEffect(() => {
-    if (!shouldUseLocalDataClient()) return;
-    const api = getDesktopAPI();
-    if (!api?.app?.onCloseRequested) return;
+    const onSignOutConfirm = (event: Event) => {
+      const reason =
+        event instanceof CustomEvent && typeof event.detail?.reason === "string"
+          ? event.detail.reason
+          : "sign-out";
+      setCloseDialog({ kind: "sign-out", reason });
+      setBusy(false);
+    };
+    window.addEventListener("neud-sign-out-confirm", onSignOutConfirm);
 
-    return api.app.onCloseRequested((payload) => {
+    if (!shouldUseLocalDataClient()) {
+      return () => {
+        window.removeEventListener("neud-sign-out-confirm", onSignOutConfirm);
+      };
+    }
+    const api = getDesktopAPI();
+    if (!api?.app?.onCloseRequested) {
+      return () => {
+        window.removeEventListener("neud-sign-out-confirm", onSignOutConfirm);
+      };
+    }
+
+    const removeClose = api.app.onCloseRequested((payload) => {
       if (payload?.shutdownFailed) {
         setCloseDialog({ kind: "shutdown-failed" });
         setBusy(false);
@@ -37,6 +57,10 @@ export function NeudAppDialogHost() {
       setCloseDialog({ kind: "confirm" });
       setBusy(false);
     });
+    return () => {
+      window.removeEventListener("neud-sign-out-confirm", onSignOutConfirm);
+      removeClose();
+    };
   }, []);
 
   async function handleKeepOpen() {
@@ -62,6 +86,50 @@ export function NeudAppDialogHost() {
 
   if (closeDialog.kind === "idle") {
     return null;
+  }
+
+  if (closeDialog.kind === "sign-out") {
+    return (
+      <NeudModal
+        title="Scraper is running"
+        description="Signing out will stop all active data engines."
+        onClose={() => setCloseDialog({ kind: "idle" })}
+        closeOnBackdrop={false}
+        icon={
+          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-warning/30 bg-warning/10 text-warning">
+            !
+          </div>
+        }
+        initialFocusRef={confirmButtonRef}
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setCloseDialog({ kind: "idle" })}
+            >
+              Cancel
+            </Button>
+            <Button
+              ref={confirmButtonRef}
+              type="button"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void forceLocalSignOut(closeDialog.reason).finally(() => {
+                  setBusy(false);
+                  setCloseDialog({ kind: "idle" });
+                });
+              }}
+            >
+              {busy ? "Stopping Scraper…" : "Stop Scraper and Sign Out"}
+            </Button>
+          </div>
+        }
+      />
+    );
   }
 
   if (closeDialog.kind === "shutdown-failed") {
