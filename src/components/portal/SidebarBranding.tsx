@@ -29,20 +29,9 @@ function CollapsedSidebarOpenControl({ onOpen }: { onOpen: () => void }) {
           onClick={onOpen}
           aria-label="Open sidebar"
           aria-expanded={false}
-          className={`${brandMarkClass} group cursor-pointer transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+          className={`${brandMarkClass} cursor-pointer transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
         >
-          <span
-            aria-hidden
-            className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
-          >
-            N
-          </span>
-          <span
-            aria-hidden
-            className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
-          >
-            <SidebarPanelLeftIcon className="h-5 w-5" />
-          </span>
+          <SidebarPanelLeftIcon className="h-5 w-5" />
         </button>
       </div>
     </SidebarTooltip>
@@ -74,17 +63,7 @@ export function SidebarBranding({ onToggleSidebar }: SidebarBrandingProps) {
   }
 
   if (collapsed) {
-    return (
-      <div className={SIDEBAR_COLLAPSED_CENTER_ROW_CLASS} style={noDragStyle}>
-        <Link
-          href="/dashboard"
-          aria-label={APP_NAME}
-          className={`${brandMarkClass} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
-        >
-          N
-        </Link>
-      </div>
-    );
+    return null;
   }
 
   return (

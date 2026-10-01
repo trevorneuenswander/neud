@@ -17,6 +17,7 @@ import {
 } from "../browser/resolve-puppeteer-browser.js";
 import { fetchLotDetailData } from "./bag-lot-detail-page.js";
 import { setLifecycleActualState } from "../lifecycle-state.js";
+import { updateEngineStatus } from "../heartbeat.js";
 import { getActiveScraperPerformanceRecorder } from "../scraper-performance-instrumentation.js";
 import { createBagEventDrivenSession } from "./bag-event-driven-session.js";
 import {
@@ -1083,6 +1084,10 @@ export function createBagAuctionLegacyRuntime(options) {
 
     browser = await puppeteer.launch(launchOptions);
     markBrowserLaunched();
+    await updateEngineStatus(engineId, {
+      last_error: null,
+      health_state: "healthy",
+    }).catch(() => {});
     runtimeMatchInfo = {
       ...runtimeMatchInfo,
       browserExecutable: resolvedBrowser.executablePath ?? null,

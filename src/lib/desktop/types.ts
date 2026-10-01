@@ -203,6 +203,7 @@ export type NeudDesktopAPI = {
   };
   engines: {
     getLocalStatus(engineId: string): Promise<LocalEngineStatus | null>;
+    isSessionActive(): Promise<boolean>;
     start(payload: {
       engineId: string;
       requestedBy?: string | null;

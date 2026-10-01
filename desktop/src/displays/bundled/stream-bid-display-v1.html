@@ -481,6 +481,8 @@
   var photoList = [];
   var photoIndex = 0;
   var photoCycleTimer = null;
+  var photoSessionGeneration = 0;
+  var photoTransitionToken = 0;
   var lastBidVisibleState = null;
   var pendingBidHideTimer = null;
   var bidAnimationTimers = [];
@@ -947,15 +949,25 @@
     }, FADE_MS);
   }
 
+  function photoCallbackIsCurrent(generation, transitionToken) {
+    return (
+      generation === photoSessionGeneration &&
+      transitionToken === photoTransitionToken
+    );
+  }
+
   function transitionPhoto(src) {
     var next = textValue(src);
     var cur = mainPhotoEl.getAttribute("data-src") || "";
     if (cur === next) return;
+    var generation = photoSessionGeneration;
+    var transitionToken = ++photoTransitionToken;
 
     if (next) {
       var preloaded = new Image();
 
       preloaded.onload = function () {
+        if (!photoCallbackIsCurrent(generation, transitionToken)) return;
         photoPlaceholderEl.classList.remove("visible");
 
         if (mainPhotoEl.classList.contains("hidden")) {
@@ -973,6 +985,7 @@
         nextPhotoEl.classList.add("photo-enter");
 
         setTimeout(function () {
+          if (!photoCallbackIsCurrent(generation, transitionToken)) return;
           mainPhotoEl.src = next;
           mainPhotoEl.setAttribute("data-src", next);
 
@@ -984,6 +997,7 @@
       };
 
       preloaded.onerror = function () {
+        if (!photoCallbackIsCurrent(generation, transitionToken)) return;
         if (photoList.length <= 1) {
           mainPhotoEl.classList.add("hidden");
           mainPhotoEl.removeAttribute("src");
@@ -1012,6 +1026,7 @@
     photoPlaceholderEl.classList.add("slide-in-right");
 
     setTimeout(function () {
+      if (!photoCallbackIsCurrent(generation, transitionToken)) return;
       photoPlaceholderEl.classList.remove("slide-in-right");
     }, FADE_MS);
   }
@@ -1022,6 +1037,8 @@
 
     if ((mainPhotoEl.getAttribute("data-photo-list") || "") === sig) return;
 
+    photoSessionGeneration += 1;
+    var generation = photoSessionGeneration;
     mainPhotoEl.setAttribute("data-photo-list", sig);
     photoList = nextList;
     photoIndex = 0;
@@ -1035,6 +1052,7 @@
 
     if (photoList.length > 1) {
       photoCycleTimer = setInterval(function () {
+        if (generation !== photoSessionGeneration) return;
         if (!photoList.length) return;
         photoIndex = (photoIndex + 1) % photoList.length;
         transitionPhoto(photoList[photoIndex]);

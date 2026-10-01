@@ -383,12 +383,15 @@ async function handleManualRoute(
       const bidLabel =
         result.envelope.localControllerSubmitted?.currentLot?.currentBidLabel ??
         result.envelope.state.currentLot?.currentBidLabel ??
-        "—";
+        "";
+      const cleared = bidAmount == null || !String(bidLabel).trim();
       ctx.recordLog?.({
         level: "info",
-        eventType: "controller.bid.submitted",
-        message: `Manual bid submitted to Local Controller JSON: ${bidLabel}`,
-        metadata: { bidAmount, bidLabel },
+        eventType: cleared ? "controller.bid.cleared" : "controller.bid.submitted",
+        message: cleared
+          ? "Manual bid cleared"
+          : `Manual bid submitted to Local Controller JSON: ${bidLabel}`,
+        metadata: { bidAmount, bidLabel: cleared ? null : bidLabel },
       });
     }
     return sendManualResult(response, result);
@@ -396,12 +399,11 @@ async function handleManualRoute(
 
   if (subpath === "bid" && request.method === "POST") {
     const body = await readJsonBody(request);
-    const bid = readString(body, "bid", "bid");
-    if (!bid) {
+    if (typeof body.bid !== "string") {
       sendJson(response, 400, { error: "bid is required." });
       return true;
     }
-    const result = ctx.bagLiveState.setManualBid(projectId, bid, actor);
+    const result = ctx.bagLiveState.setManualBid(projectId, body.bid, actor);
     return sendManualResult(response, result);
   }
 

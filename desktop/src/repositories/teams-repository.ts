@@ -90,6 +90,30 @@ export class TeamsRepository {
     return this.getById(id)!;
   }
 
+  ensureFromCloud(input: { id: string; name: string }): TeamRecord | null {
+    const existing = this.getById(input.id);
+    if (existing) {
+      return existing;
+    }
+    const trimmedName = input.name.trim();
+    if (!trimmedName) {
+      return null;
+    }
+    const duplicate = this.getByName(trimmedName);
+    if (duplicate) {
+      return duplicate;
+    }
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO teams (
+          id, name, description, is_active, created_by_user_id, created_at, updated_at
+        ) VALUES (?, ?, NULL, 1, NULL, ?, ?)`,
+      )
+      .run(input.id, trimmedName, now, now);
+    return this.getById(input.id);
+  }
+
   update(
     teamId: string,
     input: { name?: string; description?: string | null; isActive?: boolean },

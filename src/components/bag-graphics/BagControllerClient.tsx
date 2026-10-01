@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { DataSourceStatusPill } from "@/components/ui/DataSourceStatusPill";
 import { PageHeader } from "@/components/portal/PageHeader";
+import { manualBidInputFromCanonical } from "@/lib/bag/manual-bid-input";
 import { BAG_BID_INCREMENTS, type BagLiveStateEnvelope } from "@/lib/bag/types";
 import {
   localEnterBagManualMode,
@@ -115,14 +116,12 @@ function manualDraftFromEnvelope(envelope: BagLiveStateEnvelope): ManualDraft {
   const lot = lotDraftFromEnvelope(envelope);
   const draft = envelope.localControllerDraft;
   const submittedAmount = submittedBidAmountFromEnvelope(envelope);
-  const bid =
-    draft?.bidDirty && draft.currentBidLabel.trim()
-      ? draft.currentBidLabel
-      : draft?.currentBidLabel.trim()
-        ? draft.currentBidLabel
-        : submittedAmount !== null
-          ? formatBidDraft(submittedAmount)
-          : bidDraftFromEnvelope(envelope);
+  const bid = manualBidInputFromCanonical({
+    bidDirty: Boolean(draft?.bidDirty),
+    draftLabel: draft?.currentBidLabel ?? "",
+    submittedAmount,
+    formatSubmitted: formatBidDraft,
+  });
   return {
     lotNumber: lot.lotNumber,
     title: lot.title,
@@ -274,14 +273,12 @@ function lotDraftFromEnvelope(
 
 function bidDraftFromEnvelope(envelope: BagLiveStateEnvelope): string {
   const draft = envelope.localControllerDraft;
-  if (draft?.bidDirty && draft.currentBidLabel.trim()) {
-    return draft.currentBidLabel;
-  }
-  const submittedAmount = submittedBidAmountFromEnvelope(envelope);
-  if (submittedAmount !== null) {
-    return formatBidDraft(submittedAmount);
-  }
-  return "";
+  return manualBidInputFromCanonical({
+    bidDirty: Boolean(draft?.bidDirty),
+    draftLabel: draft?.currentBidLabel ?? "",
+    submittedAmount: submittedBidAmountFromEnvelope(envelope),
+    formatSubmitted: formatBidDraft,
+  });
 }
 
 function lotDraftChanged(
@@ -1416,12 +1413,11 @@ export function BagControllerClient({
         }
       } else if (label === "Manual bid") {
         bidIsDirtyRef.current = false;
-        const submittedAmount = parseBidDraft(draftValues.bid);
-        const formatted =
-          submittedAmount !== null ? formatBidDraft(submittedAmount) : draftValues.bid;
-        setSubmittedValues((current) => ({ ...current, bid: formatted }));
-        setSubmittedBidLabel(formatted);
-        setSubmittedBidAmount(submittedAmount);
+        const nextBid = bidDraftFromEnvelope(next);
+        setSubmittedValues((current) => ({ ...current, bid: nextBid }));
+        setDraftValues((current) => ({ ...current, bid: nextBid }));
+        setSubmittedBidLabel(submittedBidLabelFromEnvelope(next));
+        setSubmittedBidAmount(submittedBidAmountFromEnvelope(next));
       }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : `${label} failed.`);
@@ -2004,6 +2000,25 @@ export function BagControllerClient({
                     }
                   >
                     Submit
+                  </Button>
+                  <Button
+                    type="button"
+                    size="md"
+                    variant="secondary"
+                    className={MANUAL_ROW_BUTTON_CLASS}
+                    disabled={
+                      isSubmittingBid ||
+                      (submittedBidAmount == null && !draftValues.bid.trim())
+                    }
+                    aria-label="Clear manual bid"
+                    onClick={() =>
+                      void runSubmitAction("Manual bid", async () => {
+                        await localSetBagManualBid(projectId, "");
+                        return localSubmitBagManualBid(projectId);
+                      })
+                    }
+                  >
+                    Clear
                   </Button>
                 </div>
               </div>

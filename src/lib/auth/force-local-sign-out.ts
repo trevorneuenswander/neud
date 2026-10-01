@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { withTimeout } from "@/lib/utils/with-timeout";
 
 const REMOTE_SIGN_OUT_TIMEOUT_MS = 3_000;
-const IPC_FORCE_SIGN_OUT_TIMEOUT_MS = 4_000;
+const IPC_FORCE_SIGN_OUT_TIMEOUT_MS = 12_000;
 
 function logLogoutStep(message: string) {
   console.info(`[logout] ${message}`);
@@ -43,6 +43,24 @@ async function clearRemoteSupabaseSession(): Promise<void> {
     }
     console.warn("[logout] Remote Supabase sign-out failed", { message });
   }
+}
+
+export async function requestDesktopSignOut(reason = "sign-out"): Promise<void> {
+  const api = getDesktopAPI();
+  if (isDesktopEnvironment() && typeof api?.engines?.isSessionActive === "function") {
+    try {
+      const active = await api.engines.isSessionActive();
+      if (active && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("neud-sign-out-confirm", { detail: { reason } }),
+        );
+        return;
+      }
+    } catch (error) {
+      console.warn("[logout] Could not check scraper session", error);
+    }
+  }
+  await forceLocalSignOut(reason);
 }
 
 export async function forceLocalSignOut(reason = "sign-out"): Promise<void> {

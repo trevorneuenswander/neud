@@ -6,16 +6,36 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.2.3** | Fresh-install published display hydration hotfix |
-| **Current release** | **v0.2.3** | Fresh-install published display hydration; Windows x64 + macOS Apple Silicon |
+| **Latest published release** | **v0.2.4** | Reliability and workflow polish; Windows x64 + Apple Silicon |
+| **Current release** | **v0.2.4** | Sign-out, display sync, Stream Bid, and controller polish; Windows x64 + Apple Silicon |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4
 ```
 
-Expected packaged artifacts for v0.2.3:
+Expected packaged artifacts for v0.2.4:
+
+```text
+NEUD-Setup-0.2.4-x64.exe
+NEUD-Setup-0.2.4-x64.exe.blockmap
+NEUD-Setup-latest-x64.exe
+latest.yml
+NEUD-0.2.4-arm64.dmg
+NEUD-0.2.4-arm64.zip
+latest-mac.yml
+```
+
+Canonical application version is **`0.2.4`** in root and `@neud/desktop` `package.json`. Apple Silicon only. Intel Macs are not supported.
+
+## Alpha v0.2.4
+
+Reliability and workflow update: Stream Bid lot-photo transitions, macOS Chrome recovery, Manual Bid clearing, sign-out while a scraper is running, collapsed sidebar, project team names, Activity table layout, display enabled state and order across installations, and Stream Bid Local URL background parity. Includes all v0.2.3 functionality.
+
+## Alpha v0.2.3
+
+Historical artifacts:
 
 ```text
 NEUD-Setup-0.2.3-x64.exe
@@ -23,9 +43,6 @@ NEUD-0.2.3-arm64.dmg
 NEUD-0.2.3-arm64.zip
 ```
 
-Canonical application version is **`0.2.3`** in root and `@neud/desktop` `package.json`.
-
-## Alpha v0.2.3
 
 Reliability hotfix for fresh installations and cross-device display synchronization. Published Stream Bid, Stream Ticker, and LED Display (Quail) recover after cloud sync without a manual republish. Includes all v0.2.2 functionality.
 
