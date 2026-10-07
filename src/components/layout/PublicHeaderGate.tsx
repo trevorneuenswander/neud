@@ -9,7 +9,7 @@ type PublicHeaderGateProps = {
 export function PublicHeaderGate({ children }: PublicHeaderGateProps) {
   const pathname = usePathname();
 
-  if (pathname === "/") {
+  if (pathname === "/" || pathname === "/oauth/zoom/callback") {
     return null;
   }
 
