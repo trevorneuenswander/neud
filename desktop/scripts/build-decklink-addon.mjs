@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { nodeGypSpawnOptions, resolveNodeGyp } from "./lib/resolve-node-gyp.mjs";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nativeDir = path.join(desktopRoot, "native", "decklink");
@@ -109,13 +110,10 @@ export function buildDeckLinkAddon(options = {}) {
     fs.rmSync(localDispatch, { force: true });
   }
 
-  const nodeGyp = path.join(
-    desktopRoot,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? "node-gyp.cmd" : "node-gyp",
-  );
+  const nodeGyp = resolveNodeGyp(desktopRoot);
+  const spawnOpts = nodeGypSpawnOptions(nodeGyp);
   const args = [
+    ...spawnOpts.argsPrefix,
     "rebuild",
     "--release",
     `--target=${ELECTRON_TARGET}`,
@@ -125,9 +123,11 @@ export function buildDeckLinkAddon(options = {}) {
     `--decklink_include=${staged || "."}`,
   ];
 
-  const result = spawnSync(nodeGyp, args, {
+  console.log(`[decklink] node-gyp: ${nodeGyp}`);
+  const result = spawnSync(spawnOpts.command, args, {
     cwd: nativeDir,
     stdio: "inherit",
+    shell: spawnOpts.shell,
     env: {
       ...process.env,
       npm_config_runtime: "electron",
@@ -139,6 +139,10 @@ export function buildDeckLinkAddon(options = {}) {
     },
   });
 
+  if (result.error) {
+    console.error(`[decklink] node-gyp spawn failed: ${result.error.message}`);
+    return { ok: false, status: 1, hasSdk, staged, error: result.error.message };
+  }
   if (result.status !== 0) {
     return { ok: false, status: result.status ?? 1, hasSdk, staged };
   }
