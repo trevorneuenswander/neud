@@ -31,7 +31,9 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    # Pin to windows-2022: windows-latest currently ships VS 18 which node-gyp@11
+    # cannot resolve ("unknown version undefined"), breaking native addon builds.
+    runs-on: windows-2022
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
