@@ -26,6 +26,7 @@ const EXPECTED_DISPLAYS = [
   { slug: "stream-bid-display", name: "Stream Bid Display" },
   { slug: "stream-ticker", name: "Stream Ticker" },
   { slug: "led-display-quail", name: "LED Display (Quail)" },
+  { slug: "lot-photos", name: "Lot Photos" },
   { slug: "legacy-pylon", name: "Legacy Pylon" },
   { slug: "legacy-ticker", name: "Legacy Ticker" },
 ];
