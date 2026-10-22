@@ -183,7 +183,7 @@ async function handleManualRoute(
       ctx.recordLog?.({
         level: "info",
         eventType: "controller.lot.navigation",
-        message: "Local Controller moved to previous lot draft",
+        message: "Manual Controller moved to previous lot draft",
         metadata: {
           lotNumber: result.envelope.localControllerDraft?.lotNumber ?? null,
         },
@@ -198,7 +198,7 @@ async function handleManualRoute(
       ctx.recordLog?.({
         level: "info",
         eventType: "controller.lot.navigation",
-        message: "Local Controller moved to next lot draft",
+        message: "Manual Controller moved to next lot draft",
         metadata: {
           lotNumber: result.envelope.localControllerDraft?.lotNumber ?? null,
         },
@@ -251,7 +251,7 @@ async function handleManualRoute(
       ctx.recordLog?.({
         level: "info",
         eventType: "controller.lot.navigation",
-        message: `Local Controller jumped to lot ${lotIdentifier.trim()} draft`,
+        message: `Manual Controller jumped to lot ${lotIdentifier.trim()} draft`,
         metadata: { lotIdentifier: lotIdentifier.trim() },
       });
     }
@@ -362,7 +362,7 @@ async function handleManualRoute(
       ctx.recordLog?.({
         level: "info",
         eventType: "controller.lot.submitted",
-        message: "Manual lot submitted to Local Controller",
+        message: "Manual lot submitted to Manual Controller",
         metadata: {
           lotNumber:
             result.envelope.localControllerSubmitted?.currentLot?.lotNumber ?? null,
@@ -390,7 +390,7 @@ async function handleManualRoute(
         eventType: cleared ? "controller.bid.cleared" : "controller.bid.submitted",
         message: cleared
           ? "Manual bid cleared"
-          : `Manual bid submitted to Local Controller JSON: ${bidLabel}`,
+          : `Manual bid submitted to Manual Controller JSON: ${bidLabel}`,
         metadata: { bidAmount, bidLabel: cleared ? null : bidLabel },
       });
     }
@@ -457,8 +457,8 @@ async function handleManualRoute(
       ctx.notifyLocalControllerCanonicalChanged?.(projectId, "set-lot-status");
       ctx.recordActivity?.({
         type: "controller.lot-status",
-        message: `Local Controller marked lot as ${status}`,
-        userAction: `Local Controller marked lot as ${status}`,
+        message: `Manual Controller marked lot as ${status}`,
+        userAction: `Manual Controller marked lot as ${status}`,
         actor: activityActor,
         source: "local-controller",
       });
@@ -472,8 +472,8 @@ async function handleManualRoute(
       ctx.notifyLocalControllerCanonicalChanged?.(projectId, "clear-lot-status");
       ctx.recordActivity?.({
         type: "controller.lot-status",
-        message: "Local Controller cleared lot status",
-        userAction: "Local Controller cleared lot status",
+        message: "Manual Controller cleared lot status",
+        userAction: "Manual Controller cleared lot status",
         actor: activityActor,
         source: "local-controller",
       });

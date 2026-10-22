@@ -208,6 +208,40 @@ export const DISPLAY_FETCH_GUARD_SCRIPT = `(function () {
   });
 })();`;
 
+/**
+ * Stream Bid (and Lot Photos) paint their own opaque canvas (with the PIP cutout) inside the 3840x2160
+ * stage. Output wrappers must not stamp a transparent `!important` page background over
+ * displays like this. Detection is driven by the display HTML itself (so renamed or
+ * duplicated Stream Bid displays behave the same), with the canonical slug as a fallback
+ * for documents that are served before their markers are injected.
+ *
+ * Stream Ticker and every other display are unaffected: they keep the transparent output
+ * page background that alpha-capable browser sources rely on.
+ */
+const OPAQUE_AUTHORED_OUTPUT_SLUGS = new Set(["stream-bid-display", "lot-photos"]);
+const STREAM_BID_CONTENT_MARKER = /stream-bid-pip-mask|stream-bid-v2-bridge/;
+
+export function outputPaintsOwnBackground(input: {
+  html?: string;
+  slug?: unknown;
+  displayKey?: unknown;
+}): boolean {
+  if (typeof input.html === "string" && STREAM_BID_CONTENT_MARKER.test(input.html)) {
+    return true;
+  }
+  const slug = String(input.slug ?? input.displayKey ?? "").trim().toLowerCase();
+  return OPAQUE_AUTHORED_OUTPUT_SLUGS.has(slug);
+}
+
+/**
+ * True when the HTML is already a complete document. Tolerates a UTF-8 BOM and leading
+ * whitespace/newlines, which Windows editors and CRLF checkouts commonly add.
+ */
+export function isStandaloneHtmlDocument(html: string): boolean {
+  const start = html.replace(/^\uFEFF/, "").trimStart();
+  return /^<!doctype html/i.test(start) || /^<html[\s>]/i.test(start);
+}
+
 export function buildDisplayDocument(input: {
   html: string;
   css?: string;
@@ -231,9 +265,15 @@ export function buildDisplayDocument(input: {
     : "";
   const viewportWidth = input.viewportWidth ?? 1920;
   const viewportHeight = input.viewportHeight ?? 1080;
-  const backgroundRule = input.outputMode
-    ? "background: transparent !important; background-color: transparent !important;"
-    : "";
+  const backgroundRule =
+    input.outputMode &&
+    !outputPaintsOwnBackground({
+      html: input.html,
+      slug: (input.displayInfo as { slug?: string } | undefined)?.slug,
+      displayKey: (input.displayInfo as { displayKey?: string } | undefined)?.displayKey,
+    })
+      ? "background: transparent !important; background-color: transparent !important;"
+      : "";
   const viewportStyle = `
     html, body {
       width: ${viewportWidth}px;
@@ -623,6 +663,7 @@ export function wrapStandaloneDisplayHtml(input: {
   pollIntervalMs?: number;
   outputMode?: boolean;
   previewMode?: boolean;
+  hideCursor?: boolean;
 }): string {
   const bridgeAlreadyPresent = hasEmbeddedNeudDisplayBridge(input.html);
   const guardAlreadyPresent = /__NEUD_DISPLAY_FETCH_GUARD__/.test(input.html);
@@ -635,15 +676,35 @@ export function wrapStandaloneDisplayHtml(input: {
     pollIntervalMs: input.pollIntervalMs,
   });
 
-  const outputSlug = String(input.displayInfo.slug ?? input.displayInfo.displayKey ?? "");
-  const outputPaintsOwnBackground = outputSlug === "stream-bid-display";
+  const paintsOwnBackground = outputPaintsOwnBackground({
+    html: input.html,
+    slug: input.displayInfo.slug,
+    displayKey: input.displayInfo.displayKey,
+  });
   const outputStyle =
-    input.outputMode && !outputPaintsOwnBackground
+    input.outputMode && !paintsOwnBackground
       ? `<style>html,body{margin:0;padding:0;width:${input.viewportWidth ?? 1920}px;height:${input.viewportHeight ?? 1080}px;overflow:hidden;background:transparent!important;background-color:transparent!important;}</style>`
+      : "";
+  const cursorStyle = input.hideCursor
+    ? `<style id="neud-output-cursor">html,body,*{cursor:none !important;}</style>`
+    : "";
+
+  // Early DeckLink stack raster zoom (reads ?decklinkRaster=1 from the layer URL).
+  // Must run before first paint so offscreen capture never holds N×UHD backing stores.
+  // Pass 13: allow authored→output scale in either direction (upscale for 1080→4K stacks).
+  const decklinkRasterScript = `<script>(function(){try{var p=new URLSearchParams(location.search);if(p.get("decklinkRaster")!=="1")return;var aw=+p.get("authoredWidth")||3840,ah=+p.get("authoredHeight")||2160,ow=+p.get("outputWidth")||aw,oh=+p.get("outputHeight")||ah;if(!(aw>0&&ah>0&&ow>0&&oh>0))return;var z=Math.min(ow/aw,oh/ah);if(z>0&&Math.abs(z-1)>1e-6){document.documentElement.style.zoom=String(z);document.documentElement.setAttribute("data-neud-decklink-raster-zoom",String(z));}}catch(e){}})();</script>`;
+
+  // Pass 12: hide Next/React issue bubbles inside display-html iframes (dev mode).
+  const outputCleanStyle =
+    input.outputMode
+      ? `<style id="neud-output-clean-mode">nextjs-portal,[data-next-badge-root],[data-nextjs-toast],[data-nextjs-dialog-overlay],#__next-build-watcher{display:none!important;visibility:hidden!important;pointer-events:none!important}</style>`
       : "";
 
   const headInjection = [
     outputStyle,
+    cursorStyle,
+    outputCleanStyle,
+    decklinkRasterScript,
     input.previewMode ? buildDesktopPreviewModeScript() : "",
     guardAlreadyPresent ? "" : `<script>${DISPLAY_FETCH_GUARD_SCRIPT}</script>`,
     bridgeAlreadyPresent ? "" : `<script>${DISPLAY_BRIDGE_SCRIPT}</script>`,

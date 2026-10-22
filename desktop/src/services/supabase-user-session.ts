@@ -250,7 +250,25 @@ export class SupabaseUserSessionService {
   }
 
   getSharedAuthDiagnostics(): SharedCloudAuthDiagnostics {
-    return { ...this.sharedDiagnostics };
+    // Time-dependent and client-dependent fields are derived live so status
+    // never reports a stale "ready" or "fresh" snapshot between syncs.
+    const tokenExpired = this.isAccessTokenExpired();
+    return {
+      ...this.sharedDiagnostics,
+      tokenExpired,
+      accessTokenExpired: tokenExpired,
+      authenticatedClientReady: Boolean(this.client) && this.hasCloudSession(),
+      reauthenticationRequired: this.reauthenticationRequired,
+      lastRefreshErrorCode: this.lastRefreshErrorCode,
+    };
+  }
+
+  /** Milliseconds until the access token expires (negative when already expired); null without a session. */
+  getAccessTokenRemainingMs(): number | null {
+    if (!this.tokens) {
+      return null;
+    }
+    return this.tokens.expiresAt - Date.now();
   }
 
   setStoredIssuerProjectRef(projectRef: string | null): void {
@@ -314,10 +332,10 @@ export class SupabaseUserSessionService {
 
   async refreshCloudSessionIfNeeded(
     config: SupabasePublicConfig,
-    options?: { configSource?: string | null },
+    options?: { configSource?: string | null; freshMarginMs?: number },
   ): Promise<CloudSessionRefreshResult> {
     const job = this.refreshQueueTail.then(() =>
-      this.performRefresh(config, options?.configSource ?? null),
+      this.performRefresh(config, options?.configSource ?? null, options?.freshMarginMs),
     );
     this.refreshQueueTail = job.catch(() => ({
       ok: false,
@@ -329,6 +347,7 @@ export class SupabaseUserSessionService {
   private async performRefresh(
     config: SupabasePublicConfig,
     configSource: string | null,
+    freshMarginMs?: number,
   ): Promise<CloudSessionRefreshResult> {
     const attemptedAt = new Date().toISOString();
     this.lastRefreshAttemptAt = attemptedAt;
@@ -369,7 +388,7 @@ export class SupabaseUserSessionService {
       };
     }
 
-    if (this.isCloudSessionFresh()) {
+    if (this.isCloudSessionFresh(freshMarginMs)) {
       this.lastRefreshErrorCode = null;
       this.lastRefreshResult = "still_fresh";
       this.sharedDiagnostics.refreshResult = "still_fresh";
@@ -563,6 +582,17 @@ export class SupabaseUserSessionService {
         this.sharedDiagnostics.refreshSupabaseErrorName = null;
         this.sharedDiagnostics.refreshSafeMessage = null;
         this.syncSharedDiagnostics();
+        // A successful refresh drops the old client. Rebuild it right away so status
+        // does not report "not ready" until some unrelated service happens to ask.
+        // Failure here is transient (network) and is retried by the session keeper.
+        try {
+          const ready = await this.ensureClient(config);
+          this.sharedDiagnostics.authenticatedClientReady = ready;
+          this.sharedDiagnostics.authenticatedClientCreated = ready;
+          this.syncSharedDiagnostics();
+        } catch {
+          // ensureClient already records its own failure stage.
+        }
         appendAuthRefreshLog(
           this.paths,
           `auth.refresh.complete rotated=${rotated ? "true" : "false"} status=${refreshHttpStatus ?? "none"}`,
@@ -703,11 +733,11 @@ export class SupabaseUserSessionService {
     return this.userId;
   }
 
-  isCloudSessionFresh(): boolean {
+  isCloudSessionFresh(marginMs = 30_000): boolean {
     if (!this.tokens) {
       return false;
     }
-    return this.tokens.expiresAt > Date.now() + 30_000;
+    return this.tokens.expiresAt > Date.now() + marginMs;
   }
 
   isAccessTokenExpired(): boolean {
@@ -858,6 +888,14 @@ export class SupabaseUserSessionService {
           return false;
         }
         this.sharedDiagnostics.setSessionSucceeded = true;
+        if (
+          this.lastRefreshErrorCode &&
+          (isTransientRefreshCode(this.lastRefreshErrorCode) ||
+            this.lastRefreshErrorCode === "set_session_failed")
+        ) {
+          // A working client supersedes an earlier transient failure.
+          this.lastRefreshErrorCode = null;
+        }
       } catch (error) {
         this.lastRefreshErrorCode = classifyRefreshFailure(
           error instanceof Error ? error : { message: String(error) },

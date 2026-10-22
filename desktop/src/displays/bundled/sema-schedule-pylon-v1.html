@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=3840, height=2160, initial-scale=1.0" />
+  <title>Schedule Pylon</title>
+  <style>
+    :root {
+      --frame-w: 3840px;
+      --frame-h: 2160px;
+      --pylon-w: 860px;
+      --pylon-h: 1720px;
+      --pylon-pad-x: 52px;
+      --pylon-pad-y: 40px;
+
+      /* SEMA Live — near-black foundation */
+      --pylon-bg: rgba(8, 8, 10, 0.92);
+      --pylon-edge: rgba(220, 30, 40, 0.55);
+      --divider: rgba(220, 30, 40, 0.28);
+      --text: rgba(248, 248, 250, 0.96);
+      --text-muted: rgba(210, 212, 220, 0.72);
+
+      /* Brand */
+      --sema-red: #DC1E28;
+      --live-magenta: #E020F0;
+      --live-glow: rgba(224, 32, 240, 0.35);
+
+      /* Schedule accents — tuned toward SEMA red/magenta family */
+      --now-accent: #3DDC84;
+      --next-accent: #5BA8FF;
+      --later-accent: #F0A030;
+
+      --label-size: 26px;
+      --title-now: 62px;
+      --title-next: 52px;
+      --title-later: 46px;
+      --body-now: 34px;
+      --body-next: 30px;
+      --body-later: 28px;
+      --title-min: 28px;
+      --body-min: 22px;
+      --line-title: 1.28;
+      --line-body: 1.35;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: var(--frame-w);
+      height: var(--frame-h);
+      overflow: hidden;
+      background: transparent;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .stage {
+      position: relative;
+      width: var(--frame-w);
+      height: var(--frame-h);
+      background: transparent;
+      overflow: hidden;
+    }
+
+    /* Left-anchored vertical pylon with forward slant cut on right edge */
+    .pylon {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: var(--pylon-w);
+      height: var(--pylon-h);
+      padding: var(--pylon-pad-y) var(--pylon-pad-x) var(--pylon-pad-y) calc(var(--pylon-pad-x) + 10px);
+      background: var(--pylon-bg);
+      clip-path: polygon(0 0, 100% 0, calc(100% - 28px) 100%, 0 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: stretch;
+      gap: 0;
+    }
+
+    /* SEMA red structural rail on the left */
+    .pylon::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 8px;
+      background: var(--sema-red);
+      pointer-events: none;
+    }
+
+    /* Thin magenta highlight along the angled right cut */
+    .pylon::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 3px;
+      height: 100%;
+      background: linear-gradient(
+        180deg,
+        var(--sema-red) 0%,
+        var(--live-magenta) 55%,
+        rgba(224, 32, 240, 0.2) 100%
+      );
+      transform: skewX(-1.1deg);
+      transform-origin: top right;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+
+    /* Brand header — static, no pulse */
+    .brand {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: baseline;
+      gap: 18px;
+      padding: 8px 0 28px;
+      margin-bottom: 8px;
+      border-bottom: 3px solid var(--sema-red);
+      position: relative;
+    }
+
+    .brand::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -3px;
+      width: 72px;
+      height: 3px;
+      background: var(--live-magenta);
+      box-shadow: 0 0 10px var(--live-glow);
+    }
+
+    .brand-sema {
+      font-size: 72px;
+      font-weight: 900;
+      font-style: italic;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--sema-red);
+      line-height: 1;
+      transform: skewX(-8deg);
+      transform-origin: left bottom;
+    }
+
+    .brand-live {
+      font-size: 42px;
+      font-weight: 800;
+      font-style: italic;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--live-magenta);
+      line-height: 1;
+      text-shadow:
+        0 0 8px var(--live-glow),
+        0 0 18px rgba(224, 32, 240, 0.22);
+      transform: skewX(-6deg);
+      transform-origin: left bottom;
+    }
+
+    .section {
+      position: relative;
+      flex: 1 1 0;
+      min-height: 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 24px 0;
+      overflow: hidden;
+    }
+
+    /* Strong horizontal rules with angled accent tip */
+    .section + .section::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 36px;
+      top: 0;
+      height: 2px;
+      background: var(--divider);
+      pointer-events: none;
+    }
+
+    .section + .section::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 48px;
+      height: 2px;
+      background: var(--sema-red);
+      pointer-events: none;
+    }
+
+    .section[data-slot="now"] { opacity: 1; }
+    .section[data-slot="next"] { opacity: 0.94; }
+    .section[data-slot="later"] { opacity: 0.86; }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      font-size: var(--label-size);
+      font-weight: 800;
+      font-style: italic;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      line-height: 1.2;
+      flex-shrink: 0;
+      transform: skewX(-4deg);
+      transform-origin: left center;
+    }
+
+    /* Angular accent mark — not a rounded pill/dot */
+    .label::before {
+      content: "";
+      width: 14px;
+      height: 14px;
+      background: currentColor;
+      clip-path: polygon(0 0, 100% 15%, 85% 100%, 0 100%);
+      flex-shrink: 0;
+      box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+    .section[data-slot="now"] .label { color: var(--now-accent); }
+    .section[data-slot="next"] .label { color: var(--next-accent); }
+    .section[data-slot="later"] .label { color: var(--later-accent); }
+
+    .content {
+      position: relative;
+      min-width: 0;
+      width: 100%;
+      transform: translate3d(0, 0, 0);
+      opacity: 1;
+      transition:
+        transform 480ms cubic-bezier(0.33, 0, 0.2, 1),
+        opacity 380ms cubic-bezier(0.33, 0, 0.2, 1);
+      will-change: transform, opacity;
+    }
+
+    .content.is-exit {
+      transform: translate3d(0, 42%, 0);
+      opacity: 0;
+    }
+
+    .content.is-enter {
+      transform: translate3d(0, 42%, 0);
+      opacity: 0;
+    }
+
+    .content.is-crossfade {
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+
+    .field {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .field + .field {
+      margin-top: 10px;
+    }
+
+    .field-track {
+      display: inline-flex;
+      align-items: baseline;
+      white-space: nowrap;
+      will-change: transform;
+      transform: translate3d(0, 0, 0);
+    }
+
+    .field-text {
+      display: inline-block;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .field-gap {
+      display: inline-block;
+      width: 96px;
+      flex-shrink: 0;
+    }
+
+    .field[data-kind="title"] .field-text {
+      font-weight: 700;
+      line-height: var(--line-title);
+      padding-bottom: 0.06em; /* descender safety */
+    }
+
+    .field[data-kind="description"] .field-text {
+      font-weight: 400;
+      color: var(--text-muted);
+      line-height: var(--line-body);
+      padding-bottom: 0.08em; /* descender safety */
+    }
+
+    .section[data-slot="now"] .field[data-kind="title"] .field-text { font-size: var(--title-now); }
+    .section[data-slot="next"] .field[data-kind="title"] .field-text { font-size: var(--title-next); }
+    .section[data-slot="later"] .field[data-kind="title"] .field-text { font-size: var(--title-later); }
+    .section[data-slot="now"] .field[data-kind="description"] .field-text { font-size: var(--body-now); }
+    .section[data-slot="next"] .field[data-kind="description"] .field-text { font-size: var(--body-next); }
+    .section[data-slot="later"] .field[data-kind="description"] .field-text { font-size: var(--body-later); }
+
+    /* No scrollbars anywhere */
+    .stage, .pylon, .section, .field, .content { scrollbar-width: none; }
+    .stage::-webkit-scrollbar,
+    .pylon::-webkit-scrollbar,
+    .section::-webkit-scrollbar,
+    .field::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage" data-display="schedule-pylon" data-frame="3840x2160">
+    <div class="pylon" aria-label="SEMA Live schedule pylon" role="region">
+      <header class="brand" aria-label="SEMA Live">
+        <span class="brand-sema">SEMA</span>
+        <span class="brand-live">LIVE</span>
+      </header>
+      <section class="section" data-slot="now">
+        <div class="label">NOW</div>
+        <div class="content" data-group="now">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+      <section class="section" data-slot="next">
+        <div class="label">NEXT</div>
+        <div class="content" data-group="next">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+      <section class="section" data-slot="later">
+        <div class="label">LATER</div>
+        <div class="content" data-group="later">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function () {
+      "use strict";
+
+      var SLOTS = ["now", "next", "later"];
+      var STAGGER_MS = { now: 0, next: 160, later: 320 };
+      var EXIT_MS = 360;
+      var TITLE_MIN = 28;
+      var BODY_MIN = 22;
+      var SHRINK_STEP = 2;
+      var OVERFLOW_EPS = 1.5;
+      var MARQUEE_PX_PER_SEC = 48;
+      var MARQUEE_GAP_PX = 96;
+
+      var current = { now: null, next: null, later: null };
+      var currentIndexToken = null;
+      var advanceEpoch = 0;
+
+      /** @type {WeakMap<Element, { epoch: number, rafId: number|null }>} */
+      var marqueeLoops = new WeakMap();
+
+      function textOf(row, key) {
+        if (!row || typeof row !== "object") return "";
+        var alt = key === "description" ? "eventDescription" : key;
+        var value = row[key] != null ? row[key] : row[alt];
+        return typeof value === "string" ? value.trim() : "";
+      }
+
+      function rowsEqual(a, b) {
+        return textOf(a, "title") === textOf(b, "title") &&
+          textOf(a, "description") === textOf(b, "description");
+      }
+
+      function getLoop(field) {
+        var loop = marqueeLoops.get(field);
+        if (!loop) {
+          loop = { epoch: 0, rafId: null };
+          marqueeLoops.set(field, loop);
+        }
+        return loop;
+      }
+
+      function stopMarquee(field) {
+        var loop = marqueeLoops.get(field);
+        if (!loop) return;
+        loop.epoch += 1;
+        if (loop.rafId != null) {
+          cancelAnimationFrame(loop.rafId);
+          loop.rafId = null;
+        }
+        var track = field.querySelector(".field-track");
+        if (track) {
+          track.style.transform = "translate3d(0,0,0)";
+        }
+      }
+
+      function clearTrackExtras(track) {
+        var gap = track.querySelector(".field-gap");
+        var clone = track.querySelector('[data-clone="1"]');
+        if (gap) gap.remove();
+        if (clone) clone.remove();
+      }
+
+      function setPrimaryText(track, value) {
+        var primary = track.querySelector(".field-text:not([data-clone])");
+        if (!primary) {
+          primary = document.createElement("span");
+          primary.className = "field-text";
+          track.appendChild(primary);
+        }
+        primary.textContent = value || "";
+        return primary;
+      }
+
+      function baseFontSize(slot, kind) {
+        if (kind === "title") {
+          if (slot === "now") return 62;
+          if (slot === "next") return 52;
+          return 46;
+        }
+        if (slot === "now") return 34;
+        if (slot === "next") return 30;
+        return 28;
+      }
+
+      function minFontSize(kind) {
+        return kind === "title" ? TITLE_MIN : BODY_MIN;
+      }
+
+      function applyFontSize(texts, sizePx) {
+        for (var i = 0; i < texts.length; i++) {
+          texts[i].style.fontSize = sizePx + "px";
+        }
+      }
+
+      /**
+       * Fit pipeline: normal size → shrink-to-fit → marquee only if still overflowing.
+       * Short text remains completely still (no RAF, no animation).
+       */
+      function fitField(field, slot, value) {
+        var kind = field.getAttribute("data-kind") || "title";
+        var track = field.querySelector(".field-track");
+        if (!track) return;
+
+        stopMarquee(field);
+        clearTrackExtras(track);
+        var primary = setPrimaryText(track, value);
+        track.style.transform = "translate3d(0,0,0)";
+
+        if (!value) {
+          primary.style.fontSize = "";
+          return;
+        }
+
+        var base = baseFontSize(slot, kind);
+        var min = minFontSize(kind);
+        applyFontSize([primary], base);
+
+        var viewport = field.clientWidth;
+        if (viewport <= 0) return;
+
+        // Shrink-to-fit
+        var size = base;
+        while (primary.scrollWidth > viewport + OVERFLOW_EPS && size > min) {
+          size = Math.max(min, size - SHRINK_STEP);
+          applyFontSize([primary], size);
+        }
+
+        // Fits after shrink — stay static
+        if (primary.scrollWidth <= viewport + OVERFLOW_EPS) {
+          return;
+        }
+
+        // Still overflowing at min → single marquee loop
+        startMarquee(field, primary, value, size);
+      }
+
+      function startMarquee(field, primary, value, sizePx) {
+        var track = field.querySelector(".field-track");
+        if (!track) return;
+
+        clearTrackExtras(track);
+        primary.textContent = value;
+        applyFontSize([primary], sizePx);
+
+        var gap = document.createElement("span");
+        gap.className = "field-gap";
+        gap.style.width = MARQUEE_GAP_PX + "px";
+        gap.setAttribute("aria-hidden", "true");
+
+        var clone = primary.cloneNode(true);
+        clone.setAttribute("data-clone", "1");
+        clone.setAttribute("aria-hidden", "true");
+
+        track.appendChild(gap);
+        track.appendChild(clone);
+
+        var loop = getLoop(field);
+        loop.epoch += 1;
+        var epoch = loop.epoch;
+        if (loop.rafId != null) {
+          cancelAnimationFrame(loop.rafId);
+          loop.rafId = null;
+        }
+
+        // Measure after layout
+        var primaryWidth = primary.scrollWidth;
+        var loopDistance = primaryWidth + MARQUEE_GAP_PX;
+        if (loopDistance <= 0) return;
+
+        var offset = 0;
+        var lastTs = 0;
+
+        function tick(ts) {
+          if (epoch !== loop.epoch) {
+            loop.rafId = null;
+            return;
+          }
+          if (!lastTs) lastTs = ts;
+          var dt = Math.min(48, ts - lastTs) / 1000;
+          lastTs = ts;
+          offset += MARQUEE_PX_PER_SEC * dt;
+          if (offset >= loopDistance) {
+            offset = offset % loopDistance;
+          }
+          track.style.transform = "translate3d(" + (-offset) + "px,0,0)";
+          loop.rafId = requestAnimationFrame(tick);
+        }
+
+        loop.rafId = requestAnimationFrame(tick);
+      }
+
+      function applySlotContent(slot, row) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        var titleField = group.querySelector('[data-field="title"]');
+        var descField = group.querySelector('[data-field="description"]');
+        // Title + Event/Description only — never date/time
+        if (titleField) fitField(titleField, slot, textOf(row, "title"));
+        if (descField) fitField(descField, slot, textOf(row, "description"));
+      }
+
+      function runAdvance(slot, row, epoch) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        var delay = STAGGER_MS[slot] || 0;
+
+        group.classList.remove("is-enter", "is-crossfade");
+        group.classList.add("is-exit");
+
+        window.setTimeout(function () {
+          if (epoch !== advanceEpoch) return;
+          applySlotContent(slot, row);
+          group.classList.add("is-enter");
+          group.classList.remove("is-exit");
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              if (epoch !== advanceEpoch) return;
+              group.classList.remove("is-enter");
+            });
+          });
+        }, EXIT_MS + delay);
+      }
+
+      function runCrossfade(slot, row) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        group.classList.remove("is-exit", "is-enter");
+        group.classList.add("is-crossfade");
+        window.setTimeout(function () {
+          applySlotContent(slot, row);
+          requestAnimationFrame(function () {
+            group.classList.remove("is-crossfade");
+          });
+        }, 200);
+      }
+
+      function render(payload) {
+        var schedule = payload && payload.schedule ? payload.schedule : payload || {};
+        var nextState = {
+          now: schedule.now || schedule.NOW || null,
+          next: schedule.next || schedule.NEXT || null,
+          later: schedule.later || schedule.LATER || null,
+        };
+        var indexToken =
+          schedule.currentRowId ||
+          schedule.currentIndex ||
+          schedule.selectedIndex ||
+          null;
+        var advanced =
+          currentIndexToken != null &&
+          indexToken != null &&
+          indexToken !== currentIndexToken;
+
+        if (advanced) {
+          advanceEpoch += 1;
+          var epoch = advanceEpoch;
+          SLOTS.forEach(function (slot) {
+            runAdvance(slot, nextState[slot], epoch);
+          });
+        } else {
+          SLOTS.forEach(function (slot) {
+            var prev = current[slot];
+            var next = nextState[slot];
+            if (!rowsEqual(prev, next)) {
+              if (prev == null && next != null && currentIndexToken == null) {
+                applySlotContent(slot, next);
+              } else if (prev != null && !rowsEqual(prev, next)) {
+                runCrossfade(slot, next);
+              } else {
+                applySlotContent(slot, next);
+              }
+            }
+          });
+        }
+
+        current = nextState;
+        if (indexToken != null) {
+          currentIndexToken = indexToken;
+        }
+      }
+
+      function bindNeud() {
+        if (window.NEUDDisplay && typeof window.NEUDDisplay.subscribe === "function") {
+          window.NEUDDisplay.subscribe(function (event) {
+            var data = event && event.data ? event.data : event;
+            render(data);
+          });
+          return;
+        }
+        window.addEventListener("message", function (event) {
+          if (!event.data) return;
+          if (event.data.type === "neud-display-data" || event.data.schedule) {
+            render(event.data.data || event.data);
+          }
+        });
+      }
+
+      bindNeud();
+      window.__SEMA_SCHEDULE_PYLON__ = {
+        render: render,
+        stopMarquee: stopMarquee,
+        fitField: fitField,
+      };
+    })();
+  </script>
+</body>
+</html>

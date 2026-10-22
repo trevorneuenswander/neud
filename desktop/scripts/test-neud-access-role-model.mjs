@@ -48,7 +48,7 @@ test("capabilities use hasSiteWideAccess instead of platform admin shortcuts", (
 
 test("teams panel hides create form by default and removes descriptions", () => {
   const teamsPanel = read("src/components/access-management/TeamsPanel.tsx");
-  assert.match(teamsPanel, /showCreateForm/);
+  assert.match(teamsPanel, /showCreateModal/);
   assert.match(teamsPanel, /Create Team/);
   assert.match(teamsPanel, /ASSIGNABLE_TEAM_ROLES/);
   assert.match(teamsPanel, /Sole NEUD owner/);

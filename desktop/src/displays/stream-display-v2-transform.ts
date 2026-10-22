@@ -4,6 +4,7 @@ import path from "node:path";
 export const STREAM_BID_BRIDGE_ANCHOR = "/*__NEUD_STREAM_BID_BRIDGE__*/";
 export const STREAM_TICKER_BRIDGE_ANCHOR = "/*__NEUD_STREAM_TICKER_BRIDGE__*/";
 export const LED_DISPLAY_QUAIL_BRIDGE_ANCHOR = "/*__NEUD_LED_DISPLAY_QUAIL_BRIDGE__*/";
+export const LOT_PHOTOS_BRIDGE_ANCHOR = "/*__NEUD_LOT_PHOTOS_BRIDGE__*/";
 export const LEGACY_TICKER_MARQUEE_ANCHOR = "/*__NEUD_LEGACY_TICKER_MARQUEE__*/";
 
 export function readStreamBidV2BridgeScript(): string {
@@ -56,6 +57,24 @@ export function transformLedDisplayQuailHtmlForServing(
     throw new Error("LED Display (Quail) HTML is missing the runtime bridge anchor.");
   }
   return html.replace(LED_DISPLAY_QUAIL_BRIDGE_ANCHOR, bridge);
+}
+
+export function readLotPhotosV1BridgeScript(): string {
+  return fs.readFileSync(path.join(__dirname, "lot-photos-v1-bridge.js"), "utf8");
+}
+
+export function transformLotPhotosHtmlForServing(
+  html: string,
+  bridgeScript?: string,
+): string {
+  const bridge = bridgeScript ?? readLotPhotosV1BridgeScript();
+  if (!html.includes(LOT_PHOTOS_BRIDGE_ANCHOR)) {
+    if (/lot-photos-v1-bridge/.test(html)) {
+      return html;
+    }
+    throw new Error("Lot Photos HTML is missing the runtime bridge anchor.");
+  }
+  return html.replace(LOT_PHOTOS_BRIDGE_ANCHOR, bridge);
 }
 
 export function transformStreamTickerHtmlForServing(html: string, bridgeScript?: string): string {

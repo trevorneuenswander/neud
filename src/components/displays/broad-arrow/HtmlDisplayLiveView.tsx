@@ -83,6 +83,7 @@ export function HtmlDisplayLiveView({
         slug,
         previewMode,
         publishedRevisionId: resolvedRevisionId,
+        parentSearch: typeof window !== "undefined" ? window.location.search : "",
       }),
     [previewMode, projectId, resolvedRevisionId, slug],
   );

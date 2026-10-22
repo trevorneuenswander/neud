@@ -34,6 +34,11 @@ import type { DisplaysRepository } from "../repositories/displays-repository";
 import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { LocalProjectMembershipsRepository } from "../repositories/local-project-memberships-repository";
 import {
+  defaultCapabilitiesForProjectType,
+  resolveProjectTypeFromCapabilities,
+  validateCapabilitySelection,
+} from "../projects/project-capabilities";
+import {
   toPortalDataEngine,
   toPortalDisplay,
   toPortalEngineStatus,
@@ -172,9 +177,12 @@ import {
   MAX_VISIBLE_PINNED_SLOTS,
   buildAddToStackPreference,
   buildRemoveFromStackPreference,
+  buildReorderStackPreference,
   buildUnpinStackPreference,
   countVisiblePinnedSlots,
   deriveVisiblePinnedSlots,
+  layerZIndexForDisplayInStack,
+  orderStackLayers,
   sanitizePinnedViewerStacks,
   type PinnedStackRecord,
 } from "../lib/displays/pinned-viewer-stacks";
@@ -236,6 +244,7 @@ import {
   type CanonicalPipelineDiagnostics,
 } from "./canonical/canonical-pipeline-diagnostics";
 import {
+  resolveCloudConnectionState,
   resolveDashboardConnectionState,
   resolveProfileIndicatorState,
 } from "./account-connection-state";
@@ -424,6 +433,18 @@ export class LocalDataService {
   private internetReachabilityProbeInFlight: Promise<boolean> | null = null;
   private cloudAuthRecoveryInFlight: Promise<void> | null = null;
   private static readonly INTERNET_PROBE_STALE_MS = 30_000;
+  private hasActiveOutputRouteForProject:
+    | ((projectId: string) => boolean)
+    | null = null;
+  private projectPackages: import("../packages/project-package-service").ProjectPackageService | null =
+    null;
+  private projectCapabilities: import("../repositories/project-capabilities-repository").ProjectCapabilitiesRepository | null =
+    null;
+  private semaScheduleUnsubscribe: (() => void) | null = null;
+  private semaSchedule: import("../packages/sema/sema-schedule-service").SemaScheduleService | null =
+    null;
+  private liveChatService: import("../live-chat/live-chat-service").LiveChatService | null =
+    null;
 
   constructor(
     private readonly projects: ProjectsRepository,
@@ -460,6 +481,493 @@ export class LocalDataService {
 
   setDisplaySync(service: import("./display-sync/display-sync-service").DisplaySyncService) {
     this.displaySync = service;
+  }
+
+  setProjectPackages(
+    service: import("../packages/project-package-service").ProjectPackageService,
+  ) {
+    this.projectPackages = service;
+  }
+
+  setLiveChatService(
+    service: import("../live-chat/live-chat-service").LiveChatService,
+  ) {
+    this.liveChatService = service;
+  }
+
+  getLiveChatService() {
+    return this.liveChatService;
+  }
+
+  setProjectCapabilitiesRepository(
+    repository: import("../repositories/project-capabilities-repository").ProjectCapabilitiesRepository,
+  ) {
+    this.projectCapabilities = repository;
+  }
+
+  getProjectPackages() {
+    return this.projectPackages;
+  }
+
+  setActiveOutputRouteChecker(checker: (projectId: string) => boolean) {
+    this.hasActiveOutputRouteForProject = checker;
+  }
+
+  setSemaSchedule(
+    service: import("../packages/sema/sema-schedule-service").SemaScheduleService,
+  ) {
+    this.semaScheduleUnsubscribe?.();
+    this.semaSchedule = service;
+    // Operator actions, manual edits, and changed sheet content reach displays through the
+    // existing display-bridge SSE channel; the display then re-fetches /api/display/.../data.
+    this.semaScheduleUnsubscribe = service.onChange((event) => {
+      this.publishSemaDisplayChange(event);
+    });
+  }
+
+  getSemaSchedule() {
+    return this.semaSchedule;
+  }
+
+  /** Display bridge payload for Live Chat Overlay. */
+  getLiveChatDisplayBridgeData(projectId: string): Record<string, unknown> | null {
+    if (!this.liveChatService) {
+      return null;
+    }
+    const payload = this.liveChatService.getDisplayPayload(projectId);
+    const revision = payload.current
+      ? Date.parse(payload.current.timestamp) || 1
+      : 0;
+    const contentHash = payload.current
+      ? `live-chat:${payload.current.id}`
+      : "live-chat:empty";
+    return {
+      current: payload.current,
+      visible: payload.visible,
+      dataSource: "live-chat",
+      enabled: true,
+      revision,
+      contentHash,
+      snapshot: {
+        current: payload.current,
+        visible: payload.visible,
+        dataSource: "live-chat",
+      },
+      projectId,
+    };
+  }
+
+  /** Display bridge payload for SEMA projects, or null when the project is not SEMA. */
+  getSemaDisplayBridgeData(projectId: string): Record<string, unknown> | null {
+    if (!this.semaSchedule) {
+      return null;
+    }
+    const project = this.projects.getById(projectId);
+    if (!project || project.projectType !== "sema-schedule") {
+      return null;
+    }
+    const payload = this.semaSchedule.toDisplayPayload(projectId);
+    // `dataSource` marks this as a canonical display snapshot for the shared NEUD runtime.
+    const snapshot = {
+      schedule: payload.schedule,
+      stale: payload.stale,
+      dataSource: "sema-schedule",
+      updatedAt: payload.updatedAt,
+    };
+    return {
+      ...snapshot,
+      enabled: true,
+      source: payload.source,
+      revision: payload.revision,
+      contentHash: payload.contentHash,
+      snapshot,
+      projectId,
+    };
+  }
+
+  private publishSemaDisplayChange(event: { projectId: string; revision: number; contentHash: string }) {
+    this.lastLocalDisplayBroadcastHash.set(event.projectId, event.contentHash);
+    const emittedAtMs = Date.now();
+    this.displayBridgeEvents?.publishDisplayDataChanged(event.projectId, {
+      revision: event.revision,
+      contentHash: event.contentHash,
+      emittedAtMs,
+    });
+    for (const window of BrowserWindowRuntime.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        sendToRenderer(window, "neud:displayData:changed", {
+          projectId: event.projectId,
+          revision: event.revision,
+          contentHash: event.contentHash,
+          traceEventId: null,
+          emittedAtMs,
+        });
+      }
+    }
+  }
+
+  /** Project-level gate for SEMA controller actions (NEXT/PREV/Jump/NOW/manual/source/refresh). */
+  assertCanControlSemaProject(projectId: string): void {
+    const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
+    if (!userId || !this.accessAuthorization) {
+      return;
+    }
+    const capabilities = this.accessAuthorization.getProjectCapabilities(userId, projectId);
+    if (!capabilities.canUseLocalController) {
+      throw new Error("You do not have permission to operate this project's controller.");
+    }
+  }
+
+  /** Project-level gate for changing the Google Sheet source configuration. */
+  assertCanConfigureSemaProject(projectId: string): void {
+    const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
+    if (!userId || !this.accessAuthorization) {
+      return;
+    }
+    const capabilities = this.accessAuthorization.getProjectCapabilities(userId, projectId);
+    if (!capabilities.canEditProjectSettings) {
+      throw new Error("You do not have permission to change this project's Google Sheet.");
+    }
+  }
+
+  takeSemaNow(projectId: string) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    return this.semaSchedule.takeNow(projectId);
+  }
+
+  getSemaScheduleState(projectId: string) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    return this.semaSchedule.getState(projectId);
+  }
+
+  async refreshSemaSheet(projectId: string) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    return this.semaSchedule.refreshFromSheet(projectId);
+  }
+
+  advanceSemaSchedule(projectId: string, direction: "next" | "previous") {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const before = this.semaSchedule.getState(projectId);
+    // PREV/NEXT only move the Google Sheets cache position — they must not change
+    // the authoritative on-air source (top-menu toggle owns that).
+    const state = this.semaSchedule.advance(projectId, direction);
+    this.recordActivity({
+      type: "manual.override",
+      message:
+        direction === "previous"
+          ? "SEMA schedule moved to the previous row."
+          : "SEMA schedule moved to the next row.",
+      metadata: {
+        projectId,
+        direction,
+        sourceMode: before.sourceMode,
+        sheetOnly: true,
+      },
+    });
+    return state;
+  }
+
+  jumpSemaSchedule(projectId: string, rowIdOrIndex: string | number) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const before = this.semaSchedule.getState(projectId);
+    // Jump only updates the sheet cache cursor — does not switch on-air source.
+    const state = this.semaSchedule.jump(projectId, rowIdOrIndex);
+    this.recordActivity({
+      type: "manual.override",
+      message: "SEMA schedule jumped to a selected row.",
+      metadata: {
+        projectId,
+        rowIdOrIndex,
+        sourceMode: before.sourceMode,
+        sheetOnly: true,
+      },
+    });
+    return state;
+  }
+
+  configureSemaSheet(
+    projectId: string,
+    input: {
+      spreadsheetUrlOrId: string;
+      worksheetGid?: string | null;
+      worksheetTitle?: string | null;
+      pollIntervalMs?: number;
+    },
+  ) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const state = this.semaSchedule.configureSheet(projectId, input);
+    // A configured sheet is polled in the background (cache stays fresh even in manual mode).
+    this.semaSchedule.startPolling(projectId);
+    this.recordActivity({
+      type: "data-source.updated",
+      message: "SEMA Google Sheet URL configuration updated.",
+      metadata: {
+        projectId,
+        spreadsheetId: state.sheet.spreadsheetId || null,
+        worksheetGid: state.sheet.worksheetGid ?? null,
+      },
+    });
+    return state;
+  }
+
+  setSemaSourceMode(projectId: string, mode: "google-sheets" | "manual") {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const state = this.semaSchedule.setSourceMode(projectId, mode);
+    this.recordActivity({
+      type: "data-source.changed",
+      message:
+        mode === "manual"
+          ? "SEMA on-air source switched to Manual Controller."
+          : "SEMA on-air source switched to Data Source.",
+      metadata: { projectId, mode },
+    });
+    return state;
+  }
+
+  setSemaManualFields(
+    projectId: string,
+    fields: {
+      date?: string;
+      time?: string;
+      title?: string;
+      description?: string;
+      nextTitle?: string;
+      nextDescription?: string;
+      laterTitle?: string;
+      laterDescription?: string;
+    },
+    options: { takeOnAir?: boolean } = {},
+  ) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const state = this.semaSchedule.setManualFields(projectId, fields, options);
+    this.recordActivity({
+      type: "manual.override",
+      message: "SEMA Manual Controller Now / Next / Later values saved.",
+      metadata: {
+        projectId,
+        takeOnAir: options.takeOnAir === true,
+        sourceMode: state.sourceMode,
+      },
+    });
+    return state;
+  }
+
+  migrateProjectPackages() {
+    return (
+      this.projectPackages?.migrateLegacyInstalls() ?? {
+        migrated: [],
+        catalogSeeded: 0,
+      }
+    );
+  }
+
+  listProjectPackageDirectory(query?: string) {
+    const accessibleSlugs = this.getAccessibleProjectSlugsForPackages();
+    return (
+      this.projectPackages?.listDirectoryItems({
+        accessibleSlugs,
+        query,
+      }) ?? []
+    );
+  }
+
+  listInstalledSidebarProjects(query?: string) {
+    const installedSlugs = new Set(this.projectPackages?.listInstalledSlugs() ?? []);
+    // Use local records only (not directory synthetic rows).
+    return this.listLocalProjectRecords(query).filter((project) =>
+      installedSlugs.has(project.slug),
+    );
+  }
+
+  private getAccessibleProjectSlugsForPackages(): Set<string> | null {
+    const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
+    if (!this.accessAuthorization || !userId) {
+      // Unauthenticated / local-dev: expose builtin catalog.
+      return null;
+    }
+    const context = this.accessAuthorization.getAuthorizationContext(userId);
+    if (context?.isPlatformOwner) {
+      return null;
+    }
+    const accessible = this.accessAuthorization.getAccessibleProjects(userId);
+    const slugs = new Set(accessible.map((project) => project.slug));
+    // Always allow builtin catalog entries the user can see via cloud directory cache.
+    const cloudDirectory = this.readCloudDirectoryForAuthorization();
+    if (cloudDirectory && Array.isArray((cloudDirectory as { projects?: unknown }).projects)) {
+      for (const project of (cloudDirectory as { projects: Array<{ slug?: string }> }).projects) {
+        if (typeof project.slug === "string" && project.slug.trim()) {
+          slugs.add(project.slug.trim());
+        }
+      }
+    }
+    return slugs;
+  }
+
+  async downloadProjectPackage(slug: string) {
+    if (!this.projectPackages) {
+      throw new Error("Project package service is unavailable.");
+    }
+    return this.projectPackages.downloadPackage(slug);
+  }
+
+  async updateProjectPackage(slug: string) {
+    if (!this.projectPackages) {
+      throw new Error("Project package service is unavailable.");
+    }
+    return this.projectPackages.updatePackage(slug);
+  }
+
+  removeProjectPackageDownload(slug: string) {
+    if (!this.projectPackages) {
+      throw new Error("Project package service is unavailable.");
+    }
+    this.assertProjectPackageCanBeUninstalled(slug);
+    return this.projectPackages.removeDownload(slug);
+  }
+
+  private assertProjectPackageCanBeUninstalled(slug: string) {
+    const project = this.projects.getBySlug(slug);
+    if (!project) {
+      return;
+    }
+
+    const runningEngines = (this.engineManager?.getRunningEngineSummaries() ?? []).filter(
+      (summary) => summary.projectId === project.id,
+    );
+    if (runningEngines.length > 0) {
+      throw new Error(
+        "Stop the Data Engine for this project before uninstalling.",
+      );
+    }
+
+    if (this.hasActiveOutputRouteForProject?.(project.id)) {
+      throw new Error(
+        "Stop active Output routes that use this project's displays before uninstalling.",
+      );
+    }
+  }
+
+  /**
+   * Force-refresh the cloud project directory and package metadata without
+   * downloading, installing, or uninstalling packages.
+   */
+  async refreshProjectDirectory() {
+    const directory = await this.getCloudAccessDirectory({ forceRefresh: true });
+    if (directory && typeof directory === "object" && (directory as { ok?: boolean }).ok !== false) {
+      const projects = Array.isArray((directory as { projects?: unknown }).projects)
+        ? ((directory as { projects: Array<Record<string, unknown>> }).projects)
+        : [];
+      this.projectPackages?.syncCloudAccessibleProjects(
+        projects.map((project) => ({
+          id: typeof project.id === "string" ? project.id : undefined,
+          slug: typeof project.slug === "string" ? project.slug : undefined,
+          name: typeof project.name === "string" ? project.name : undefined,
+          projectType:
+            typeof project.projectType === "string"
+              ? project.projectType
+              : typeof project.project_type === "string"
+                ? project.project_type
+                : undefined,
+          description:
+            typeof project.description === "string" ? project.description : null,
+        })),
+      );
+    }
+    // Reseed builtin catalog metadata without installing or migrating packages.
+    this.projectPackages?.ensureCatalogDirectoryEntries();
+    await this.syncCloudPackageVersionsIntoDirectory();
+    return {
+      ok: true as const,
+      projects: this.listProjects(undefined, { scope: "directory" }),
+    };
+  }
+
+  private async syncCloudPackageVersionsIntoDirectory(): Promise<void> {
+    if (!this.projectPackages) {
+      return;
+    }
+    if (!this.cloudCoordinator?.isAuthenticatedCloudSessionAvailable()) {
+      return;
+    }
+    const supabase = await this.cloudCoordinator.getClient();
+    if (!supabase) {
+      return;
+    }
+    const { data, error } = await supabase.rpc(
+      "list_accessible_project_package_versions",
+    );
+    if (error || !Array.isArray(data)) {
+      return;
+    }
+    for (const row of data) {
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const slug =
+        typeof (row as { project_slug?: string }).project_slug === "string"
+          ? (row as { project_slug: string }).project_slug
+          : "";
+      const projectId =
+        typeof (row as { project_id?: string }).project_id === "string"
+          ? (row as { project_id: string }).project_id
+          : "";
+      const latestVersion =
+        typeof (row as { latest_version?: number }).latest_version === "number"
+          ? (row as { latest_version: number }).latest_version
+          : null;
+      if (!slug || !projectId || latestVersion == null) {
+        continue;
+      }
+      const existing = this.projectPackages.getDirectoryBySlug(slug);
+      const capabilities = Array.isArray((row as { capabilities?: unknown }).capabilities)
+        ? ((row as { capabilities: string[] }).capabilities)
+        : ((existing?.metadata?.capabilities as string[] | undefined) ?? []);
+      this.projectPackages.registerNewProjectDirectoryEntry({
+        projectId: existing?.localProjectId ?? projectId,
+        slug,
+        name: existing?.name ?? slug,
+        projectType: existing?.projectType ?? "modular",
+        description: existing?.description ?? null,
+        capabilities: capabilities as never,
+        cloudProjectId: projectId,
+      });
+      this.projectPackages.updateDirectoryAvailableVersion({
+        slug,
+        cloudProjectId: projectId,
+        availableVersion: latestVersion,
+        capabilities,
+        contentHash:
+          typeof (row as { content_hash?: string }).content_hash === "string"
+            ? (row as { content_hash: string }).content_hash
+            : null,
+      });
+    }
+  }
+
+  isProjectPackageInstalled(projectIdOrSlug: string): boolean {
+    if (!this.projectPackages) {
+      return true;
+    }
+    return (
+      this.projectPackages.isProjectInstalled(projectIdOrSlug) ||
+      this.projectPackages.isSlugInstalled(projectIdOrSlug)
+    );
   }
 
   setPinnedViewerSync(service: PinnedViewerSyncService) {
@@ -561,6 +1069,10 @@ export class LocalDataService {
     });
 
     const networkReachable = this.getNetworkReachable();
+    const cloudConnectionState = resolveCloudConnectionState({
+      networkReachable,
+      sharedAuth: sharedAuthSnapshot,
+    });
 
     this.startupAuthConsistencyDiagnostics = {
       localSessionValid,
@@ -589,6 +1101,7 @@ export class LocalDataService {
       sharedAuthSnapshot,
       profileIndicatorState,
       dashboardConnectionState,
+      cloudConnectionState,
       localSessionValid,
       networkReachable,
       userDirectorySync: {
@@ -1693,6 +2206,18 @@ export class LocalDataService {
             }>,
             actorUserId,
           });
+      }
+
+      if (Array.isArray(directory.projects)) {
+        this.projectPackages?.syncCloudAccessibleProjects(
+          directory.projects as Array<{
+            id?: string;
+            slug?: string;
+            name?: string;
+            projectType?: string;
+            description?: string | null;
+          }>,
+        );
       }
 
       return {
@@ -2801,7 +3326,145 @@ export class LocalDataService {
     return this.projects.getBySlug(slug);
   }
 
-  listProjects(query?: string) {
+  resolvePublishedOutputDisplay(displayId: string) {
+    const display = this.displays.getById(displayId);
+    if (!display) return null;
+    const project = this.projects.getById(display.projectId);
+    const code = this.displayCodeRepo?.getByDisplayId(display.id) ?? null;
+    const settings =
+      display.settings && typeof display.settings === "object"
+        ? (display.settings as Record<string, unknown>)
+        : {};
+    const settingsSource =
+      settings.sourceType === "project-video"
+        ? "project-video"
+        : settings.sourceType === "project-html"
+          ? "project-html"
+          : settings.sourceType === "built-in"
+            ? "built-in"
+            : null;
+    return {
+      projectId: display.projectId,
+      projectName: project?.name ?? display.projectId,
+      displayId: display.id,
+      displayName: display.name,
+      slug: code?.slug || display.displayKey,
+      width: display.displayWidth || 1920,
+      height: display.displayHeight || 1080,
+      enabled: display.enabled,
+      publishedRevisionId: code?.publishedRevisionId ?? null,
+      sourceType: code?.sourceType ?? settingsSource ?? "built-in",
+    };
+  }
+
+  /**
+   * Resolve a pinned display stack for Output Engine.
+   * Membership is authoritative via stack id — layers come from the current pinned stack hierarchy.
+   */
+  resolvePublishedOutputStack(stackId: string, projectId: string) {
+    const trimmedStackId = stackId.trim();
+    if (!trimmedStackId) return null;
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId || !this.userPinnedViewer) return null;
+
+    const eligible = this.listPinnedViewerEligibleDisplays(projectId);
+    const displayOrderIds = eligible.map((display) => display.id);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligible);
+    const stored = this.userPinnedViewer.get(userId, projectId);
+    const sanitized = sanitizePinnedViewerStacks({
+      pinnedDisplayIds: stored?.pinnedDisplayIds ?? [],
+      stacks: stored?.pinnedStacks ?? [],
+      displays: eligible.map(({ id, enabled, archived }) => ({ id, enabled, archived })),
+      displayListOrderIds: displayOrderIds,
+      displaysById,
+    });
+    const stack = sanitized.stacks.find((entry) => entry.id === trimmedStackId);
+    if (!stack) return null;
+
+    const orderedMemberIds = orderStackLayers(stack, displayOrderIds);
+    if (orderedMemberIds.length < 2) return null;
+
+    const layers = [];
+    for (const memberId of orderedMemberIds) {
+      const resolved = this.resolvePublishedOutputDisplay(memberId);
+      if (!resolved || resolved.projectId !== projectId || !resolved.enabled) {
+        continue;
+      }
+      layers.push({
+        displayId: resolved.displayId,
+        displayName: resolved.displayName,
+        slug: resolved.slug,
+        width: resolved.width,
+        height: resolved.height,
+        enabled: resolved.enabled,
+        zIndex: layerZIndexForDisplayInStack(memberId, orderedMemberIds),
+        sourceType: resolved.sourceType,
+      });
+    }
+    if (layers.length < 2) return null;
+
+    const base = layers[layers.length - 1]!;
+    const names = layers.map((layer) => layer.displayName);
+    return {
+      projectId,
+      stackId: trimmedStackId,
+      stackName:
+        names.length <= 2
+          ? `Stack · ${names.join(" + ")}`
+          : `Stack · ${names.length} displays`,
+      width: base.width,
+      height: base.height,
+      layers,
+    };
+  }
+
+  /** Valid pinned stacks selectable as Output sources for a project. */
+  listOutputSourceStacks(projectId: string) {
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId || !this.userPinnedViewer) return [];
+    const eligible = this.listPinnedViewerEligibleDisplays(projectId);
+    const displayOrderIds = eligible.map((display) => display.id);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligible);
+    const stored = this.userPinnedViewer.get(userId, projectId);
+    const sanitized = sanitizePinnedViewerStacks({
+      pinnedDisplayIds: stored?.pinnedDisplayIds ?? [],
+      stacks: stored?.pinnedStacks ?? [],
+      displays: eligible.map(({ id, enabled, archived }) => ({ id, enabled, archived })),
+      displayListOrderIds: displayOrderIds,
+      displaysById,
+    });
+    return sanitized.stacks
+      .map((stack) => {
+        const ordered = orderStackLayers(stack, displayOrderIds);
+        const names = ordered
+          .map((id) => eligible.find((display) => display.id === id)?.name)
+          .filter((name): name is string => Boolean(name));
+        if (ordered.length < 2 || names.length < 2) return null;
+        return {
+          id: stack.id,
+          label:
+            names.length <= 2
+              ? `Stack · ${names.join(" + ")}`
+              : `Stack · ${names.length} displays`,
+          memberCount: ordered.length,
+          memberDisplayIds: ordered,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  }
+
+  listProjects(query?: string, options?: { scope?: "all" | "installed" | "directory" }) {
+    const scope = options?.scope ?? "all";
+    if (scope === "installed") {
+      return this.listInstalledSidebarProjects(query);
+    }
+    if (scope === "directory" && this.projectPackages) {
+      return this.listProjectsDirectoryPage(query);
+    }
+    return this.listLocalProjectRecords(query);
+  }
+
+  private listLocalProjectRecords(query?: string) {
     const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
     if (this.accessAuthorization && userId) {
       const accessible = new Set(
@@ -2821,9 +3484,19 @@ export class LocalDataService {
               projectSlug: project.slug,
             })
           : [];
+        const install = this.projectPackages?.getInstall(project.id) ?? null;
         return {
-          ...portalProject,
+          ...this.attachProjectCapabilities(portalProject),
           teams,
+          packageState: install
+            ? install.availableVersion != null &&
+              install.availableVersion > install.installedVersion
+              ? "update_available"
+              : "downloaded"
+            : "not_downloaded",
+          installedVersion: install?.installedVersion ?? null,
+          availableVersion: install?.availableVersion ?? null,
+          isPackageInstalled: Boolean(install && install.installState === "installed"),
         };
       });
     }
@@ -2833,10 +3506,144 @@ export class LocalDataService {
     if (!canManageProjectSettings(role)) {
       records = records.filter((project) => normalizeProjectIsActive(project));
     }
-    return records.map((project) => ({
-      ...toPortalProject(project),
-      teams: [] as Array<{ id: string; name: string }>,
-    }));
+    return records.map((project) => {
+      const install = this.projectPackages?.getInstall(project.id) ?? null;
+      return {
+        ...this.attachProjectCapabilities(toPortalProject(project)),
+        teams: [] as Array<{ id: string; name: string }>,
+        packageState: install
+          ? install.availableVersion != null &&
+            install.availableVersion > install.installedVersion
+            ? "update_available"
+            : "downloaded"
+          : "not_downloaded",
+        installedVersion: install?.installedVersion ?? null,
+        availableVersion: install?.availableVersion ?? null,
+        isPackageInstalled: Boolean(install && install.installState === "installed"),
+      };
+    });
+  }
+
+  private listProjectsDirectoryPage(query?: string) {
+    const directory = this.listProjectPackageDirectory(query);
+    const localBySlug = new Map(
+      this.listLocalProjectRecords(query).map((project) => [project.slug, project]),
+    );
+    const cloudDirectory = this.readCloudDirectoryForAuthorization();
+    const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
+    const context =
+      userId && this.accessAuthorization
+        ? this.accessAuthorization.getAuthorizationContext(userId)
+        : null;
+
+    return directory.map((entry) => {
+      const local = localBySlug.get(entry.slug);
+      const directoryUpdatedAt = entry.updatedAt ?? null;
+      if (local) {
+        const localUpdated =
+          typeof (local as { updated_at?: unknown }).updated_at === "string"
+            ? (local as { updated_at: string }).updated_at
+            : null;
+        const teams =
+          Array.isArray((local as { teams?: unknown }).teams) &&
+          (local as { teams: unknown[] }).teams.length > 0
+            ? (local as { teams: Array<{ id: string; name: string }> }).teams
+            : this.resolveDirectoryCardTeams(entry.slug, entry.cloudProjectId, {
+                cloudDirectory,
+                context,
+              });
+        return {
+          ...local,
+          capabilities:
+            Array.isArray((local as { capabilities?: unknown }).capabilities) &&
+            (local as { capabilities: unknown[] }).capabilities.length > 0
+              ? (local as { capabilities: string[] }).capabilities
+              : entry.localProjectId
+                ? this.getProjectCapabilities(entry.localProjectId)
+                : defaultCapabilitiesForProjectType(entry.projectType),
+          teams,
+          packageState: entry.packageState,
+          installedVersion: entry.installedVersion,
+          availableVersion: entry.availableVersion,
+          isPackageInstalled: entry.isInstalled,
+          packageLastError: entry.lastError,
+          updated_at: localUpdated || directoryUpdatedAt,
+        };
+      }
+      return {
+        id: entry.localProjectId ?? entry.cloudProjectId ?? entry.slug,
+        slug: entry.slug,
+        name: entry.name,
+        description: entry.description,
+        project_type: entry.projectType,
+        projectType: entry.projectType,
+        status: "active",
+        is_active: true,
+        isActive: true,
+        accessLevel: "operator",
+        capabilities: entry.localProjectId
+          ? this.getProjectCapabilities(entry.localProjectId)
+          : defaultCapabilitiesForProjectType(entry.projectType),
+        teams: this.resolveDirectoryCardTeams(entry.slug, entry.cloudProjectId, {
+          cloudDirectory,
+          context,
+        }),
+        packageState: entry.packageState,
+        installedVersion: entry.installedVersion,
+        availableVersion: entry.availableVersion,
+        isPackageInstalled: entry.isInstalled,
+        packageLastError: entry.lastError,
+        created_at: null,
+        updated_at: directoryUpdatedAt,
+      };
+    });
+  }
+
+  private resolveDirectoryCardTeams(
+    slug: string,
+    cloudProjectId: string | null | undefined,
+    options: {
+      cloudDirectory: import("../access/can-view-user-details").UserDetailsDirectory | null;
+      context: NonNullable<
+        ReturnType<AccessAuthorizationService["getAuthorizationContext"]>
+      > | null;
+    },
+  ): Array<{ id: string; name: string }> {
+    const { cloudDirectory, context } = options;
+    if (!cloudDirectory) {
+      return [];
+    }
+    const cloudProject = cloudDirectory.projects?.find((project) => project.slug === slug);
+    const projectId =
+      cloudProject?.id ||
+      (typeof cloudProjectId === "string" && !cloudProjectId.startsWith("builtin:")
+        ? cloudProjectId
+        : slug);
+
+    if (context && this.accessAuthorization) {
+      return this.accessAuthorization.getVisibleProjectTeams(context, projectId, {
+        cloudDirectory,
+        projectSlug: slug,
+      });
+    }
+
+    const projectIds = new Set<string>([projectId]);
+    if (cloudProject?.id) {
+      projectIds.add(cloudProject.id);
+    }
+    const teamIds = new Set<string>();
+    for (const assignment of cloudDirectory.projectTeams ?? []) {
+      if (projectIds.has(assignment.projectId)) {
+        teamIds.add(assignment.teamId);
+      }
+    }
+    return [...teamIds]
+      .map((teamId) => {
+        const team = cloudDirectory.teams?.find((entry) => entry.id === teamId);
+        return team?.name ? { id: teamId, name: team.name } : null;
+      })
+      .filter((team): team is { id: string; name: string } => team !== null)
+      .sort((left, right) => left.name.localeCompare(right.name));
   }
 
   getDashboardData(limit = 5) {
@@ -3151,41 +3958,480 @@ export class LocalDataService {
     return this.projects.slugExists(slug);
   }
 
-  createProject(input: {
+  async createProject(input: {
     name: string;
     slug: string;
     projectType: string;
     description?: string | null;
     theme?: string;
     icon?: string;
+    capabilities?: string[];
+    teamIds?: string[];
+  }) {
+    return this.createProjectWithCapabilities({
+      name: input.name,
+      slug: input.slug,
+      description: input.description,
+      theme: input.theme,
+      icon: input.icon,
+      capabilities:
+        input.capabilities ??
+        defaultCapabilitiesForProjectType(input.projectType),
+      teamIds: input.teamIds ?? [],
+      projectTypeHint: input.projectType,
+    });
+  }
+
+  listAssignableTeamsForProjectCreate() {
+    if (!this.auth.isAccessAllowed()) {
+      throw new Error(SIGN_IN_TO_NEUD_ACCOUNT_MESSAGE);
+    }
+    if (!this.canCreateProject()) {
+      return [];
+    }
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId || !this.accessManagement) {
+      return [];
+    }
+    return this.accessManagement.listAssignableTeamsForProjectCreate(userId);
+  }
+
+  getProjectCapabilities(projectId: string) {
+    if (!this.projectCapabilities) {
+      const project = this.projects.getById(projectId);
+      return project
+        ? defaultCapabilitiesForProjectType(project.projectType)
+        : [];
+    }
+    const existing = this.projectCapabilities.listForProject(projectId);
+    if (existing.length > 0) {
+      return existing;
+    }
+    const project = this.projects.getById(projectId);
+    if (!project) {
+      return [];
+    }
+    return this.projectCapabilities.ensureDefaultsForProject(
+      projectId,
+      project.projectType,
+    );
+  }
+
+  async setProjectCapabilities(projectId: string, capabilities: string[]) {
+    if (!this.auth.isAccessAllowed()) {
+      throw new Error(SIGN_IN_TO_NEUD_ACCOUNT_MESSAGE);
+    }
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId) {
+      throw new Error(SIGN_IN_TO_NEUD_ACCOUNT_MESSAGE);
+    }
+    const project = this.projects.getById(projectId);
+    if (!project) {
+      throw new Error("Project not found.");
+    }
+    const caps = this.accessAuthorization?.getProjectCapabilities(userId, projectId);
+    if (!caps?.canEditProjectSettings) {
+      throw new Error("You do not have permission to edit project capabilities.");
+    }
+    const validation = validateCapabilitySelection(capabilities);
+    if (!validation.ok) {
+      throw new Error(validation.error);
+    }
+    if (!this.projectCapabilities) {
+      throw new Error("Project capabilities store is unavailable.");
+    }
+
+    const previous = this.projectCapabilities.listForProject(projectId);
+    const next = this.projectCapabilities.replaceForProject(
+      projectId,
+      validation.capabilities,
+      userId,
+    );
+    const added = next.filter((id) => !previous.includes(id));
+    const removed = previous.filter((id) => !next.includes(id));
+
+    if (added.length > 0 || removed.length > 0) {
+      this.recordActivity({
+        type: "project.updated",
+        message: `Updated project capabilities`,
+        userAction: `Updated project capabilities`,
+        metadata: {
+          projectId: project.id,
+          projectName: project.name,
+          projectSlug: project.slug,
+          capabilities: next,
+          added,
+          removed,
+        },
+      });
+    }
+
+    // Refresh directory metadata only — do not delete module data.
+    this.projectPackages?.registerNewProjectDirectoryEntry({
+      projectId: project.id,
+      slug: project.slug,
+      name: project.name,
+      projectType: project.projectType,
+      description: project.description,
+      capabilities: next,
+    });
+
+    // Cloud mirror (best-effort; local save already succeeded).
+    await this.syncProjectCapabilitiesToCloud(project.id, project.slug, next);
+
+    // Ensure Live Chat starter display when capability added.
+    if (next.includes("live-chat")) {
+      try {
+        this.liveChatService?.ensureProjectBootstrap(project.id);
+      } catch {
+        // Non-fatal; package update may hydrate later.
+      }
+    }
+
+    return {
+      project: this.attachProjectCapabilities(toPortalProject(project)),
+      capabilities: next,
+    };
+  }
+
+  private async syncProjectCapabilitiesToCloud(
+    projectId: string,
+    projectSlug: string,
+    capabilities: string[],
+  ): Promise<void> {
+    if (!this.cloudCoordinator?.isAuthenticatedCloudSessionAvailable()) {
+      return;
+    }
+    const supabase = await this.cloudCoordinator.getClient();
+    if (!supabase) {
+      return;
+    }
+    const directory = this.projectPackages?.getDirectoryBySlug(projectSlug);
+    const cloudId =
+      directory?.cloudProjectId &&
+      !directory.cloudProjectId.startsWith("local:") &&
+      !directory.cloudProjectId.startsWith("builtin:")
+        ? directory.cloudProjectId
+        : projectId;
+    const { error } = await supabase.rpc("set_project_capabilities", {
+      p_project_id: cloudId,
+      p_capabilities: capabilities,
+    });
+    if (error) {
+      throw new Error(
+        `Local capabilities saved, but cloud sync failed: ${error.message}`,
+      );
+    }
+  }
+
+  async createProjectWithCapabilities(input: {
+    name: string;
+    slug: string;
+    description?: string | null;
+    theme?: string;
+    icon?: string;
+    capabilities: string[];
+    teamIds?: string[];
+    projectTypeHint?: string;
   }) {
     if (!this.auth.isAccessAllowed()) {
       throw new Error(SIGN_IN_TO_NEUD_ACCOUNT_MESSAGE);
     }
     if (!this.canCreateProject()) {
-      throw new Error("Only platform owners and admins may create projects.");
+      throw new Error(
+        "Only the NEUD Owner and Team Admins may create projects.",
+      );
     }
 
-    const project = this.projects.create(input);
-    if (input.projectType === "webpage-scraper" || input.projectType === "bag-graphics") {
-      const engine = this.dataSources.ensureWebpageScraper(
-        project.id,
-        input.projectType,
-      );
-      if (input.projectType === "bag-graphics") {
-        this.bagSources.ensureBagScraperSources(engine.id);
-        if (shouldAutoSeedBagDisplays(project)) {
-          this.pylonDisplays.ensurePylonDisplay(project.id, this.viewerBaseUrl);
-          this.lowerTickerDisplays.ensureLowerTickerDisplay(project.id, this.viewerBaseUrl);
-          this.newAuctionDisplays.ensureNewBidDisplay(project.id, this.viewerBaseUrl);
-          this.newAuctionDisplays.ensureNewTickerDisplay(project.id, this.viewerBaseUrl);
-        }
-      } else if (input.projectType === "webpage-scraper") {
-        this.genericScraper.ensureGenericScraperSources(engine.id);
-      }
-      this.normalizeEngineExecutionMode(engine.id);
+    const validation = validateCapabilitySelection(input.capabilities);
+    if (!validation.ok) {
+      throw new Error(validation.error);
     }
-    return toPortalProject(project);
+
+    const name = input.name.trim();
+    if (!name) {
+      throw new Error("Project name is required.");
+    }
+    if (name.length > 80) {
+      throw new Error("Project name must be 80 characters or fewer.");
+    }
+
+    const slug = input.slug.trim();
+    if (!slug) {
+      throw new Error("Project slug is required.");
+    }
+
+    // Idempotent retry: existing installed project with same slug.
+    const existing = this.projects.getBySlug(slug);
+    if (existing) {
+      const install = this.projectPackages?.getInstall(existing.id);
+      if (
+        install &&
+        (install.installState === "installed" ||
+          install.installState === "updating")
+      ) {
+        return this.attachProjectCapabilities(toPortalProject(existing));
+      }
+    } else if (this.projects.slugExists(slug)) {
+      throw new Error("A project with that slug already exists.");
+    }
+
+    const userId = this.auth.getAuthenticatedUser()?.userId;
+    if (!userId) {
+      throw new Error(SIGN_IN_TO_NEUD_ACCOUNT_MESSAGE);
+    }
+
+    const projectType =
+      input.projectTypeHint?.trim() ||
+      resolveProjectTypeFromCapabilities(validation.capabilities);
+    const teamIds = [...new Set((input.teamIds ?? []).filter(Boolean))];
+
+    let project: ReturnType<ProjectsRepository["create"]> | null =
+      existing ?? null;
+    let createdNow = false;
+    try {
+      if (!project) {
+        project = this.projects.create({
+          name,
+          slug,
+          projectType,
+          description: input.description?.trim() || null,
+          theme: input.theme,
+          icon: input.icon,
+        });
+        createdNow = true;
+      }
+
+      if (this.projectCapabilities) {
+        this.projectCapabilities.replaceForProject(
+          project.id,
+          validation.capabilities,
+          userId,
+        );
+      }
+
+      if (teamIds.length > 0) {
+        if (!this.accessManagement) {
+          throw new Error("Access management is unavailable.");
+        }
+        this.accessManagement.assignTeamsOnProjectCreate(userId, {
+          projectId: project.id,
+          teamIds,
+        });
+      } else {
+        // No Team: grant creator direct Project Manager access.
+        this.memberships.ensureManagerMembership(project.id, userId);
+      }
+
+      if (projectType === "webpage-scraper" || projectType === "bag-graphics") {
+        const engine = this.dataSources.ensureWebpageScraper(
+          project.id,
+          projectType,
+        );
+        if (projectType === "bag-graphics") {
+          this.bagSources.ensureBagScraperSources(engine.id);
+          if (shouldAutoSeedBagDisplays(project)) {
+            this.pylonDisplays.ensurePylonDisplay(project.id, this.viewerBaseUrl);
+            this.lowerTickerDisplays.ensureLowerTickerDisplay(
+              project.id,
+              this.viewerBaseUrl,
+            );
+            this.newAuctionDisplays.ensureNewBidDisplay(
+              project.id,
+              this.viewerBaseUrl,
+            );
+            this.newAuctionDisplays.ensureNewTickerDisplay(
+              project.id,
+              this.viewerBaseUrl,
+            );
+          }
+        } else if (projectType === "webpage-scraper") {
+          this.genericScraper.ensureGenericScraperSources(engine.id);
+        }
+        this.normalizeEngineExecutionMode(engine.id);
+      }
+
+      this.projectPackages?.registerNewProjectDirectoryEntry({
+        projectId: project.id,
+        slug: project.slug,
+        name: project.name,
+        projectType: project.projectType,
+        description: project.description,
+        capabilities: validation.capabilities,
+      });
+
+      // Cloud project + capabilities (idempotent register by local UUID).
+      const cloudResult = await this.publishNewProjectToCloud({
+        projectId: project.id,
+        slug: project.slug,
+        name: project.name,
+        projectType: project.projectType,
+        capabilities: validation.capabilities,
+        teamIds,
+      });
+
+      // Build + install v1 locally for the creator (not for other users).
+      if (!this.projectPackages) {
+        throw new Error(
+          "Project package service unavailable; cannot install v1 for creator.",
+        );
+      }
+      await this.projectPackages.downloadPackage(project.slug);
+
+      // Publish v1 package catalog/blob so other authorized users can Download.
+      const packagePublish = await this.projectPackages.publishModularPackageVersion({
+        projectId: project.id,
+        cloudProjectId: cloudResult.cloudProjectId,
+        slug: project.slug,
+        name: project.name,
+        projectType: project.projectType,
+        description: project.description,
+        capabilities: validation.capabilities,
+        version: 1,
+      });
+
+      if (!packagePublish.ok && cloudResult.ok) {
+        throw new Error(
+          packagePublish.error ??
+            "Project created in cloud, but package v1 publish failed. Retry Create Project.",
+        );
+      }
+
+      if (validation.capabilities.includes("live-chat")) {
+        this.liveChatService?.ensureProjectBootstrap(project.id);
+      }
+
+      if (createdNow) {
+        this.recordActivity({
+          type: "project.created",
+          message: `Created project ${project.name}`,
+          userAction: `Created project ${project.name}`,
+          metadata: {
+            projectId: project.id,
+            projectName: project.name,
+            projectSlug: project.slug,
+            capabilities: validation.capabilities,
+            teamIds,
+            cloudProjectId: cloudResult.cloudProjectId,
+            packagePublished: packagePublish.ok,
+          },
+        });
+      }
+
+      return this.attachProjectCapabilities(toPortalProject(project));
+    } catch (error) {
+      // Leave partially-created project for idempotent retry (do not rollback).
+      throw error;
+    }
+  }
+
+  private async publishNewProjectToCloud(input: {
+    projectId: string;
+    slug: string;
+    name: string;
+    projectType: string;
+    capabilities: readonly string[];
+    teamIds: string[];
+  }): Promise<{ ok: boolean; cloudProjectId: string; error?: string }> {
+    const localCloudId = `local:${input.projectId}`;
+    if (!this.cloudCoordinator?.isAuthenticatedCloudSessionAvailable()) {
+      this.projectPackages?.registerNewProjectDirectoryEntry({
+        projectId: input.projectId,
+        slug: input.slug,
+        name: input.name,
+        projectType: input.projectType,
+        capabilities: input.capabilities as never,
+        cloudProjectId: localCloudId,
+      });
+      return {
+        ok: false,
+        cloudProjectId: localCloudId,
+        error: "Cloud session unavailable; project is local-only until signed in.",
+      };
+    }
+
+    const supabase = await this.cloudCoordinator.getClient();
+    if (!supabase) {
+      return { ok: false, cloudProjectId: localCloudId, error: "Cloud client unavailable." };
+    }
+
+    const { data: registerData, error: registerError } = await supabase.rpc(
+      "register_hosted_project_for_desktop",
+      {
+        p_project_id: input.projectId,
+        p_slug: input.slug,
+        p_name: input.name,
+        p_project_type: input.projectType,
+      },
+    );
+
+    if (registerError) {
+      throw new Error(
+        `Unable to create cloud project: ${registerError.message}`,
+      );
+    }
+    const registerOk =
+      registerData &&
+      typeof registerData === "object" &&
+      (registerData as { ok?: boolean }).ok === true;
+    if (!registerOk) {
+      const message =
+        registerData &&
+        typeof registerData === "object" &&
+        typeof (registerData as { message?: string }).message === "string"
+          ? (registerData as { message: string }).message
+          : "Unable to register cloud project.";
+      throw new Error(message);
+    }
+
+    const { error: capsError } = await supabase.rpc("set_project_capabilities", {
+      p_project_id: input.projectId,
+      p_capabilities: [...input.capabilities],
+    });
+    if (capsError) {
+      throw new Error(
+        `Cloud project registered, but capabilities failed: ${capsError.message}`,
+      );
+    }
+
+    // Team assignments on cloud when provided (best-effort via access bridge).
+    if (input.teamIds.length > 0 && this.cloudAccessBridge) {
+      for (const teamId of input.teamIds) {
+        try {
+          await this.cloudAccessBridge.assignProjectTeam({
+            projectId: input.projectId,
+            teamId,
+          });
+        } catch {
+          // Local team assignment already applied; cloud retry via directory refresh.
+        }
+      }
+    }
+
+    this.projectPackages?.registerNewProjectDirectoryEntry({
+      projectId: input.projectId,
+      slug: input.slug,
+      name: input.name,
+      projectType: input.projectType,
+      capabilities: input.capabilities as never,
+      cloudProjectId: input.projectId,
+    });
+
+    return { ok: true, cloudProjectId: input.projectId };
+  }
+
+  private attachProjectCapabilities<T extends Record<string, unknown>>(
+    project: T,
+  ): T & { capabilities: string[] } {
+    const record = project as Record<string, unknown>;
+    const id =
+      typeof record.id === "string"
+        ? record.id
+        : typeof record.project_id === "string"
+          ? record.project_id
+          : null;
+    const capabilities = id ? this.getProjectCapabilities(id) : [];
+    return { ...project, capabilities };
   }
 
   ensureProjectEngines(projectId: string) {
@@ -3222,10 +4468,40 @@ export class LocalDataService {
     const isArchivedDisplay = (displayId: string) =>
       this.displayCodeRepo?.getByDisplayId(displayId)?.archived ?? false;
 
-    if (isBroadArrowCanonicalProject(project)) {
+    if (isBroadArrowCanonicalProject(project) || project.projectType === "sema-schedule") {
+      const installedDisplayKeys = this.projectPackages?.getInstalledDisplayKeys(projectId);
+      // SEMA: if package is installed but displays were never hydrated (broken earlier
+      // baseline), expose nothing hollow — hydration on activate/boot must create them.
       const projectDisplays = this.displays
         .listByProject(projectId)
-        .filter((display) => !isArchivedDisplay(display.id));
+        .filter((display) => !isArchivedDisplay(display.id))
+        .filter((display) => {
+          // Installed package version defines visible package displays — never show
+          // future cloud metadata as hollow rows before package update.
+          // User-created project-html / project-video displays are always included.
+          if (!installedDisplayKeys) {
+            return project.projectType !== "sema-schedule";
+          }
+          if (installedDisplayKeys.has(display.displayKey)) {
+            return true;
+          }
+          const code = this.displayCodeRepo?.getByDisplayId(display.id);
+          if (
+            code?.sourceType === "project-html" ||
+            code?.sourceType === "project-video"
+          ) {
+            return true;
+          }
+          // Fallback: display settings may mark user media before display_code hydrates.
+          const settings =
+            display.settings && typeof display.settings === "object"
+              ? (display.settings as Record<string, unknown>)
+              : {};
+          return (
+            settings.sourceType === "project-html" ||
+            settings.sourceType === "project-video"
+          );
+        });
       const combined = projectDisplays.map((display) => this.toCustomPortalDisplay(display));
       const hasProjectOrder = projectDisplays.some((display) => display.sortOrder != null);
       if (hasProjectOrder) {
@@ -3325,20 +4601,34 @@ export class LocalDataService {
 
   private toCustomPortalDisplay(display: LocalDisplay) {
     const code = this.displayCodeRepo?.getByDisplayId(display.id);
+    const settings =
+      display.settings && typeof display.settings === "object"
+        ? (display.settings as Record<string, unknown>)
+        : {};
+    const sourceType =
+      code?.sourceType === "project-video" || settings.sourceType === "project-video"
+        ? "project-video"
+        : code?.sourceType === "built-in" || settings.sourceType === "built-in"
+          ? "built-in"
+          : "project-html";
     const slug = code?.slug ?? display.displayKey;
     const base = this.viewerBaseUrl.replace(/\/$/, "");
     const url = `${base}/display/${encodeURIComponent(display.projectId)}/${encodeURIComponent(slug)}`;
-    return toPortalDisplay(
-      {
-        ...display,
-        settings: {
-          ...(display.settings ?? {}),
-          url,
-          displayType: "project-html",
+    return {
+      ...toPortalDisplay(
+        {
+          ...display,
+          settings: {
+            ...settings,
+            url,
+            displayType: sourceType,
+            sourceType,
+          },
         },
-      },
-      this.viewerBaseUrl,
-    );
+        this.viewerBaseUrl,
+      ),
+      slug,
+    };
   }
 
   insertDisplayAfterInUserOrder(
@@ -3477,17 +4767,32 @@ export class LocalDataService {
   }
 
   private listPinnedViewerEligibleDisplays(projectId: string) {
-    return this.listProjectDisplays(projectId).map((display) => ({
-      id: display.id,
-      enabled: Boolean(display.enabled),
-      archived: false,
-      name: display.name,
-      displayKey: display.display_key,
-      url: display.url,
-      width: display.width ?? 1920,
-      height: display.height ?? 1080,
-      settings: display.settings ?? {},
-    }));
+    return this.listProjectDisplays(projectId).map((display) => {
+      const settings =
+        display.settings && typeof display.settings === "object"
+          ? (display.settings as Record<string, unknown>)
+          : {};
+      const sourceType =
+        settings.sourceType === "project-video" ||
+        settings.sourceType === "project-html" ||
+        settings.sourceType === "built-in"
+          ? settings.sourceType
+          : undefined;
+      return {
+        id: display.id,
+        enabled: Boolean(display.enabled),
+        archived: false,
+        name: display.name,
+        displayKey: display.display_key,
+        url: display.url,
+        /** Custom display slug — needed to resolve the same Local URL as Displays management. */
+        slug: "slug" in display && typeof display.slug === "string" ? display.slug : undefined,
+        width: display.width ?? 1920,
+        height: display.height ?? 1080,
+        settings,
+        ...(sourceType ? { sourceType } : {}),
+      };
+    });
   }
 
   private buildPinnedViewerDisplaysById(
@@ -3729,6 +5034,28 @@ export class LocalDataService {
       pinnedDisplayIds: state.pinnedDisplayIds,
       stacks: state.pinnedStacks,
       displayListOrderIds: state.displayOrderIds,
+      displaysById,
+    });
+    return this.savePinnedViewerPreference(projectId, {
+      pinnedDisplayIds: next.pinnedDisplayIds,
+      pinnedStacks: next.stacks,
+      viewerHeightPx: state.viewerHeightPx,
+    });
+  }
+
+  /** Save TOP…BOTTOM layer order for one stack. Does not touch the global Displays order. */
+  reorderPinnedViewerStack(
+    projectId: string,
+    input: { stackId: string; orderedDisplayIds: string[] },
+  ) {
+    const state = this.getPinnedViewerState(projectId);
+    const eligible = this.listPinnedViewerEligibleDisplays(projectId);
+    const displaysById = this.buildPinnedViewerDisplaysById(eligible);
+    const next = buildReorderStackPreference({
+      stackId: input.stackId,
+      orderedDisplayIds: input.orderedDisplayIds,
+      pinnedDisplayIds: state.pinnedDisplayIds,
+      stacks: state.pinnedStacks,
       displaysById,
     });
     return this.savePinnedViewerPreference(projectId, {

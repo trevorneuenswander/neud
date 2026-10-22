@@ -9,6 +9,8 @@ type DisplayWindowFitPageProps = {
     target?: string;
     width?: string;
     height?: string;
+    surface?: string;
+    cursor?: string;
   }>;
 };
 
@@ -31,6 +33,10 @@ export default async function DisplayWindowFitPage({
       targetUrl={target}
       displayWidth={displayWidth}
       displayHeight={displayHeight}
+      surface={
+        query.surface === "computer" ? "computer" : query.surface === "decklink" ? "decklink" : "preview"
+      }
+      hideCursor={query.cursor === "none"}
     />
   );
 }

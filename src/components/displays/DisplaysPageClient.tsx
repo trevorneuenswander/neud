@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { AddHtmlDisplayButton } from "@/components/developer-tools/AddHtmlDisplayButton";
+import { AddDisplayButton } from "@/components/developer-tools/AddDisplayButton";
 import { DisplaysListClient } from "@/components/displays/DisplaysListClient";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -32,6 +33,7 @@ export function DisplaysPageClient({
   canManageSettings,
   canReorder,
 }: DisplaysPageClientProps) {
+  const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const dragActiveRef = useRef(false);
 
@@ -47,6 +49,20 @@ export function DisplaysPageClient({
       // sync is best-effort when opening Displays
     });
   }, [projectSlug]);
+
+  useEffect(() => {
+    // Recover managed ProRes assets that were imported without a visible display row.
+    const api = typeof window !== "undefined" ? window.neudDesktop : undefined;
+    if (!api?.media?.recoverOrphanVideoDisplays || !canManageSettings) return;
+    let cancelled = false;
+    void api.media.recoverOrphanVideoDisplays(projectSlug).then((result) => {
+      if (cancelled || !result.ok || result.recovered.length === 0) return;
+      router.refresh();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectSlug, canManageSettings, router]);
 
   function handleDragActiveChange(active: boolean) {
     dragActiveRef.current = active;
@@ -75,7 +91,7 @@ export function DisplaysPageClient({
             >
               {archivedLabel}
             </Button>
-            <AddHtmlDisplayButton
+            <AddDisplayButton
               projectSlug={projectSlug}
               onCreated={handleDisplayCreated}
             />
@@ -85,7 +101,7 @@ export function DisplaysPageClient({
       {items.length === 0 ? (
         <EmptyState
           title="No displays have been added."
-          description="Upload an HTML display to create the first graphic for this project."
+          description="Add an HTML or ProRes video display to create the first graphic for this project."
         />
       ) : (
         <DisplaysListClient

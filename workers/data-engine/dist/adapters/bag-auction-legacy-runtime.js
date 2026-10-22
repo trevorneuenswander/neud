@@ -1271,7 +1271,9 @@ export function createBagAuctionLegacyRuntime(options) {
         shouldContinue: sessionOptions.shouldContinue,
       });
       liveFeedSessionPublish = sessionOptions.onPublishSnapshot ?? null;
-      await liveFeedSession.start(sessionOptions.initialSettings ?? {});
+      await liveFeedSession.start(sessionOptions.initialSettings ?? {}, {
+        initialHydration: sessionOptions.initialHydration !== false,
+      });
       liveFeedRuntimeState = liveFeedSession.getRuntimeState();
     },
     async stopEventDrivenLiveFeed() {

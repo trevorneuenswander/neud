@@ -24,12 +24,21 @@
     --pip-to-info: 75px;
     --ticker-h: 240px;
     --title-size: 120px;
-    --title-line-height: 1.08;
-    --title-box-h: calc(var(--title-size) * var(--title-line-height));
+    /*
+     * Pass 20: bitmap-normalized lot-title renderer.
+     * Layout box (--title-region-h) is a probe for approved X/Y/W only.
+     * Stage canvas only composites a pre-scanned title bitmap.
+     */
+    --title-ink-h: 140px;
+    --title-bottom-safety: 16px;
+    --title-canvas-pad: 24px;
+    --title-region-h: calc(var(--title-ink-h) + var(--title-bottom-safety));
+    --title-baseline-y: 110px;
+    --title-canvas-h: calc(var(--title-ink-h) + (2 * var(--title-canvas-pad)));
     --title-top: calc(
       var(--main-top) + var(--main-h) +
       (
-        (var(--canvas-h) - var(--ticker-h) - var(--main-top) - var(--main-h) - var(--title-box-h))
+        (var(--canvas-h) - var(--ticker-h) - var(--main-top) - var(--main-h) - var(--title-region-h))
         / 2
       )
     );
@@ -43,6 +52,18 @@
     --color-muted: #808080;
     --color-text: #000000;
     --color-bg: #ffffff;
+    /*
+     * Pass 23 Stream Bid z-order contract (named tokens — do not rely on DOM accident).
+     * background (white field) < photos / bid column / pip < lot title < diag overlays
+     * Lot Name must sit above any opaque panel that could cover descenders.
+     */
+    --z-stage-bg: 1;
+    --z-pip: 1;
+    --z-photos: 2;
+    --z-bid: 2;
+    --z-title-probe: 0;
+    --z-title: 10;
+    --z-diag: 50;
   }
 
   html, body {
@@ -92,7 +113,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 1;
+    z-index: var(--z-stage-bg);
   }
 
   .white-field-fill {
@@ -113,7 +134,7 @@
     border-radius: var(--main-radius);
     overflow: hidden;
     background: #ececec;
-    z-index: 2;
+    z-index: var(--z-photos);
   }
 
   .main-photo-wrap img {
@@ -170,7 +191,7 @@
     border-radius: var(--pip-radius);
     background: transparent;
     pointer-events: none;
-    z-index: 1;
+    z-index: var(--z-pip);
   }
 
   .bid-column {
@@ -178,7 +199,7 @@
     left: var(--side-left);
     top: calc(var(--main-top) + var(--pip-h) + var(--pip-to-info));
     width: var(--pip-w);
-    z-index: 2;
+    z-index: var(--z-bid);
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -306,64 +327,187 @@
     color: var(--color-text);
   }
 
-  .vehicle-title.bid-text {
-    line-height: var(--title-line-height);
-  }
-
-  .vehicle-title {
+  /*
+   * Pass 20 lot-title architecture (BITMAP COMPOSITE):
+   *
+   *   Offscreen oversized canvas → fillText → pixel-scan ink bounds
+   *   → normalized bitmap (+ ≥32px bottom transparent pad)
+   *   → drawImage onto full-stage #lotTitleCanvas
+   *
+   * Production never fillTexts on the stage canvas. Marquee X-clips only.
+   */
+  .vehicle-title,
+  .vehicle-title.title-region {
     position: absolute;
     left: var(--main-left);
     top: var(--title-top);
     width: var(--content-w);
-    font-size: var(--title-size);
-    line-height: var(--title-line-height);
-    min-height: var(--title-box-h);
-    color: var(--color-text);
-    overflow: visible;
-    z-index: 2;
-  }
-
-  .vehicle-title.title-measuring {
+    height: var(--title-region-h);
+    min-height: var(--title-region-h);
+    /* Layout probe only — never paints production title text. */
     visibility: hidden;
+    pointer-events: none;
+    overflow: visible;
+    z-index: var(--z-title-probe);
   }
 
-  .title-scroll-viewport {
-    width: 100%;
-    min-height: var(--title-box-h);
-    line-height: var(--title-line-height);
-    overflow-x: hidden;
-    overflow-y: visible;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    display: flex;
-    align-items: center;
+  .lot-title-stage-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--canvas-w);
+    height: var(--canvas-h);
+    display: block;
+    pointer-events: none;
+    background: transparent;
+    z-index: var(--z-title);
+    overflow: visible;
   }
 
-  .title-scroll-viewport::-webkit-scrollbar {
+  .lot-title-stage-canvas.is-force-top {
+    z-index: 9999;
+  }
+
+  .lot-title-stage-canvas.is-fading {
+    opacity: 0;
+    transition: opacity 250ms ease-in-out;
+  }
+
+  .lot-title-stage-canvas.is-entering {
+    animation: titleCanvasSlideIn 250ms ease-in-out both;
+  }
+
+  @keyframes titleCanvasSlideIn {
+    from { opacity: 0; transform: translateX(14px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* Dev-only multi-renderer harness (?titleDiag=1). */
+  .title-diag-root {
+    position: absolute;
+    left: var(--main-left);
+    top: 40px;
+    width: var(--content-w);
+    z-index: var(--z-diag);
+    display: none;
+    flex-direction: column;
+    gap: 18px;
+    pointer-events: none;
+  }
+
+  /* Pass 23 composite occlusion proof strip (dev-only via ?compositeDiag=1). */
+  .composite-diag-cyan-band {
+    position: absolute;
+    left: var(--main-left);
+    width: var(--content-w);
+    height: 30px;
+    background: #00ffff;
+    pointer-events: none;
+    z-index: calc(var(--z-title) - 1);
     display: none;
   }
-
-  .title-scroll-track {
-    display: inline-block;
+  .composite-diag-cyan-band.is-active {
+    display: block;
+  }
+  .title-diag-root.is-active {
+    display: flex;
+  }
+  .title-diag-panel {
+    position: relative;
+    width: 100%;
+    min-height: 260px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 4px solid #222;
+    overflow: visible;
+    padding: 12px 12px 48px;
+  }
+  .title-diag-panel[data-renderer="html"] { border-color: #c62828; }
+  .title-diag-panel[data-renderer="canvas"] { border-color: #1565c0; }
+  .title-diag-panel[data-renderer="svg"] { border-color: #2e7d32; }
+  .title-diag-panel[data-renderer="production"] { border-color: #6a1b9a; }
+  .title-diag-label {
+    font: 700 28px Helvetica, Arial, sans-serif;
+    color: #111;
+    margin-bottom: 6px;
+  }
+  .title-diag-html {
+    font: 400 120px Helvetica, Arial, sans-serif;
+    color: #000;
+    line-height: 1.6;
     white-space: nowrap;
-    transform: translate3d(0, 0, 0);
-    will-change: transform;
-    backface-visibility: hidden;
-    font-size: var(--title-size);
-    line-height: var(--title-line-height);
+    overflow: visible;
+    padding-bottom: 32px;
+  }
+  .title-diag-canvas {
+    display: block;
+    width: 100%;
+    height: 220px;
+    background: transparent;
+  }
+  .title-diag-svg {
+    display: block;
+    width: 100%;
+    height: 220px;
+    overflow: visible;
   }
 
-  .title-measure {
+  /* Pass 24: font comparison diagnostic (?titleFontDiag=1). Production unaffected. */
+  .title-font-diag-root {
     position: absolute;
-    left: -10000px;
-    top: 0;
-    visibility: hidden;
+    left: var(--main-left);
+    top: 40px;
+    width: var(--content-w);
+    z-index: var(--z-diag);
+    display: none;
+    flex-direction: column;
+    gap: 28px;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.96);
+    border: 4px solid #111;
+    padding: 24px 28px 40px;
+  }
+  .title-font-diag-root.is-active {
+    display: flex;
+  }
+  .title-font-diag-heading {
+    font: 700 36px Helvetica, Arial, sans-serif;
+    color: #111;
+  }
+  .title-font-diag-row {
+    position: relative;
+    width: 100%;
+    min-height: 220px;
+    border-top: 2px solid #ccc;
+    padding-top: 12px;
+  }
+  .title-font-diag-label {
+    font: 700 26px Helvetica, Arial, sans-serif;
+    color: #222;
+    margin-bottom: 8px;
+  }
+  .title-font-diag-meta {
+    font: 400 22px Helvetica, Arial, sans-serif;
+    color: #444;
+    margin-bottom: 8px;
+  }
+  .title-font-diag-canvas {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    background: #fff;
+  }
+  .title-font-diag-dom {
+    font-weight: 400;
+    font-size: 120px;
+    line-height: 1.6;
+    padding: 4px 0 40px;
+    margin: 0;
+    overflow: visible;
     white-space: nowrap;
-    font-size: var(--title-size);
-    line-height: var(--title-line-height);
-    font-family: inherit;
-    font-weight: inherit;
-    font-style: inherit;
+    background: #fff;
+    color: #000;
+    transform: none;
   }
 
   .fade-out {
@@ -421,12 +565,67 @@
         </div>
       </section>
 
-      <div id="vehicleTitle" class="vehicle-title bid-text title-measuring" data-title="">
-        <div class="title-scroll-viewport">
-          <div class="title-scroll-track"></div>
+      <!-- Pass 22/23: layout probe only. Title = fixed vertical slab → composite. -->
+      <div
+        id="vehicleTitle"
+        class="vehicle-title title-region"
+        data-title=""
+        data-title-layout="pass22"
+        data-title-mode="single"
+        data-title-renderer="bitmap-composite"
+        data-title-root-cause="composite-occlusion-investigation-pass23"
+        data-z-contract="pass23"
+        aria-hidden="true"
+      ></div>
+
+      <!-- Pass 23: cyan band sits UNDER title (z-title - 1). If cyan vanishes but magenta title remains → occlusion. -->
+      <div
+        id="compositeDiagCyanBand"
+        class="composite-diag-cyan-band"
+        aria-hidden="true"
+        data-composite-diag="cyan-band"
+      ></div>
+
+      <div id="titleDiagRoot" class="title-diag-root" aria-hidden="true">
+        <div class="title-diag-panel" data-renderer="html">
+          <div class="title-diag-label">A · HTML (safe, no clip)</div>
+          <div id="titleDiagHtml" class="title-diag-html"></div>
+        </div>
+        <div class="title-diag-panel" data-renderer="canvas">
+          <div class="title-diag-label">B · Canvas (safe, no clip)</div>
+          <canvas id="titleDiagCanvas" class="title-diag-canvas"></canvas>
+        </div>
+        <div class="title-diag-panel" data-renderer="svg">
+          <div class="title-diag-label">C · SVG (safe, no clip)</div>
+          <svg id="titleDiagSvg" class="title-diag-svg" xmlns="http://www.w3.org/2000/svg" overflow="visible" viewBox="0 0 3600 180">
+            <text id="titleDiagSvgText" x="0" y="120" font-size="120" font-family="Helvetica, Arial, sans-serif" fill="#000"></text>
+          </svg>
+        </div>
+        <div class="title-diag-panel" data-renderer="production">
+          <div class="title-diag-label">D · Production Lot Name (current canvas path)</div>
+          <div id="titleDiagProductionNote" class="title-diag-html" style="font-size:36px;line-height:1.2;">
+            See live #lotTitleCanvas full-stage overlay (same stage).
+          </div>
         </div>
       </div>
-      <div id="titleMeasure" class="title-measure bid-text" aria-hidden="true"></div>
+
+      <!-- Pass 24: font comparison diagnostic (dev-only). -->
+      <div id="titleFontDiagRoot" class="title-font-diag-root" aria-hidden="true" data-title-font-diag="1">
+        <div class="title-font-diag-heading">Title font diagnostic — production path vs DOM controls</div>
+        <div id="titleFontDiagRows"></div>
+      </div>
+
+      <!-- Pass 23: title canvas LAST in DOM + --z-title so it paints above opaque panels. -->
+      <canvas
+        id="lotTitleCanvas"
+        class="lot-title-stage-canvas"
+        width="3840"
+        height="2160"
+        aria-hidden="true"
+        data-title-stage-canvas="1"
+        data-title-compositor="bitmap"
+        data-z-layer="title"
+      ></canvas>
     </div>
   </div>
 
@@ -450,6 +649,14 @@
   var TITLE_MARQUEE_EASE_SEC = 1;
   var TITLE_MARQUEE_PAUSE_MS = 4000;
   var TITLE_MEASURE_EPS = 0.5;
+  // Pass 22: fixed vertical slab — NEVER crop production bitmap top/bottom from ink bounds.
+  var TITLE_SLAB_HEIGHT = 480;
+  var TITLE_SLAB_BASELINE_Y = 200;
+  var TITLE_PAD_X = 24;
+  var TITLE_COMPOSITE_PARAMS = new URLSearchParams(location.search || "");
+  var TITLE_COMPOSITE_DIAG = TITLE_COMPOSITE_PARAMS.get("compositeDiag") === "1";
+  var TITLE_FORCE_TOP = TITLE_COMPOSITE_PARAMS.get("titleForceTop") === "1";
+  var TITLE_INK_COLOR = TITLE_COMPOSITE_DIAG ? "#FF00FF" : "#000000";
   var titleMarqueeDiagnostics = {
     originalAlignmentRestored: true,
     anchorOffset: 0,
@@ -462,6 +669,7 @@
     titleSignatureChanged: false,
     resetReason: null,
     fullTravelCompleted: false,
+    offsetX: 0,
   };
   var lastTitleMarqueeSignature = null;
 
@@ -472,8 +680,31 @@
   var primaryBidEl = document.getElementById("primaryBid");
   var currencyListEl = document.getElementById("currencyList");
   var vehicleTitleEl = document.getElementById("vehicleTitle");
-  var titleMeasureEl = document.getElementById("titleMeasure");
-  var titleMarqueeRafs = new WeakMap();
+  var lotTitleCanvasEl = document.getElementById("lotTitleCanvas");
+  var compositeDiagCyanBandEl = document.getElementById("compositeDiagCyanBand");
+  var titleMarqueeRafId = null;
+  if (lotTitleCanvasEl && TITLE_FORCE_TOP) {
+    lotTitleCanvasEl.classList.add("is-force-top");
+  }
+  var titleCanvasState = {
+    text: "",
+    fontSize: 120,
+    scroll: false,
+    offsetX: 0,
+    layout: null,
+    /** @type {HTMLCanvasElement|null} */
+    normalizedBitmap: null,
+    inkWidth: 0,
+    inkHeight: 0,
+    inkOffsetX: 0,
+    /** Distance from bitmap top to alphabetic baseline (fixed slab). */
+    inkOffsetY: TITLE_SLAB_BASELINE_Y,
+    slabBaselineY: TITLE_SLAB_BASELINE_Y,
+    bitmapPadTop: TITLE_SLAB_BASELINE_Y,
+    bitmapPadBottom: TITLE_SLAB_HEIGHT - TITLE_SLAB_BASELINE_Y,
+    cacheKey: "",
+    showInkGuide: false,
+  };
   var mainPhotoEl = document.getElementById("mainPhoto");
   var nextPhotoEl = document.getElementById("nextPhoto");
   var photoPlaceholderEl = document.getElementById("photoPlaceholder");
@@ -621,168 +852,611 @@
     }, FADE_MS);
   }
 
-  function getTitleViewport(container) {
-    return container ? container.querySelector(".title-scroll-viewport") : null;
+  var TITLE_GAP = "\u00A0\u00A0\u00A0•\u00A0\u00A0\u00A0";
+  /*
+   * Approved drawing face. macOS Helvetica.ttc is what Chromium selects for
+   * an unquoted Helvetica stack, and its y/g/j terminals are blunt. Neue is
+   * installed and has natural descenders. Arial is the fallback where Neue
+   * is absent. Do not fall back to Helvetica.
+   */
+  var TITLE_FONT_FAMILY = '"Helvetica Neue", Arial, sans-serif';
+  /*
+   * Band metrics stay on Helvetica so drawing with Neue does not move the
+   * approved title. At 120px that is an 8px top pad plus the measured ascent
+   * (baseline about 95px) and 0.30em under the measured descent (band about
+   * 158px). Dropping these shifts the approved placement.
+   */
+  var TITLE_LAYOUT_FONT_FAMILY = "Helvetica, Arial, sans-serif";
+  var TITLE_DIAG_PROBE = "yy1987 Mercedes-Benz 560 SLyyjjjgggg";
+  var TITLE_PAD_TOP = TITLE_SLAB_BASELINE_Y;
+  var TITLE_PAD_BOTTOM = TITLE_SLAB_HEIGHT - TITLE_SLAB_BASELINE_Y;
+  var TITLE_OPTICAL_PAD_TOP = 8;
+  var TITLE_DESCENDER_CLEARANCE_RATIO = 0.3;
+
+  function titleFontCss(sizePx, family, weight) {
+    return (weight || "400") + " " + sizePx + "px " + (family || TITLE_FONT_FAMILY);
   }
 
-  function getTitleTrack(container) {
-    return container ? container.querySelector(".title-scroll-track") : null;
+  function cssPxVar(name, fallback) {
+    var raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    var n = parseFloat(raw);
+    return Number.isFinite(n) ? n : fallback;
   }
 
-  function measureTitleWidth(el) {
-    var rect = el.getBoundingClientRect();
-    return rect.width || el.scrollWidth || 1e-6;
+  function readTitleLayoutBox() {
+    var x = cssPxVar("--main-left", 71.23);
+    var y = cssPxVar("--title-top", 1690);
+    var w = vehicleTitleEl
+      ? vehicleTitleEl.clientWidth || cssPxVar("--content-w", 3698)
+      : cssPxVar("--content-w", 3698);
+    return {
+      x: x,
+      y: y,
+      width: Math.max(1, w),
+      regionH: cssPxVar("--title-region-h", 154),
+      baselineInRegion: cssPxVar("--title-baseline-y", 110),
+    };
   }
 
-  function cancelTitleMarquee(container) {
-    if (titleMarqueeRafs.has(container)) {
-      cancelAnimationFrame(titleMarqueeRafs.get(container));
-      titleMarqueeRafs.delete(container);
+  /**
+   * Diagnostic-only alpha scan. Threshold > 0 counts faint antialiasing.
+   * MUST NOT drive production vertical crop bounds (Pass 22).
+   */
+  function scanInkBounds(ctx, width, height) {
+    var image = ctx.getImageData(0, 0, width, height);
+    var data = image.data;
+    var left = width;
+    var right = -1;
+    var top = height;
+    var bottom = -1;
+    var found = false;
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        var a = data[(y * width + x) * 4 + 3];
+        if (a > 0) {
+          found = true;
+          if (x < left) left = x;
+          if (x > right) right = x;
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+        }
+      }
     }
+    if (!found) {
+      return { found: false, left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
+    }
+    return {
+      found: true,
+      left: left,
+      right: right,
+      top: top,
+      bottom: bottom,
+      width: right - left + 1,
+      height: bottom - top + 1,
+    };
+  }
+
+  /**
+   * Pass 22: fixed vertical slab title bitmap.
+   * - Draw with alphabetic baseline at TITLE_SLAB_BASELINE_Y inside TITLE_SLAB_HEIGHT.
+   * - Horizontal trim only (measureText / diagnostic ink width).
+   * - NEVER crop top/bottom from detected ink bounds.
+   */
+  function buildNormalizedTitleBitmap(text, fontSize, options) {
+    options = options || {};
+    var family = options.family || TITLE_FONT_FAMILY;
+    var weight = options.weight || "400";
+    var showGuide = !!options.showInkGuide;
+    var probe = text || "";
+    var slabH = TITLE_SLAB_HEIGHT;
+    var baselineY = TITLE_SLAB_BASELINE_Y;
+    if (!probe) {
+      return {
+        canvas: null,
+        ink: { found: false, width: 0, height: 0 },
+        padTop: baselineY,
+        padBottom: slabH - baselineY,
+        inkOffsetX: TITLE_PAD_X,
+        inkOffsetY: baselineY,
+        slabBaselineY: baselineY,
+        verticalCrop: false,
+      };
+    }
+
+    var measureCanvas = document.createElement("canvas");
+    var mctx = measureCanvas.getContext("2d");
+    mctx.font = titleFontCss(fontSize, family, weight);
+    var textW = Math.ceil(mctx.measureText(probe).width);
+    var outW = Math.max(64, textW + TITLE_PAD_X * 2);
+    var outH = slabH;
+
+    var out = document.createElement("canvas");
+    out.width = outW;
+    out.height = outH;
+    var nctx = out.getContext("2d");
+    nctx.clearRect(0, 0, outW, outH);
+    nctx.font = titleFontCss(fontSize, family, weight);
+    nctx.fillStyle = options.inkColor || TITLE_INK_COLOR || "#000000";
+    nctx.textBaseline = "alphabetic";
+    nctx.textAlign = "left";
+    // Draw directly into the production slab — zero vertical crop afterward.
+    nctx.fillText(probe, TITLE_PAD_X, baselineY);
+
+    // Diagnostic scan only (threshold > 0). Does not resize the slab.
+    var ink = scanInkBounds(nctx, outW, outH);
+    var bottomPadActual = ink.found ? outH - 1 - ink.bottom : slabH - baselineY;
+
+    if (showGuide) {
+      nctx.strokeStyle = "rgba(0, 120, 255, 0.9)";
+      nctx.lineWidth = 2;
+      nctx.beginPath();
+      nctx.moveTo(0, baselineY);
+      nctx.lineTo(outW, baselineY);
+      nctx.stroke();
+      if (ink.found) {
+        nctx.fillStyle = "rgba(0, 200, 0, 0.85)";
+        nctx.fillRect(0, ink.bottom, outW, 2);
+      }
+      nctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+      nctx.fillRect(0, outH - 2, outW, 2);
+    }
+
+    return {
+      canvas: out,
+      ink: ink,
+      verify: ink,
+      padTop: baselineY,
+      padBottom: slabH - baselineY,
+      padX: TITLE_PAD_X,
+      inkOffsetX: TITLE_PAD_X,
+      inkOffsetY: baselineY,
+      slabBaselineY: baselineY,
+      bottomPadActual: bottomPadActual,
+      verticalCrop: false,
+      offscreen: {
+        width: outW,
+        height: outH,
+        baselineY: baselineY,
+        inkBottom: ink.found ? ink.bottom : null,
+        inkTop: ink.found ? ink.top : null,
+      },
+      fontSize: fontSize,
+      family: family,
+      pass: 22,
+      strategy: "fixed-vertical-slab-zero-vertical-crop",
+    };
+  }
+
+  function measureTitleInkBox(sizePx) {
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext("2d");
+    ctx.font = titleFontCss(sizePx, TITLE_LAYOUT_FONT_FAMILY, "400");
+    var sample = ctx.measureText("Hygjpq");
+    var ascent = sample.actualBoundingBoxAscent;
+    var descent = sample.actualBoundingBoxDescent;
+    if (!(ascent > 0)) ascent = sizePx * 0.74;
+    if (!(descent > 0)) descent = sizePx * 0.23;
+    return {
+      ascent: Math.ceil(ascent),
+      descent: Math.ceil(descent),
+      actualBoundingBoxAscent: ascent,
+      actualBoundingBoxDescent: descent,
+      fontBoundingBoxAscent: sample.fontBoundingBoxAscent,
+      fontBoundingBoxDescent: sample.fontBoundingBoxDescent,
+    };
+  }
+
+  function applyTitleFontMetrics(fontSizePx) {
+    var size = fontSizePx || TITLE_SIZE_MAX;
+    // Measured Helvetica box. Final pixels still come from the uncropped slab.
+    var inkBox = measureTitleInkBox(size);
+    var topPad = TITLE_OPTICAL_PAD_TOP;
+    var bottomClearance = Math.max(16, Math.ceil(size * TITLE_DESCENDER_CLEARANCE_RATIO));
+    var baselineInRegion = topPad + inkBox.ascent;
+    var inkH = inkBox.ascent + inkBox.descent;
+    var regionH = topPad + inkH + bottomClearance;
+    var root = document.documentElement;
+    root.style.setProperty("--title-ink-h", inkH + "px");
+    root.style.setProperty("--title-baseline-y", baselineInRegion + "px");
+    root.style.setProperty("--title-region-h", regionH + "px");
+    root.style.setProperty("--title-bottom-safety", bottomClearance + "px");
+    root.style.setProperty("--title-size", size + "px");
+
+    window.__streamBidTitleFontMetrics = {
+      renderer: "bitmap-composite",
+      pass: 22,
+      rootCause: "perceived-descender-clip-baseline-sat-low-in-title-band",
+      fix: "measured-baseline-plus-descender-clearance",
+      fontFamily: TITLE_FONT_FAMILY,
+      fontWeight: "400",
+      fontSize: size,
+      baselineY: baselineInRegion,
+      measuredAscent: inkBox.ascent,
+      measuredDescent: inkBox.descent,
+      actualBoundingBoxAscent: inkBox.actualBoundingBoxAscent,
+      actualBoundingBoxDescent: inkBox.actualBoundingBoxDescent,
+      fontBoundingBoxDescent: inkBox.fontBoundingBoxDescent,
+      opticalPadTop: topPad,
+      slabHeight: TITLE_SLAB_HEIGHT,
+      slabBaselineY: TITLE_SLAB_BASELINE_Y,
+      inkH: inkH,
+      regionH: regionH,
+      bottomSafety: bottomClearance,
+      bitmapPadBottom: TITLE_PAD_BOTTOM,
+      verticalCrop: false,
+      literalClip: false,
+    };
+    return window.__streamBidTitleFontMetrics;
+  }
+
+  function getTitleViewportWidth() {
+    return readTitleLayoutBox().width;
+  }
+
+  function syncStageCompositor() {
+    if (!lotTitleCanvasEl) return null;
+    if (lotTitleCanvasEl.width !== CANVAS_W) lotTitleCanvasEl.width = CANVAS_W;
+    if (lotTitleCanvasEl.height !== CANVAS_H) lotTitleCanvasEl.height = CANVAS_H;
+    lotTitleCanvasEl.style.width = CANVAS_W + "px";
+    lotTitleCanvasEl.style.height = CANVAS_H + "px";
+    var ctx = lotTitleCanvasEl.getContext("2d");
+    if (!ctx) return null;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    return ctx;
+  }
+
+  function paintTitleCanvas(offsetX) {
+    var ctx = syncStageCompositor();
+    if (!ctx) return;
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    var bitmap = titleCanvasState.normalizedBitmap;
+    if (!bitmap) return;
+
+    var layout = readTitleLayoutBox();
+    titleCanvasState.layout = layout;
+    var ox = offsetX || 0;
+    var slabBaseline =
+      titleCanvasState.slabBaselineY != null
+        ? titleCanvasState.slabBaselineY
+        : TITLE_SLAB_BASELINE_Y;
+    // Deterministic baseline placement: productionBaselineY - offscreenBaselineY.
+    // No vertical ink-crop offset. Full stage height clip for marquee X only.
+    var productionBaselineY = layout.y + layout.baselineInRegion;
+    var drawX = layout.x - titleCanvasState.inkOffsetX - ox;
+    var drawY = productionBaselineY - slabBaseline;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    if (titleCanvasState.scroll) {
+      ctx.save();
+      ctx.beginPath();
+      // Horizontal clip only — full stage height so descenders are never cropped.
+      ctx.rect(layout.x, 0, layout.width, CANVAS_H);
+      ctx.clip();
+      ctx.drawImage(bitmap, drawX, drawY);
+      var gapCanvas = titleCanvasState.gapBitmap;
+      var gapW = gapCanvas ? gapCanvas.width : Math.round(titleCanvasState.inkWidth * 0.08);
+      var loopX = drawX + bitmap.width + gapW;
+      ctx.drawImage(bitmap, loopX, drawY);
+      ctx.restore();
+    } else {
+      ctx.drawImage(bitmap, drawX, drawY);
+    }
+
+    var inkBottomStage =
+      drawY +
+      (titleCanvasState.diagInkBottom != null
+        ? titleCanvasState.diagInkBottom
+        : slabBaseline + Math.ceil(titleCanvasState.fontSize * 0.28));
+    var inkTopStage =
+      drawY +
+      (titleCanvasState.lastBuild &&
+      titleCanvasState.lastBuild.ink &&
+      titleCanvasState.lastBuild.ink.found
+        ? titleCanvasState.lastBuild.ink.top
+        : slabBaseline - Math.ceil(titleCanvasState.fontSize * 0.74));
+
+    if (TITLE_COMPOSITE_DIAG && compositeDiagCyanBandEl) {
+      compositeDiagCyanBandEl.style.top = Math.round(inkBottomStage) + "px";
+      compositeDiagCyanBandEl.classList.add("is-active");
+    }
+
+    window.__streamBidTitleStageAudit = {
+      stageW: CANVAS_W,
+      stageH: CANVAS_H,
+      titleViewportX: layout.x,
+      titleViewportY: layout.y,
+      titleViewportWidth: layout.width,
+      titleViewportHeight: layout.regionH,
+      containerTop: layout.y,
+      containerBottom: layout.y + layout.regionH,
+      productionBaselineY: productionBaselineY,
+      slabBaselineY: slabBaseline,
+      verticalCrop: false,
+      drawX: drawX,
+      drawY: drawY,
+      inkBottomStage: inkBottomStage,
+      inkTopStage: inkTopStage,
+      textBoundingBox: {
+        top: inkTopStage,
+        bottom: inkBottomStage,
+        left: layout.x,
+        width: titleCanvasState.inkWidth || 0,
+      },
+      bottomSafePx: layout.y + layout.regionH - inkBottomStage,
+      bitmapH: bitmap.height,
+      bitmapW: bitmap.width,
+      padBottom: titleCanvasState.bitmapPadBottom,
+      stageBottomMinusInk: CANVAS_H - inkBottomStage,
+      scroll: !!titleCanvasState.scroll,
+      fontSize: titleCanvasState.fontSize,
+      renderer: "bitmap-composite",
+      pass: 23,
+      strategy: "fixed-vertical-slab-zero-vertical-crop",
+      zContract: "bg1/photos2/bid2/title10",
+      compositeDiag: TITLE_COMPOSITE_DIAG,
+      titleForceTop: TITLE_FORCE_TOP,
+      inkColor: TITLE_INK_COLOR,
+    };
+
+    // Pass 23 capture points for composite diagnosis (dev only).
+    if (TITLE_COMPOSITE_DIAG) {
+      try {
+        window.__streamBidCompositeCaptures = {
+          A_titleBitmapAlone: bitmap.toDataURL("image/png"),
+          B_stageAfterTitle: lotTitleCanvasEl
+            ? lotTitleCanvasEl.toDataURL("image/png")
+            : null,
+          inkBottomStage: inkBottomStage,
+          titleZIndex: lotTitleCanvasEl
+            ? getComputedStyle(lotTitleCanvasEl).zIndex
+            : null,
+          layerRects: collectStreamBidLayerRects(),
+        };
+      } catch (_err) {
+        window.__streamBidCompositeCaptures = {
+          error: "capture-failed",
+          inkBottomStage: inkBottomStage,
+        };
+      }
+    }
+  }
+
+  function collectStreamBidLayerRects() {
+    var ids = [
+      "stage",
+      "lotTitleCanvas",
+      "vehicleTitle",
+      "compositeDiagCyanBand",
+      "mainPhoto",
+      "lotNumber",
+      "bidBlock",
+    ];
+    var out = {};
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (!el) continue;
+      var r = el.getBoundingClientRect();
+      var cs = getComputedStyle(el);
+      out[ids[i]] = {
+        top: r.top,
+        left: r.left,
+        width: r.width,
+        height: r.height,
+        zIndex: cs.zIndex,
+        position: cs.position,
+        background: cs.backgroundColor,
+        opacity: cs.opacity,
+        clipPath: cs.clipPath,
+        mask: cs.maskImage || cs.webkitMaskImage,
+        transform: cs.transform,
+      };
+    }
+    var white = document.querySelector(".white-field-fill");
+    if (white) {
+      var wr = white.getBoundingClientRect();
+      var wcs = getComputedStyle(white);
+      out.whiteFieldFill = {
+        top: wr.top,
+        left: wr.left,
+        width: wr.width,
+        height: wr.height,
+        zIndex: wcs.zIndex,
+        background: wcs.backgroundColor,
+        mask: wcs.maskImage || wcs.webkitMaskImage,
+      };
+    }
+    return out;
+  }
+
+  /** Export isolated title bitmap (Pass 23 proof). */
+  window.__streamBidExportTitleBitmap = function () {
+    var bitmap = titleCanvasState.normalizedBitmap;
+    if (!bitmap) return null;
+    return {
+      dataUrl: bitmap.toDataURL("image/png"),
+      width: bitmap.width,
+      height: bitmap.height,
+      verticalCrop: false,
+      slabHeight: TITLE_SLAB_HEIGHT,
+      slabBaselineY: TITLE_SLAB_BASELINE_Y,
+      ink: titleCanvasState.lastBuild && titleCanvasState.lastBuild.ink
+        ? titleCanvasState.lastBuild.ink
+        : null,
+    };
+  };
+
+  window.__streamBidExportStageAfterTitle = function () {
+    if (!lotTitleCanvasEl) return null;
+    return {
+      dataUrl: lotTitleCanvasEl.toDataURL("image/png"),
+      width: lotTitleCanvasEl.width,
+      height: lotTitleCanvasEl.height,
+    };
+  };
+
+  function cancelTitleMarquee() {
+    if (titleMarqueeRafId != null) {
+      cancelAnimationFrame(titleMarqueeRafId);
+      titleMarqueeRafId = null;
+    }
+    titleCanvasState.offsetX = 0;
   }
 
   function updateTitleMarqueeDiagnostics() {
     window.__streamBidTitleMarqueeDiagnostics = Object.assign({}, titleMarqueeDiagnostics);
   }
 
-  function measureTitleOverflow(container) {
-    var viewport = getTitleViewport(container);
-    var track = getTitleTrack(container);
-    if (!viewport || !track) {
-      return {
-        viewportWidth: 0,
-        textWidth: 0,
-        overflowPx: 0,
-        shouldScroll: false,
-      };
-    }
+  function rebuildTitleBitmapCache(text, fontSize) {
+    var params = new URLSearchParams(location.search || "");
+    var showGuide = params.get("titleInkGuide") === "1";
+    var built = buildNormalizedTitleBitmap(text, fontSize, {
+      family: TITLE_FONT_FAMILY,
+      showInkGuide: showGuide,
+    });
+    titleCanvasState.normalizedBitmap = built.canvas;
+    titleCanvasState.inkWidth = built.ink.found
+      ? built.ink.width
+      : Math.max(0, (built.canvas ? built.canvas.width : 0) - TITLE_PAD_X * 2);
+    titleCanvasState.inkHeight = built.ink.found ? built.ink.height : 0;
+    titleCanvasState.inkOffsetX = built.inkOffsetX;
+    titleCanvasState.inkOffsetY = built.inkOffsetY;
+    titleCanvasState.slabBaselineY = built.slabBaselineY;
+    titleCanvasState.diagInkBottom = built.ink.found ? built.ink.bottom : null;
+    titleCanvasState.bitmapPadTop = built.padTop;
+    titleCanvasState.bitmapPadBottom = built.padBottom;
+    titleCanvasState.showInkGuide = showGuide;
+    titleCanvasState.cacheKey = text + "\0" + fontSize + "\0" + TITLE_FONT_FAMILY;
+    titleCanvasState.lastBuild = built;
 
-    var viewportWidth = viewport.clientWidth;
-    var copyA = track.querySelector(".copyA");
-    var textWidth = copyA
-      ? measureTitleWidth(copyA)
-      : track.scrollWidth || measureTitleWidth(track);
-    var overflowPx = Math.max(0, textWidth - viewportWidth);
-    return {
-      viewportWidth: viewportWidth,
-      textWidth: textWidth,
-      overflowPx: overflowPx,
-      shouldScroll: overflowPx > TITLE_OVERFLOW_TOLERANCE,
+    // Gap bitmap for marquee spacing (bullet gap as empty width estimate).
+    var gapBuilt = buildNormalizedTitleBitmap(TITLE_GAP, fontSize, { family: TITLE_FONT_FAMILY });
+    titleCanvasState.gapBitmap = gapBuilt.canvas;
+
+    window.__streamBidTitleBitmapProof = {
+      text: text,
+      fontSize: fontSize,
+      offscreenInkBottom: built.offscreen ? built.offscreen.inkBottom : null,
+      normalizedH: built.canvas ? built.canvas.height : 0,
+      normalizedW: built.canvas ? built.canvas.width : 0,
+      bottomPadActual: built.bottomPadActual,
+      padBottomRequired: TITLE_PAD_BOTTOM,
+      verticalCrop: false,
+      slabBaselineY: built.slabBaselineY,
+      strategy: built.strategy,
+      ink: built.ink,
+      verify: built.verify,
+      showInkGuide: showGuide,
     };
+    return built;
   }
 
   function measureTitlePresentation(text) {
-    var viewport = getTitleViewport(vehicleTitleEl);
-    if (!viewport || !titleMeasureEl) {
-      return { mode: "normal", fontSize: TITLE_SIZE_MAX, scroll: false };
-    }
-
-    var viewportW = viewport.clientWidth;
+    var viewportW = getTitleViewportWidth();
     var trimmed = textValue(text);
     if (!trimmed) {
-      return { mode: "empty", fontSize: TITLE_SIZE_MAX, scroll: false };
+      return { mode: "empty", fontSize: TITLE_SIZE_MAX, scroll: false, inkWidth: 0 };
+    }
+    if (!viewportW) {
+      return { mode: "normal", fontSize: TITLE_SIZE_MAX, scroll: false, inkWidth: 0 };
     }
 
+    var measureCanvas = document.createElement("canvas");
+    var mctx = measureCanvas.getContext("2d");
     var size = TITLE_SIZE_MAX;
-    titleMeasureEl.textContent = trimmed;
-    titleMeasureEl.style.fontSize = size + "px";
-    if (measureTitleWidth(titleMeasureEl) <= viewportW + TITLE_MEASURE_EPS) {
-      return { mode: "normal", fontSize: size, scroll: false };
-    }
-
-    while (size > TITLE_SIZE_MIN) {
-      size -= 1;
-      titleMeasureEl.style.fontSize = size + "px";
-      if (measureTitleWidth(titleMeasureEl) <= viewportW + TITLE_MEASURE_EPS) {
-        return { mode: "scaled", fontSize: size, scroll: false };
+    while (size >= TITLE_SIZE_MIN) {
+      // Pass 22: fit/marquee from measureText width — not vertical ink crop.
+      mctx.font = titleFontCss(size, TITLE_FONT_FAMILY);
+      var inkW = Math.ceil(mctx.measureText(trimmed).width);
+      if (inkW <= viewportW + TITLE_MEASURE_EPS) {
+        return {
+          mode: size === TITLE_SIZE_MAX ? "normal" : "scaled",
+          fontSize: size,
+          scroll: false,
+          inkWidth: inkW,
+        };
       }
+      if (size === TITLE_SIZE_MIN) {
+        return {
+          mode: inkW > viewportW + TITLE_OVERFLOW_TOLERANCE ? "scroll" : "scaled",
+          fontSize: TITLE_SIZE_MIN,
+          scroll: inkW > viewportW + TITLE_OVERFLOW_TOLERANCE,
+          inkWidth: inkW,
+        };
+      }
+      size -= 1;
     }
-
-    titleMeasureEl.style.fontSize = TITLE_SIZE_MIN + "px";
-    var textWidth = measureTitleWidth(titleMeasureEl);
-    var overflowPx = Math.max(0, textWidth - viewportW);
-    return {
-      mode: overflowPx > TITLE_OVERFLOW_TOLERANCE ? "scroll" : "scaled",
-      fontSize: TITLE_SIZE_MIN,
-      scroll: overflowPx > TITLE_OVERFLOW_TOLERANCE,
-    };
+    return { mode: "scroll", fontSize: TITLE_SIZE_MIN, scroll: true, inkWidth: 0 };
   }
 
-  function ensureTitleTrack(container, metrics) {
-    var viewport = getTitleViewport(container);
-    var inner = getTitleTrack(container);
-    if (!viewport || !inner) return { mode: "single", overflowPx: 0 };
-
-    var text = (container.getAttribute("data-title") || inner.textContent || "").trim();
-    if (!text) {
-      inner.setAttribute("data-built", "empty");
-      inner.style.transform = "translate3d(0,0,0)";
-      return { mode: "single", overflowPx: 0 };
+  function applyTitleLayout(container, text, presentation) {
+    container = container || vehicleTitleEl;
+    if (container) {
+      container.setAttribute("data-title-mode", presentation.scroll ? "scroll" : "single");
+      container.setAttribute("data-title-size", String(presentation.fontSize || TITLE_SIZE_MAX));
+      container.setAttribute("data-title-layout", "pass22");
+      container.setAttribute("data-title-renderer", "bitmap-composite");
+      container.setAttribute(
+        "data-title-root-cause",
+        "perceived-descender-clip-baseline-sat-low-in-title-band",
+      );
     }
 
-    if (container.classList.contains("fade-out")) {
-      var fadeMetrics = metrics || measureTitleOverflow(container);
-      if (!fadeMetrics.shouldScroll) {
-        return { mode: "single", overflowPx: 0 };
-      }
-      return { mode: "loop", overflowPx: fadeMetrics.overflowPx };
-    }
+    var trimmed = textValue(text);
+    var fontSize = presentation.fontSize || TITLE_SIZE_MAX;
+    applyTitleFontMetrics(fontSize);
 
-    if (container.getAttribute("data-title-mode") !== "scroll") {
-      inner.textContent = text;
-      inner.setAttribute("data-built", "single");
-      inner.style.transform = "translate3d(0,0,0)";
-      return { mode: "single", overflowPx: 0 };
-    }
+    titleCanvasState.text = trimmed;
+    titleCanvasState.fontSize = fontSize;
+    titleCanvasState.scroll = !!presentation.scroll;
+    titleCanvasState.offsetX = 0;
+    titleMarqueeDiagnostics.offsetX = 0;
+    updateTitleMarqueeDiagnostics();
 
-    var sig = "loop:" + text;
-    if (inner.getAttribute("data-built") !== sig) {
-      var gap = "\u00A0\u00A0\u00A0•\u00A0\u00A0\u00A0";
-      inner.innerHTML =
-        '<span class="copyA">' + escapeHTML(text) + "</span>" +
-        '<span class="gap">' + gap + "</span>" +
-        '<span class="copyB">' + escapeHTML(text) + "</span>";
-      inner.setAttribute("data-built", sig);
+    cancelTitleMarquee();
+    if (!trimmed) {
+      titleCanvasState.normalizedBitmap = null;
+      paintTitleCanvas(0);
+      return;
     }
-
-    var overflowMetrics = metrics || measureTitleOverflow(container);
-    return {
-      mode: overflowMetrics.shouldScroll ? "loop" : "single",
-      overflowPx: overflowMetrics.overflowPx,
-    };
+    rebuildTitleBitmapCache(trimmed, fontSize);
+    paintTitleCanvas(0);
   }
 
   function startTitleMarquee(container, options) {
     options = options || {};
-    var signature = container.getAttribute("data-lot-key") || "";
+    container = container || vehicleTitleEl;
+    var signature = (container && container.getAttribute("data-lot-key")) || "";
     var signatureChanged = signature !== lastTitleMarqueeSignature;
-    if (signatureChanged) {
-      lastTitleMarqueeSignature = signature;
-    }
+    if (signatureChanged) lastTitleMarqueeSignature = signature;
 
-    cancelTitleMarquee(container);
-    var inner = getTitleTrack(container);
-    if (!inner) return;
+    cancelTitleMarquee();
 
-    var metrics = measureTitleOverflow(container);
-    var track = ensureTitleTrack(container, metrics);
-    titleMarqueeDiagnostics.viewportWidth = metrics.viewportWidth;
-    titleMarqueeDiagnostics.textWidth = metrics.textWidth;
-    titleMarqueeDiagnostics.overflowPx = metrics.overflowPx;
-    titleMarqueeDiagnostics.shouldScroll = metrics.shouldScroll;
+    var viewportW = getTitleViewportWidth();
+    var inkW = titleCanvasState.inkWidth || 0;
+    var overflowPx = Math.max(0, inkW - viewportW);
+    var shouldScroll = titleCanvasState.scroll && overflowPx > TITLE_OVERFLOW_TOLERANCE;
+
+    titleMarqueeDiagnostics.viewportWidth = viewportW;
+    titleMarqueeDiagnostics.textWidth = inkW;
+    titleMarqueeDiagnostics.overflowPx = overflowPx;
+    titleMarqueeDiagnostics.shouldScroll = shouldScroll;
     titleMarqueeDiagnostics.speedPxPerSecond = TITLE_MARQUEE_V;
     titleMarqueeDiagnostics.titleSignatureChanged = signatureChanged;
     titleMarqueeDiagnostics.resetReason = options.resetReason || null;
     titleMarqueeDiagnostics.fullTravelCompleted = false;
 
-    if (track.mode === "single") {
-      inner.style.transform = "translate3d(0,0,0)";
+    if (!shouldScroll) {
+      titleCanvasState.offsetX = 0;
+      paintTitleCanvas(0);
       titleMarqueeDiagnostics.durationMs = 0;
       updateTitleMarqueeDiagnostics();
       return;
     }
 
-    var overflowPx = track.overflowPx;
     var acceleration = TITLE_MARQUEE_V / TITLE_MARQUEE_EASE_SEC;
     var easeDistance = Math.min(
       0.5 * acceleration * TITLE_MARQUEE_EASE_SEC * TITLE_MARQUEE_EASE_SEC,
@@ -813,113 +1487,391 @@
     }
 
     function tick(now) {
-      var id = requestAnimationFrame(tick);
-      titleMarqueeRafs.set(container, id);
-
-      if ((container.getAttribute("data-lot-key") || "") !== marqueeSignature) {
+      titleMarqueeRafId = requestAnimationFrame(tick);
+      if (container && (container.getAttribute("data-lot-key") || "") !== marqueeSignature) {
         titleMarqueeDiagnostics.resetReason = "title_signature_changed";
-        cancelTitleMarquee(container);
+        cancelTitleMarquee();
         updateTitleMarqueeDiagnostics();
         return;
       }
-
       if (phase === "prepause") {
-        inner.style.transform = "translate3d(0,0,0)";
+        titleCanvasState.offsetX = 0;
+        paintTitleCanvas(0);
         if (now - t0 >= TITLE_MARQUEE_PAUSE_MS) {
           phase = "scroll";
           t0 = now;
         }
         return;
       }
-
       var elapsed = now - t0;
       if (elapsed >= totalMs - 0.1) {
-        inner.style.transform = "translate3d(" + (-overflowPx) + "px,0,0)";
+        titleCanvasState.offsetX = 0;
+        paintTitleCanvas(0);
         titleMarqueeDiagnostics.fullTravelCompleted = true;
         titleMarqueeDiagnostics.resetReason = "cycle_complete";
-        inner.style.transform = "translate3d(0,0,0)";
         phase = "prepause";
         t0 = now;
         updateTitleMarqueeDiagnostics();
         return;
       }
-
-      var distance = distanceAt(elapsed);
-      inner.style.transform = "translate3d(" + (-distance) + "px,0,0)";
+      titleCanvasState.offsetX = distanceAt(elapsed);
+      paintTitleCanvas(titleCanvasState.offsetX);
     }
 
     updateTitleMarqueeDiagnostics();
-    requestAnimationFrame(tick);
+    titleMarqueeRafId = requestAnimationFrame(tick);
   }
 
   function remeasureTitleMarquee() {
-    if (!vehicleTitleEl.getAttribute("data-title-mode") ||
-        vehicleTitleEl.getAttribute("data-title-mode") !== "scroll") {
+    if (!vehicleTitleEl) {
+      paintTitleCanvas(titleCanvasState.offsetX || 0);
+      return;
+    }
+    if (vehicleTitleEl.getAttribute("data-title-mode") !== "scroll") {
+      paintTitleCanvas(0);
       return;
     }
     startTitleMarquee(vehicleTitleEl, { resetReason: "resize" });
   }
 
-  function applyTitleLayout(container, text, presentation) {
-    var track = getTitleTrack(container);
-    if (!track) return;
+  window.__streamBidCaptureTitleGeometry = function captureTitleGeometry() {
+    if (!lotTitleCanvasEl) return { ok: false, reason: "missing compositor canvas" };
+    var stage = document.getElementById("stage");
+    var parent = lotTitleCanvasEl.parentElement;
+    var proof = window.__streamBidTitleBitmapProof || null;
+    var audit = window.__streamBidTitleStageAudit || null;
+    return {
+      ok: true,
+      renderer: "bitmap-composite",
+      layout: vehicleTitleEl ? vehicleTitleEl.getAttribute("data-title-layout") : null,
+      parentIsStage: !!(parent && parent.id === "stage"),
+      nestedInTitleRegion: !!(parent && parent.id === "vehicleTitle"),
+      usesFillTextOnStage: false,
+      canvasAttr: {
+        width: lotTitleCanvasEl.width,
+        height: lotTitleCanvasEl.height,
+        className: lotTitleCanvasEl.className,
+      },
+      proof: proof,
+      audit: audit,
+      metrics: window.__streamBidTitleFontMetrics || null,
+    };
+  };
 
-    container.classList.add("title-measuring");
-    container.setAttribute("data-title-mode", presentation.scroll ? "scroll" : "single");
+  var TITLE_FONT_DIAG_PROBE = "1987 Mercedes-Benz 560 SLygjpq";
+  var TITLE_FIXTURE_DEFAULT = "1987 Mercedes-Benz 560 SLygjpq";
 
-    var trimmed = textValue(text);
-    if (!trimmed || presentation.mode === "empty") {
-      cancelTitleMarquee(container);
-      track.textContent = "";
-      track.setAttribute("data-built", "empty");
-      track.style.fontSize = TITLE_SIZE_MAX + "px";
-      track.style.transform = "translate3d(0,0,0)";
-      revealTitleLayout(container);
-      return;
-    }
-
-    track.style.fontSize = presentation.fontSize + "px";
-
-    if (presentation.scroll) {
-      var sig = "loop:" + trimmed;
-      if (track.getAttribute("data-built") !== sig) {
-        var gap = "\u00A0\u00A0\u00A0•\u00A0\u00A0\u00A0";
-        track.innerHTML =
-          '<span class="copyA">' + escapeHTML(trimmed) + "</span>" +
-          '<span class="gap">' + gap + "</span>" +
-          '<span class="copyB">' + escapeHTML(trimmed) + "</span>";
-        track.setAttribute("data-built", sig);
-      }
-    } else {
-      cancelTitleMarquee(container);
-      track.textContent = trimmed;
-      track.setAttribute("data-built", "single");
-      track.style.transform = "translate3d(0,0,0)";
-    }
-
-    revealTitleLayout(container);
-  }
-
-  function revealTitleLayout(container) {
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        container.classList.remove("title-measuring");
+  /** Dev-only metrics. Does not change the production title. */
+  window.__streamBidFontRasterDiagnostic = function fontRasterDiagnostic(probe) {
+    var text = probe || TITLE_FONT_DIAG_PROBE;
+    var families = [
+      { id: "production", label: "A · Production path", family: TITLE_FONT_FAMILY, weight: "400" },
+      { id: "dom-helvetica", label: "B · DOM Helvetica 400", family: "Helvetica, Arial, sans-serif", weight: "400" },
+      { id: "dom-arial", label: "C · DOM Arial 400", family: "Arial, sans-serif", weight: "400" },
+      { id: "dom-system", label: "D · DOM system sans 400", family: "system-ui, sans-serif", weight: "400" },
+      { id: "dom-neue", label: "E · DOM Helvetica Neue 400", family: '"Helvetica Neue", sans-serif', weight: "400" },
+      { id: "dom-production-font", label: "F · Production font as DOM text", family: TITLE_FONT_FAMILY, weight: "400" },
+    ];
+    return families.map(function (entry) {
+      var built = buildNormalizedTitleBitmap(text, 120, {
+        family: entry.family,
+        weight: entry.weight,
       });
+      var metrics = measureTitleFontMetrics(text, 120, entry.family, entry.weight);
+      return {
+        id: entry.id,
+        label: entry.label,
+        family: entry.family,
+        weight: entry.weight,
+        inkHeight: built.ink.found ? built.ink.height : 0,
+        inkTop: built.offscreen ? built.offscreen.inkTop : null,
+        inkBottom: built.offscreen ? built.offscreen.inkBottom : null,
+        bottomPadActual: built.bottomPadActual,
+        baselineY: TITLE_SLAB_BASELINE_Y,
+        actualBoundingBoxDescent: metrics.actualBoundingBoxDescent,
+        actualBoundingBoxAscent: metrics.actualBoundingBoxAscent,
+        fontBoundingBoxDescent: metrics.fontBoundingBoxDescent,
+      };
     });
+  };
+
+  function measureTitleFontMetrics(text, fontSize, family, weight) {
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext("2d");
+    ctx.font = (weight || "400") + " " + fontSize + "px " + family;
+    var m = ctx.measureText(text || "ygj");
+    return {
+      actualBoundingBoxAscent:
+        typeof m.actualBoundingBoxAscent === "number" ? m.actualBoundingBoxAscent : null,
+      actualBoundingBoxDescent:
+        typeof m.actualBoundingBoxDescent === "number" ? m.actualBoundingBoxDescent : null,
+      fontBoundingBoxDescent:
+        typeof m.fontBoundingBoxDescent === "number" ? m.fontBoundingBoxDescent : null,
+    };
   }
+
+  function titleFontCssWithWeight(sizePx, family, weight) {
+    return (weight || "400") + " " + sizePx + "px " + (family || TITLE_FONT_FAMILY);
+  }
+
+  function scanDescenderTail(canvas) {
+    var ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    var width = canvas.width;
+    var height = canvas.height;
+    var img = ctx.getImageData(0, 0, width, height);
+    var data = img.data;
+    var first = -1;
+    var last = -1;
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        var i = (y * width + x) * 4;
+        if (data[i + 3] > 8 && data[i] < 80) {
+          if (first < 0) first = y;
+          last = y;
+          break;
+        }
+      }
+    }
+    var tail = [];
+    if (last >= 0) {
+      for (var row = Math.max(first, last - 4); row <= last; row += 1) {
+        var n = 0;
+        var maxA = 0;
+        for (var px = 0; px < width; px += 1) {
+          var p = (row * width + px) * 4;
+          if (data[p + 3] > 8 && data[p] < 80) {
+            n += 1;
+            if (data[p + 3] > maxA) maxA = data[p + 3];
+          }
+        }
+        tail.push({ rel: row - last, n: n, maxA: maxA });
+      }
+    }
+    return { firstRow: first, lastRow: last, tail: tail };
+  }
+
+  function runTitleFontDiagnostic() {
+    var params = new URLSearchParams(location.search || "");
+    if (params.get("titleFontDiag") !== "1") return;
+    var root = document.getElementById("titleFontDiagRoot");
+    var rowsHost = document.getElementById("titleFontDiagRows");
+    if (!root || !rowsHost) return;
+    root.classList.add("is-active");
+    root.setAttribute("aria-hidden", "false");
+    rowsHost.innerHTML = "";
+
+    var probe = TITLE_FONT_DIAG_PROBE;
+    var results = window.__streamBidFontRasterDiagnostic(probe);
+    window.__streamBidTitleFontDiagResults = results;
+
+    var samples = [
+      { id: "production", label: "A · Production path (offscreen fillText, 1:1 blit)", kind: "production", family: TITLE_FONT_FAMILY },
+      { id: "dom-helvetica", label: "B · Plain DOM Helvetica 400", kind: "dom", family: "Helvetica, Arial, sans-serif" },
+      { id: "dom-arial", label: "C · Plain DOM Arial 400", kind: "dom", family: "Arial, sans-serif" },
+      { id: "dom-system", label: "D · Plain DOM system sans 400", kind: "dom", family: "system-ui, sans-serif" },
+      { id: "dom-neue", label: "E · Plain DOM Helvetica Neue 400", kind: "dom", family: '"Helvetica Neue", sans-serif' },
+      { id: "dom-production-font", label: "F · Production font as DOM text (no canvas blit)", kind: "dom", family: TITLE_FONT_FAMILY },
+    ];
+
+    samples.forEach(function (sample) {
+      var metrics = measureTitleFontMetrics(probe, 120, sample.family, "400");
+      var row = document.createElement("div");
+      row.className = "title-font-diag-row";
+      row.setAttribute("data-font-id", sample.id);
+
+      var label = document.createElement("div");
+      label.className = "title-font-diag-label";
+      label.textContent = sample.label;
+      row.appendChild(label);
+
+      var visual;
+      var scan = null;
+      if (sample.kind === "production") {
+        var built = buildNormalizedTitleBitmap(probe, 120, {
+          family: sample.family,
+          weight: "400",
+        });
+        visual = document.createElement("canvas");
+        visual.className = "title-font-diag-canvas";
+        visual.width = built.canvas.width;
+        visual.height = built.canvas.height;
+        var bctx = visual.getContext("2d");
+        bctx.fillStyle = "#ffffff";
+        bctx.fillRect(0, 0, visual.width, visual.height);
+        bctx.imageSmoothingEnabled = true;
+        bctx.drawImage(built.canvas, 0, 0);
+        scan = scanDescenderTail(visual);
+      } else {
+        visual = document.createElement("div");
+        visual.className = "title-font-diag-dom";
+        visual.style.fontFamily = sample.family;
+        visual.textContent = probe;
+      }
+      row.appendChild(visual);
+
+      var meta = document.createElement("div");
+      meta.className = "title-font-diag-meta";
+      var parts = [
+        "family=" + sample.family,
+        "weight=400",
+        "size=120",
+        "ascent=" +
+          (metrics.actualBoundingBoxAscent != null
+            ? metrics.actualBoundingBoxAscent.toFixed(2)
+            : "n/a"),
+        "descent=" +
+          (metrics.actualBoundingBoxDescent != null
+            ? metrics.actualBoundingBoxDescent.toFixed(2)
+            : "n/a"),
+      ];
+      if (scan) {
+        parts.push("firstRow=" + scan.firstRow);
+        parts.push("lastRow=" + scan.lastRow);
+        parts.push(
+          "last5=" +
+            scan.tail
+              .map(function (rowInfo) {
+                return "r" + rowInfo.rel + ":n" + rowInfo.n + "/a" + rowInfo.maxA;
+              })
+              .join(","),
+        );
+      } else {
+        parts.push("pixels=DOM text (no canvas blit)");
+      }
+      meta.textContent = parts.join(" · ");
+      row.appendChild(meta);
+      rowsHost.appendChild(row);
+    });
+
+    var production = document.createElement("div");
+    production.className = "title-font-diag-row";
+    production.setAttribute("data-title-production-geometry", "1");
+    var productionLabel = document.createElement("div");
+    productionLabel.className = "title-font-diag-label";
+    productionLabel.textContent = "Production title container";
+    production.appendChild(productionLabel);
+    var productionMeta = document.createElement("div");
+    productionMeta.className = "title-font-diag-meta";
+    productionMeta.textContent = formatTitleProductionGeometry();
+    production.appendChild(productionMeta);
+    rowsHost.appendChild(production);
+
+    window.__streamBidTitleFontDiagActive = true;
+  }
+
+  function formatTitleProductionGeometry() {
+    var layout = readTitleLayoutBox();
+    var audit = window.__streamBidTitleStageAudit || {};
+    var metrics = window.__streamBidTitleFontMetrics || {};
+    var titleCs = vehicleTitleEl ? getComputedStyle(vehicleTitleEl) : null;
+    var canvasCs = lotTitleCanvasEl ? getComputedStyle(lotTitleCanvasEl) : null;
+    var viewport = document.querySelector(".viewport");
+    var viewportCs = viewport ? getComputedStyle(viewport) : null;
+    var containerTop = audit.containerTop != null ? audit.containerTop : layout.y;
+    var containerBottom =
+      audit.containerBottom != null ? audit.containerBottom : layout.y + layout.regionH;
+    var textTop = audit.inkTopStage != null ? audit.inkTopStage : null;
+    var textBottom = audit.inkBottomStage != null ? audit.inkBottomStage : null;
+    var bottomSafe =
+      textBottom != null ? containerBottom - textBottom : metrics.bottomSafety;
+    window.__streamBidTitleProductionGeometry = {
+      textBoundingBox: audit.textBoundingBox || null,
+      containerTop: containerTop,
+      containerBottom: containerBottom,
+      lineHeight: titleCs ? titleCs.lineHeight : null,
+      actualDescent: metrics.actualBoundingBoxDescent,
+      measuredDescent: metrics.measuredDescent,
+      bottomSafePx: bottomSafe,
+      overflow: {
+        title: titleCs ? titleCs.overflow : null,
+        canvas: canvasCs ? canvasCs.overflow : null,
+        viewport: viewportCs ? viewportCs.overflow : null,
+      },
+      fontFamily: metrics.fontFamily || TITLE_FONT_FAMILY,
+      fontWeight: metrics.fontWeight || "400",
+      fontSize: metrics.fontSize || null,
+      literalClip: false,
+    };
+    return [
+      "textBox top=" + (textTop != null ? Math.round(textTop) : "n/a"),
+      "bottom=" + (textBottom != null ? Math.round(textBottom) : "n/a"),
+      "container top=" + Math.round(containerTop),
+      "bottom=" + Math.round(containerBottom),
+      "line-height=" + (titleCs ? titleCs.lineHeight : "n/a"),
+      "actualDescent=" +
+        (metrics.actualBoundingBoxDescent != null
+          ? Number(metrics.actualBoundingBoxDescent).toFixed(2)
+          : "n/a"),
+      "bottomSafePx=" + (bottomSafe != null ? Math.round(bottomSafe) : "n/a"),
+      "overflow title=" + (titleCs ? titleCs.overflow : "n/a"),
+      "canvas=" + (canvasCs ? canvasCs.overflow : "n/a"),
+      "viewport=" + (viewportCs ? viewportCs.overflow : "n/a"),
+    ].join(" · ");
+  }
+
+  function runTitleDiagnosticHarness() {
+    var params = new URLSearchParams(location.search || "");
+    if (params.get("titleDiag") !== "1") return;
+    var root = document.getElementById("titleDiagRoot");
+    if (root) {
+      root.classList.add("is-active");
+      root.setAttribute("aria-hidden", "false");
+    }
+    var probe = TITLE_DIAG_PROBE;
+    var htmlEl = document.getElementById("titleDiagHtml");
+    if (htmlEl) htmlEl.textContent = probe;
+    var note = document.getElementById("titleDiagProductionNote");
+    if (note) {
+      note.textContent =
+        "Production: bitmap-composite on #lotTitleCanvas. Font diag: " +
+        JSON.stringify(window.__streamBidFontRasterDiagnostic(TITLE_FONT_DIAG_PROBE));
+      note.style.fontSize = "28px";
+      note.style.lineHeight = "1.3";
+      note.style.whiteSpace = "pre-wrap";
+    }
+    var presentation = measureTitlePresentation(probe);
+    applyTitleLayout(vehicleTitleEl, probe, presentation);
+    if (vehicleTitleEl) vehicleTitleEl.setAttribute("data-title", probe);
+    window.__streamBidTitleDiagActive = true;
+  }
+
+  window.applyTitleFontMetrics = applyTitleFontMetrics;
+  window.__streamBidApplyTitleLayout = applyTitleLayout;
+  window.__streamBidMeasureTitlePresentation = measureTitlePresentation;
+  window.__streamBidPaintTitleCanvas = paintTitleCanvas;
+  window.__streamBidRunTitleDiagnosticHarness = runTitleDiagnosticHarness;
+  window.__streamBidRunTitleFontDiagnostic = runTitleFontDiagnostic;
+  window.__streamBidBuildNormalizedTitleBitmap = buildNormalizedTitleBitmap;
 
   function titleLotKey(lot, title) {
     return textValue(lot) + "\0" + textValue(title);
   }
 
+  function readStreamBidDebugParams() {
+    return new URLSearchParams(window.location.search || "");
+  }
+
+  function resolveTitleFixtureText() {
+    var params = readStreamBidDebugParams();
+    if (!params.has("titleFixture")) return null;
+    var raw = params.get("titleFixture");
+    return !raw || raw === "1" ? TITLE_FIXTURE_DEFAULT : raw;
+  }
+
   function transitionTitle(newTextRaw, lotRaw) {
+    var fixtureText = resolveTitleFixtureText();
+    if (fixtureText != null) {
+      newTextRaw = fixtureText;
+      lotRaw = "fixture";
+    }
     var newText = textValue(newTextRaw) || "";
     var lot = textValue(lotRaw) || "";
     var key = titleLotKey(lot, newText);
-    var prevKey = vehicleTitleEl.getAttribute("data-lot-key") || "";
+    var prevKey = (vehicleTitleEl && vehicleTitleEl.getAttribute("data-lot-key")) || "";
 
     if (prevKey === key) {
-      if (!titleMarqueeRafs.has(vehicleTitleEl)) {
+      if (titleMarqueeRafId == null) {
         requestAnimationFrame(function () {
           startTitleMarquee(vehicleTitleEl);
         });
@@ -927,22 +1879,25 @@
       return;
     }
 
-    cancelTitleMarquee(vehicleTitleEl);
-    vehicleTitleEl.setAttribute("data-lot-key", key);
-    vehicleTitleEl.setAttribute("data-title", newText);
+    cancelTitleMarquee();
+    if (vehicleTitleEl) {
+      vehicleTitleEl.setAttribute("data-lot-key", key);
+      vehicleTitleEl.setAttribute("data-title", newText);
+    }
 
-    vehicleTitleEl.classList.remove("fade-out", "slide-in-right");
-    void vehicleTitleEl.offsetWidth;
-    vehicleTitleEl.classList.add("fade-out");
+    if (lotTitleCanvasEl) {
+      lotTitleCanvasEl.classList.remove("is-entering");
+      lotTitleCanvasEl.classList.add("is-fading");
+    }
 
     setTimeout(function () {
       var presentation = measureTitlePresentation(newText);
       applyTitleLayout(vehicleTitleEl, newText, presentation);
-
-      vehicleTitleEl.classList.remove("fade-out", "slide-in-right");
-      void vehicleTitleEl.offsetWidth;
-      vehicleTitleEl.classList.add("slide-in-right");
-
+      if (lotTitleCanvasEl) {
+        lotTitleCanvasEl.classList.remove("is-fading");
+        void lotTitleCanvasEl.offsetWidth;
+        lotTitleCanvasEl.classList.add("is-entering");
+      }
       requestAnimationFrame(function () {
         startTitleMarquee(vehicleTitleEl);
       });
@@ -1614,6 +2569,8 @@
 
   function formatReserveStatusForStreamBid(value) {
     var text = textValue(value);
+    // Only "Offered Without Reserve" is ever shown. Has Reserve keeps a blank
+    // placeholder row; Unknown and any other value (Active, Reserve, ...) are blank.
     if (!text || /^unknown$/i.test(text)) {
       return { display: "", layout: "hidden" };
     }
@@ -1623,7 +2580,7 @@
     if (/has[-_\s]?reserve|with\s+reserve/i.test(text)) {
       return { display: "", layout: "placeholder" };
     }
-    return { display: text, layout: "visible" };
+    return { display: "", layout: "hidden" };
   }
 
   function buildHeaderState(display) {
@@ -1911,6 +2868,28 @@
   };
 
   scaleStage();
+  function initTitleMetrics() {
+    applyTitleFontMetrics(TITLE_SIZE_MAX);
+    paintTitleCanvas(0);
+    applyTitleFixtureFromQuery();
+    runTitleDiagnosticHarness();
+    runTitleFontDiagnostic();
+  }
+    if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(initTitleMetrics).catch(initTitleMetrics);
+  } else {
+    initTitleMetrics();
+  }
+  function applyTitleFixtureFromQuery() {
+    var text = resolveTitleFixtureText();
+    if (text == null) return;
+    if (vehicleTitleEl) {
+      vehicleTitleEl.setAttribute("data-title", text);
+      vehicleTitleEl.setAttribute("data-lot-key", "fixture\0" + text);
+    }
+    var presentation = measureTitlePresentation(text);
+    applyTitleLayout(vehicleTitleEl, text, presentation);
+  }
   window.addEventListener("resize", function () {
     scaleStage();
     remeasureTitleMarquee();

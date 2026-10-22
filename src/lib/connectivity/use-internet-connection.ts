@@ -60,7 +60,43 @@ export function useConnectivityPresentation(): InternetConnectivityPresentation 
       networkPresentation: InternetConnectivityPresentation,
       authStatus: DesktopAuthStatusResponse | null,
     ): InternetConnectivityPresentation => {
-      if (!shouldUseLocalDataClient() || !authStatus?.profileIndicatorState) {
+      if (!shouldUseLocalDataClient() || !authStatus) {
+        return networkPresentation;
+      }
+      // No network: never paint cloud/account state on top of it.
+      if (networkPresentation.label === "Offline") {
+        return networkPresentation;
+      }
+
+      switch (authStatus.cloudConnectionState) {
+        case "connected":
+          return {
+            ...networkPresentation,
+            label: "Online",
+            tone: "success",
+            detail: "Cloud account session ready.",
+          };
+        case "reconnecting":
+        case "network_offline":
+          // Network is up here; the cloud session is being refreshed in the background.
+          return {
+            ...networkPresentation,
+            label: "Reconnecting",
+            tone: "warning",
+            detail: "Cloud temporarily reconnecting. Retrying automatically.",
+          };
+        case "authentication_required":
+          return {
+            ...networkPresentation,
+            label: "Sign In",
+            tone: "destructive",
+            detail: "Authentication required.",
+          };
+        default:
+          break;
+      }
+
+      if (!authStatus.profileIndicatorState) {
         return networkPresentation;
       }
       const label = profileIndicatorLabel(authStatus.profileIndicatorState);
@@ -107,7 +143,9 @@ export function useConnectivityPresentation(): InternetConnectivityPresentation 
 
     presentationRef.current = next;
     setPresentation(next);
-    maybeRecoverSession(next);
+    // Recovery follows the network edge, not the auth-aware label, so a cloud-only
+    // problem is not mistaken for (or masked by) a network transition.
+    maybeRecoverSession(networkPresentation);
   }, [applyAuthAwarePresentation, maybeRecoverSession]);
 
   useEffect(() => {

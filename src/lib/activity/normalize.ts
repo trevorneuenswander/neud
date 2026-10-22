@@ -13,6 +13,7 @@ import {
 } from "@/lib/activity/filter";
 import type { ActivityDisplayEvent, ActivityProjectSummary, FullActivityDisplayEvent } from "@/lib/activity/types";
 import { getCleanActivityDescription } from "@/lib/activity/description";
+import { enrichAccessActivityDescription } from "@/lib/access-management/activity-subject";
 
 const ACTIVITY_TYPE_LABELS: Record<string, string> = {
   "developer-tools.scraper-published": "Scraper code published",
@@ -120,13 +121,18 @@ export function normalizeActivityEvent(
       ? event.actor.name.trim()
       : "";
 
+  // Prefer explicit actor fields. Do not use metadata.userId when subjectUserId is
+  // present — that field is the affected user for access-removal events.
   const actorId =
     ("actorId" in event && typeof event.actorId === "string" ? event.actorId : null) ??
     ("actor" in event && event.actor && typeof event.actor.id === "string"
       ? event.actor.id
       : null) ??
-    readMetadataString(metadata, "userId") ??
+    readMetadataString(metadata, "actorUserId") ??
     readMetadataString(metadata, "actorId") ??
+    (readMetadataString(metadata, "subjectUserId")
+      ? null
+      : readMetadataString(metadata, "userId")) ??
     undefined;
 
   const actorName = resolveActivityActorLabel({
@@ -143,8 +149,14 @@ export function normalizeActivityEvent(
 
   const type = eventType || undefined;
 
+  const enrichedAccessMessage = enrichAccessActivityDescription({
+    eventType: type,
+    description: rawMessage,
+    metadata,
+  });
+
   const message = getCleanActivityDescription(
-    rawMessage.trim() || humanizeActivityType(type ?? ""),
+    (enrichedAccessMessage ?? rawMessage).trim() || humanizeActivityType(type ?? ""),
     actorName,
   );
 

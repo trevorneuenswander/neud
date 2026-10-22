@@ -13,9 +13,24 @@ export type ProjectAccessContext = {
   projectRole: ProjectRole;
 };
 
+export type ProjectPackageCardState =
+  | "not_downloaded"
+  | "downloaded"
+  | "update_available"
+  | "downloading"
+  | "updating"
+  | "error";
+
 export type ProjectListItem = Project & {
   accessLevel: ProjectAccessLevelWithAdmin;
   teams?: Array<{ id: string; name: string }>;
+  /** Multi-capability model (Pass 21). Not a single project.type enum. */
+  capabilities?: string[];
+  packageState?: ProjectPackageCardState;
+  installedVersion?: number | null;
+  availableVersion?: number | null;
+  isPackageInstalled?: boolean;
+  packageLastError?: string | null;
 };
 
 export type AssignableUser = Pick<

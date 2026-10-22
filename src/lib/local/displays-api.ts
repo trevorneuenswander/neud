@@ -191,7 +191,7 @@ export type CreatedDisplayPayload = {
   slug: string;
   displayKey: string;
   description: string | null;
-  sourceType: "project-html";
+  sourceType: "project-html" | "project-video";
   enabled: boolean;
   archived: boolean;
   refreshRateMs: number;
@@ -203,6 +203,8 @@ export type CreatedDisplayPayload = {
     versionNumber: number;
     createdAt: string;
   };
+  /** Present for project-video creates. */
+  mediaAssetId?: string;
 };
 
 export async function localCreateDisplay(

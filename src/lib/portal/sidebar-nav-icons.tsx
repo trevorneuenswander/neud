@@ -99,10 +99,21 @@ export function SidebarPanelLeftIcon(props: IconProps) {
   );
 }
 
+export function SidebarOutputIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <rect x="3" y="5" width="18" height="12" rx="1.5" />
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+    </IconBase>
+  );
+}
+
 export function resolveSidebarNavIcon(label: string) {
   const normalized = label.trim().toLowerCase();
   if (normalized === "dashboard") return SidebarDashboardIcon;
   if (normalized === "projects") return SidebarProjectsIcon;
+  if (normalized === "output" || normalized === "outputs") return SidebarOutputIcon;
   if (normalized === "users and access") return SidebarUsersIcon;
   if (normalized === "activity") return SidebarActivityIcon;
   if (normalized === "settings") return SidebarSettingsIcon;

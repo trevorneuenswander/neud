@@ -240,6 +240,53 @@ export class ProjectCodeStorageService {
     }
   }
 
+  /** Display graphic assets live under displays/{displayId}/assets/ (relative paths only). */
+  getDisplayAssetsDir(projectId: string, displayId: string): string {
+    assertSafeResourceId(displayId, "display ID");
+    return resolvePathWithinRoot(
+      this.getProjectCodeRoot(projectId),
+      "displays",
+      displayId,
+      "assets",
+    );
+  }
+
+  writeDisplayAsset(
+    projectId: string,
+    displayId: string,
+    fileName: string,
+    data: Buffer,
+  ): { relativePath: string; absolutePath: string; fileName: string } {
+    const safeName = sanitizeAssetFileName(fileName);
+    const dir = this.getDisplayAssetsDir(projectId, displayId);
+    fs.mkdirSync(dir, { recursive: true });
+    const absolutePath = resolvePathWithinRoot(dir, safeName);
+    fs.writeFileSync(absolutePath, data);
+    return {
+      fileName: safeName,
+      relativePath: `assets/${safeName}`,
+      absolutePath,
+    };
+  }
+
+  readDisplayAsset(
+    projectId: string,
+    displayId: string,
+    fileName: string,
+  ): { absolutePath: string; relativePath: string; fileName: string } | null {
+    const safeName = sanitizeAssetFileName(fileName);
+    const dir = this.getDisplayAssetsDir(projectId, displayId);
+    const absolutePath = resolvePathWithinRoot(dir, safeName);
+    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
+      return null;
+    }
+    return {
+      fileName: safeName,
+      relativePath: `assets/${safeName}`,
+      absolutePath,
+    };
+  }
+
   listDataEngineRuntimeFiles(): Array<{ path: string; source: string }> {
     const distDir = path.join(
       resolveDataEngineDistModule(this.paths, "index.js").workerRoot,
@@ -344,4 +391,15 @@ export class ProjectCodeStorageService {
       return {};
     }
   }
+}
+
+function sanitizeAssetFileName(fileName: string): string {
+  const base = path.basename(String(fileName || "asset.bin")).replace(/[^\w.\-]+/g, "_");
+  if (!base || base === "." || base === ".." || base.includes("..")) {
+    throw new Error("Invalid asset file name.");
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(base)) {
+    throw new Error("Invalid asset file name.");
+  }
+  return base;
 }

@@ -78,7 +78,7 @@ type BroadArrowTypedDisplayCardProps = {
     slug: string;
     displayKey: string;
     description: string | null;
-    sourceType: "built-in" | "project-html";
+    sourceType: "built-in" | "project-html" | "project-video";
     enabled: boolean;
     archived: boolean;
     refreshRateMs: number;
@@ -292,6 +292,7 @@ export function BroadArrowTypedDisplayCard({
     name: display.name,
     displayKey: display.displayKey,
     url: outputUrl,
+    slug: display.slug,
     width: displayWidth,
     height: displayHeight,
     settings: { rendererKey },
@@ -393,6 +394,7 @@ export function BroadArrowTypedDisplayCard({
                 {canDeveloperTools ? (
                   <DisplayEditMenu
                     projectSlug={projectSlug}
+                    projectId={projectId}
                     display={display}
                     onArchived={onArchived}
                     onDeleted={onDeleted}

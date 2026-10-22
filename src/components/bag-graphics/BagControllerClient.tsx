@@ -1591,8 +1591,8 @@ export function BagControllerClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Local Controller"
-        description="Edit manual on-air values for displays when Local Controller is the selected data source."
+        title="Manual Controller"
+        description="Edit manual on-air values for displays when Manual Controller is the selected data source."
         action={<DataSourceStatusPill pageSource="local-controller" />}
       />
       {canControl ? (

@@ -1,5 +1,6 @@
 import {
   classifyLocalFetchFailure,
+  formatLocalApiHttpError,
   isDesktopRenderer,
   resolveDesktopLocalApiConfig,
   resolveLocalApiOriginFromEnv,
@@ -17,6 +18,34 @@ type LocalApiPayload = {
 
 const LOCAL_API_SESSION_HEADER = "x-neud-local-session";
 const DEFAULT_LOCAL_FETCH_TIMEOUT_MS = 5_000;
+
+function isZoomCredentialPath(path: string): boolean {
+  return (
+    path === "/api/integrations/zoom/app-credentials" ||
+    path === "/api/integrations/zoom"
+  );
+}
+
+function logZoomCredentialRequest(input: {
+  method: string;
+  path: string;
+  url: string;
+  status: number | null;
+  code?: string | null;
+  reachedLocalApi: boolean;
+  error?: string | null;
+}) {
+  console.info("[neud-zoom-cred] renderer request", {
+    method: input.method,
+    path: input.path,
+    url: input.url,
+    status: input.status,
+    code: input.code ?? null,
+    reachedLocalApi: input.reachedLocalApi,
+    error: input.error ?? null,
+    // Never log request bodies / secrets.
+  });
+}
 
 const engineInitializationPromises = new Map<string, Promise<void>>();
 
@@ -42,9 +71,12 @@ export async function localFetch<T>(
   const timeoutMs = init?.timeoutMs ?? DEFAULT_LOCAL_FETCH_TIMEOUT_MS;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const method = (init?.method ?? "GET").toUpperCase();
+  const requestUrl = `${baseUrl}${path}`;
+  const zoomCredPath = isZoomCredentialPath(path);
 
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(requestUrl, {
       ...init,
       signal: controller.signal,
       headers: {
@@ -65,17 +97,39 @@ export async function localFetch<T>(
       return payload as T;
     }
 
-    if (response.status === 404) {
-      throw new LocalApiError("Access management service route was not found.", 404);
+    if (!response.ok) {
+      const formatted = formatLocalApiHttpError({
+        status: response.status,
+        path,
+        error: payload.error,
+        code: payload.code,
+      });
+      if (zoomCredPath) {
+        logZoomCredentialRequest({
+          method,
+          path,
+          url: requestUrl,
+          status: response.status,
+          code: formatted.code ?? payload.code,
+          reachedLocalApi: true,
+          error: formatted.message,
+        });
+      }
+      throw new LocalApiError(
+        formatted.message,
+        response.status,
+        normalizeLocalApiErrorCode(formatted.code ?? payload.code),
+      );
     }
 
-    if (!response.ok) {
-      const code = normalizeLocalApiErrorCode(payload.code);
-      throw new LocalApiError(
-        payload.error ?? `Local API request failed (${response.status}).`,
-        response.status,
-        code,
-      );
+    if (zoomCredPath && method !== "GET") {
+      logZoomCredentialRequest({
+        method,
+        path,
+        url: requestUrl,
+        status: response.status,
+        reachedLocalApi: true,
+      });
     }
 
     return payload;
@@ -90,7 +144,22 @@ export async function localFetch<T>(
     }
 
     const classified = classifyLocalFetchFailure(error, baseUrl);
-    throw new LocalApiError(classified.message, 503);
+    if (zoomCredPath) {
+      logZoomCredentialRequest({
+        method,
+        path,
+        url: requestUrl,
+        status: null,
+        code: LOCAL_API_ERROR_CODES.LOCAL_API_UNREACHABLE,
+        reachedLocalApi: false,
+        error: classified.message,
+      });
+    }
+    throw new LocalApiError(
+      classified.message,
+      503,
+      LOCAL_API_ERROR_CODES.LOCAL_API_UNREACHABLE,
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -117,14 +186,63 @@ export async function ensureProjectEnginesInitializedOnce(
   return promise;
 }
 
-export async function localListProjects(query?: string) {
-  const suffix = query?.trim()
-    ? `?q=${encodeURIComponent(query.trim())}`
-    : "";
+export async function localListProjects(
+  query?: string,
+  options?: { scope?: "all" | "installed" | "directory" },
+) {
+  const params = new URLSearchParams();
+  const trimmed = query?.trim();
+  if (trimmed) {
+    params.set("q", trimmed);
+  }
+  params.set("scope", options?.scope ?? "directory");
+  const suffix = `?${params.toString()}`;
   return localFetch<{
     projects: Array<{ slug?: string | null } & Record<string, unknown>>;
     meta?: unknown;
   }>(`/api/projects${suffix}`);
+}
+
+export async function localDownloadProjectPackage(slug: string) {
+  return localFetch<{ ok: boolean; install?: unknown; error?: string }>(
+    "/api/project-packages/download",
+    {
+      method: "POST",
+      body: JSON.stringify({ slug }),
+    },
+  );
+}
+
+export async function localUpdateProjectPackage(slug: string) {
+  return localFetch<{ ok: boolean; install?: unknown; error?: string }>(
+    "/api/project-packages/update",
+    {
+      method: "POST",
+      body: JSON.stringify({ slug }),
+    },
+  );
+}
+
+export async function localRemoveProjectPackage(slug: string) {
+  return localFetch<{ ok: boolean; retainedData?: boolean; error?: string }>(
+    "/api/project-packages/remove",
+    {
+      method: "POST",
+      body: JSON.stringify({ slug }),
+    },
+  );
+}
+
+/** Force-refresh cloud project directory + package metadata. Does not download/install. */
+export async function localRefreshProjectDirectory() {
+  return localFetch<{
+    ok: boolean;
+    projects?: Array<Record<string, unknown>>;
+    error?: string;
+  }>("/api/project-packages/refresh-directory", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 }
 
 export async function localSlugExists(slug: string) {
@@ -145,11 +263,38 @@ export async function localCreateProject(input: {
   description?: string | null;
   theme?: string;
   icon?: string;
+  capabilities?: string[];
+  teamIds?: string[];
 }) {
   return localFetch<{ project: unknown }>("/api/projects", {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export async function localGetProjectCreateMeta() {
+  return localFetch<{ teams: Array<{ id: string; name: string }> }>(
+    "/api/projects/create-meta",
+  );
+}
+
+export async function localGetProjectCapabilities(projectSlug: string) {
+  return localFetch<{ capabilities: string[] }>(
+    `/api/projects/${encodeURIComponent(projectSlug)}/capabilities`,
+  );
+}
+
+export async function localUpdateProjectCapabilities(
+  projectSlug: string,
+  capabilities: string[],
+) {
+  return localFetch<{ project: unknown; capabilities: string[] }>(
+    `/api/projects/${encodeURIComponent(projectSlug)}/capabilities`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ capabilities }),
+    },
+  );
 }
 
 export async function localUpdateProjectSettings(
@@ -269,20 +414,15 @@ export async function localRemoveScraperSource(engineId: string, sourceId: strin
 }
 
 function normalizeLocalApiErrorCode(
-  code: string | undefined,
+  code: string | undefined | null,
 ): LocalApiErrorCode | undefined {
   if (!code) {
     return undefined;
   }
 
-  if (
-    code === LOCAL_API_ERROR_CODES.AUTH_REQUIRED ||
-    code === LOCAL_API_ERROR_CODES.FORBIDDEN ||
-    code === LOCAL_API_ERROR_CODES.PROJECT_NOT_FOUND ||
-    code === LOCAL_API_ERROR_CODES.LOCAL_IDENTITY_UNAVAILABLE ||
-    code === LOCAL_API_ERROR_CODES.ENGINE_INITIALIZATION_FAILED
-  ) {
-    return code;
+  const known = Object.values(LOCAL_API_ERROR_CODES) as string[];
+  if (known.includes(code)) {
+    return code as LocalApiErrorCode;
   }
 
   return undefined;

@@ -12,6 +12,7 @@ export type NavItem = {
 export const PORTAL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
+  { href: "/outputs", label: "Outputs", activeMatch: "prefix" },
   { href: "/users", label: "Users and Access", adminOnly: true },
   { href: "/activity", label: "Activity", viewerHidden: true },
   { href: "/settings", label: "Settings" },
@@ -20,6 +21,7 @@ export const PORTAL_NAV_ITEMS: NavItem[] = [
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/projects": "Projects",
+  "/outputs": "Outputs",
   "/projects/new": "New Project",
   "/users": "Users and Access",
   "/activity": "Activity",
@@ -36,7 +38,7 @@ export function getPageTitle(pathname: string): string {
   }
 
   if (pathname.endsWith("/controller")) {
-    return "Local Controller";
+    return "Manual Controller";
   }
 
   if (pathname.endsWith("/data-engines")) {

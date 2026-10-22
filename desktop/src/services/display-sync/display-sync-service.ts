@@ -12,6 +12,7 @@ import type { AuthLicenseManager } from "../auth-license-manager";
 import type { ProjectsRepository } from "../../repositories/projects-repository";
 import { getOrCreateNeudInstanceId } from "../neud-instance-id";
 import { CloudDisplayClient } from "./cloud-display-client";
+import { choosePushedActiveRevisionId } from "./published-revision-precedence";
 import { reconcileHostedProjectAndDisplayIdentity } from "./hosted-identity-reconciliation";
 import {
   inlineStreamTickerLogoForHosted,
@@ -110,6 +111,10 @@ export class DisplaySyncService {
   private lastPassResult: DisplaySyncPassResult = createEmptyDisplaySyncPassResult();
   private publicCloudConfigAvailable = false;
 
+  private isDisplayInInstalledPackage:
+    | ((projectId: string, slug: string) => boolean | null)
+    | null = null;
+
   constructor(
     private readonly cloud: AuthenticatedCloudCoordinator,
     private readonly settings: AppSettingsRepository,
@@ -131,6 +136,12 @@ export class DisplaySyncService {
     this.publicCloudConfigAvailable = cloud.isCloudConfigured();
     this.persistRuntimeStatus();
     this.logServiceEvent("service.init");
+  }
+
+  setInstalledPackageDisplayGate(
+    gate: ((projectId: string, slug: string) => boolean | null) | null,
+  ): void {
+    this.isDisplayInInstalledPackage = gate;
   }
 
   private logServiceEvent(message: string): void {
@@ -667,6 +678,9 @@ export class DisplaySyncService {
           queue: this.queue,
           paths: this.paths,
           onDisplaysChanged: this.onDisplaysChanged,
+          isDeleted: (displayId) => this.tombstones.isDeleted(displayId),
+          isDisplayInInstalledPackage:
+            this.isDisplayInInstalledPackage ?? undefined,
         },
         reason,
       );
@@ -1006,29 +1020,23 @@ export class DisplaySyncService {
     const localRevisionId = code?.publishedRevisionId ?? null;
     const remote = await this.cloudClient.fetchDisplayById(displayId);
     const remoteRevisionId = remote?.active_revision_id ?? null;
-    if (!localRevisionId) {
-      return remoteRevisionId;
-    }
-
-    const localReady = await this.cloudClient.revisionExists(localRevisionId);
-    if (!localReady) {
-      return remoteRevisionId;
-    }
-
-    if (!remoteRevisionId || remoteRevisionId === localRevisionId) {
-      return localRevisionId;
-    }
-
-    const localRevision = this.revisions.getById(localRevisionId);
+    const localRevision = localRevisionId ? this.revisions.getById(localRevisionId) : null;
+    const remoteRevision = remoteRevisionId ? this.revisions.getById(remoteRevisionId) : null;
     const metadata = localRevision?.metadata;
     const localIsSeed =
       metadata?.seeded === true ||
       (typeof metadata?.importKey === "string" && metadata.importKey.trim().length > 0);
-    if (localIsSeed) {
-      return remoteRevisionId;
-    }
-
-    return localRevisionId;
+    const localReady = localRevisionId
+      ? await this.cloudClient.revisionExists(localRevisionId)
+      : false;
+    return choosePushedActiveRevisionId({
+      localRevisionId,
+      remoteRevisionId,
+      localReady,
+      localIsSeed,
+      localVersion: localRevision?.versionNumber ?? null,
+      remoteVersion: remoteRevision?.versionNumber ?? null,
+    });
   }
 
   private async pushDisplayBaseMetadata(input: {

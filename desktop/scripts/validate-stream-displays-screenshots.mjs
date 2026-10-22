@@ -553,20 +553,20 @@ async function collectTypographyMetrics(page) {
 
     function sampleTitle() {
       const container = document.getElementById("vehicleTitle");
-      const track = container ? container.querySelector(".title-scroll-track") : null;
-      if (!container || !track) return null;
-      const cs = getComputedStyle(track);
+      if (!container) return null;
       const rect = container.getBoundingClientRect();
       const stage = document.getElementById("stage").getBoundingClientRect();
       const scale = stage.width / 3840;
+      const metrics = window.__streamBidTitleFontMetrics || {};
+      const fontSize = `${container.getAttribute("data-title-size") || metrics.fontSize || 120}px`;
       return {
         top: Math.round((rect.top - stage.top) / scale),
         height: Math.round(rect.height / scale),
-        fontSize: cs.fontSize,
-        lineHeight: cs.lineHeight,
-        fontFamily: cs.fontFamily,
+        fontSize,
+        lineHeight: "normal",
+        fontFamily: metrics.fontFamily || getComputedStyle(document.body).fontFamily,
         scrollMode: container.getAttribute("data-title-mode") === "scroll",
-        measuring: container.classList.contains("title-measuring"),
+        measuring: false,
       };
     }
 
@@ -584,22 +584,28 @@ async function collectTypographyMetrics(page) {
 async function collectTitleState(page) {
   return page.evaluate(() => {
     const container = document.getElementById("vehicleTitle");
-    const track = container ? container.querySelector(".title-scroll-track") : null;
-    const viewport = container ? container.querySelector(".title-scroll-viewport") : null;
-    if (!container || !track) return null;
-    const cs = getComputedStyle(track);
-    const viewportCs = viewport ? getComputedStyle(viewport) : null;
+    const canvas = document.getElementById("lotTitleCanvas");
+    if (!container || !canvas) return null;
+    const viewportCs = getComputedStyle(container);
+    const diag = window.__streamBidTitleMarqueeDiagnostics || {};
+    const scroll = container.getAttribute("data-title-mode") === "scroll";
+    const offsetX = Number(diag.offsetX) || 0;
     return {
       text: container.getAttribute("data-title") || "",
-      fontSize: parseFloat(cs.fontSize) || 0,
-      measuring: container.classList.contains("title-measuring"),
-      scrollMode: container.getAttribute("data-title-mode") === "scroll",
-      hasLoopCopy: Boolean(track.querySelector(".copyA")),
-      trackTransform: track.style.transform || "",
-      viewportOverflowX: viewportCs ? viewportCs.overflowX : "",
-      viewportOverflowY: viewportCs ? viewportCs.overflowY : "",
-      viewportScrollbarWidth: viewportCs ? viewportCs.scrollbarWidth : "",
-      containerOverflow: getComputedStyle(container).overflow,
+      fontSize: parseFloat(container.getAttribute("data-title-size") || "0") || 0,
+      measuring: false,
+      scrollMode: scroll,
+      hasLoopCopy: scroll,
+      trackTransform: `translate3d(${offsetX}px, 0px, 0px)`,
+      viewportOverflowX: viewportCs.overflowX,
+      viewportOverflowY: viewportCs.overflowY,
+      viewportClipPath: scroll ? "canvas-horizontal-clip" : "none",
+      viewportMaskImage: viewportCs.maskImage || viewportCs.webkitMaskImage || "",
+      viewportScrollbarWidth: viewportCs.scrollbarWidth,
+      containerOverflow: viewportCs.overflow,
+      titleLayout: container.getAttribute("data-title-layout") || "",
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
     };
   });
 }

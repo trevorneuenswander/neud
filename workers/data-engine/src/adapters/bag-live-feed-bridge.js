@@ -158,3 +158,58 @@ export async function installLiveFeedBridgeOnPage(page, onLiveEvent) {
     // Page may not be ready; bootstrap retries via waitForReady.
   }
 }
+
+/**
+ * One-shot read of the current auction display DOM after Start succeeds.
+ * Used to hydrate canonical state before the next Faye event arrives.
+ */
+export async function readCurrentAuctionDisplaySnapshot(page) {
+  if (!page) {
+    return null;
+  }
+  try {
+    return await page.evaluate(() => {
+      function cleanText(value) {
+        return String(value || "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+      const lot = cleanText(document.querySelector(".lot-number .value")?.textContent);
+      const year = cleanText(
+        document.querySelector('.vehicle-name [data-bind="year"], .vehicle-name .Year')
+          ?.textContent,
+      );
+      const title = cleanText(
+        document.querySelector('.vehicle-name [data-bind="title"]')?.textContent,
+      );
+      const biddingPrice = cleanText(document.querySelector(".current_price")?.textContent);
+      const reserveStatus =
+        cleanText(document.querySelector("#js-no-reserve.visible")?.textContent) ||
+        cleanText(document.querySelector("#js-reserved-sm.visible")?.textContent) ||
+        "";
+      const currencies = Array.from(document.querySelectorAll(".other-currency .price")).map(
+        (el) => cleanText(el.textContent),
+      );
+      const photos = Array.from(document.querySelectorAll("#images img"))
+        .map((img) => img.getAttribute("src") || img.currentSrc || "")
+        .filter(Boolean);
+      const vehicleRoot = document.querySelector(".MainWrapper");
+      const vehicleId = vehicleRoot ? String(vehicleRoot.getAttribute("data-id") || "") : "";
+      if (!lot && !title && !biddingPrice) {
+        return null;
+      }
+      return {
+        lotNumber: lot,
+        year,
+        title,
+        biddingPrice,
+        reserveStatus,
+        currencies,
+        photos,
+        vehicleId: vehicleId || null,
+      };
+    });
+  } catch {
+    return null;
+  }
+}

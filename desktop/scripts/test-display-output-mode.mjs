@@ -36,6 +36,9 @@ test("HtmlDisplayOutputView renders transparent fixed canvas without viewer UI",
   assert.match(output, /background:\s*"transparent"/);
   assert.match(output, /display-output-iframe/);
   assert.match(output, /buildHtmlDisplayDocumentPath/);
+  assert.match(output, /parentSearch/);
+  assert.match(live, /parentSearch/);
+  assert.match(readSrc("src/lib/displays/display-view-mode.ts"), /appendStreamBidDebugParams/);
   assert.match(output, /outputMode: true/);
   assert.doesNotMatch(output, /DisplayViewerScaledCanvas/);
   assert.doesNotMatch(output, /Display dimensions:/);

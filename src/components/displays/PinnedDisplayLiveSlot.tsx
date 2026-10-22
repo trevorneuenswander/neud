@@ -3,7 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DisplayCanvasPreview } from "@/components/displays/DisplayCanvasPreview";
 import { BroadArrowTypedDisplayPreview } from "@/components/displays/broad-arrow/BroadArrowTypedDisplayPreview";
-import type { PinnedViewerDisplaySummary } from "@/lib/local/pinned-viewer-api";
+import { VideoPlaybackControls } from "@/components/displays/VideoPlaybackControls";
+import {
+  isPinnedProjectVideoDisplay,
+  type PinnedViewerDisplaySummary,
+} from "@/lib/local/pinned-viewer-api";
 import { resolvePinnedViewerUrl } from "@/lib/displays/resolve-pinned-viewer-url";
 import { resolveRendererKey } from "@/lib/displays/broad-arrow/resolve-renderer-key";
 import { isBroadArrowRendererKey } from "@/lib/displays/broad-arrow/renderer-keys";
@@ -21,6 +25,7 @@ type PinnedDisplayLiveSlotProps = {
   onContextMenu?: (event: React.MouseEvent) => void;
 };
 
+/** Fixed title-row budget — must match HTML and video pins for bottom alignment. */
 const NAME_ROW_PX = 18;
 
 export function PinnedDisplayLiveSlot({
@@ -55,7 +60,7 @@ export function PinnedDisplayLiveSlot({
       const regionRect = region.getBoundingClientRect();
       const maxWidth = computePinnedPreviewMaxWidth({
         regionWidth: regionRect.width,
-        regionHeight: Math.max(0, regionRect.height),
+        regionHeight: Math.max(0, regionRect.height - NAME_ROW_PX),
         displayWidth: display.width,
         displayHeight: display.height,
       });
@@ -138,23 +143,50 @@ export function PinnedDisplayLiveSlot({
         ref={regionRef}
         data-pinned-preview-region=""
         className="relative flex min-h-0 w-full min-w-0 max-w-full flex-1 items-start justify-center overflow-hidden bg-surface"
-        style={{ maxHeight: `calc(100% - ${NAME_ROW_PX}px)` }}
       >
         <div
-          data-pinned-preview-wrapper=""
-          className="relative min-h-0 max-h-full min-w-0 overflow-hidden bg-transparent"
+          data-pinned-display-card=""
+          className="flex max-h-full min-h-0 min-w-0 flex-col items-center"
           style={{
             width: previewMaxWidthPx > 0 ? previewMaxWidthPx : "100%",
             maxWidth: "100%",
-            pointerEvents: "none",
           }}
         >
-          {previewNode}
+          <div
+            data-pinned-preview-wrapper=""
+            className="relative min-h-0 w-full min-w-0 flex-1 overflow-hidden bg-transparent"
+            style={{
+              pointerEvents: "none",
+              aspectRatio: `${display.width} / ${display.height}`,
+              maxHeight: `calc(100% - ${NAME_ROW_PX}px)`,
+            }}
+          >
+            {previewNode}
+          </div>
+          <div
+            data-pinned-display-title-row=""
+            className="mt-0.5 box-border flex h-[18px] max-h-[18px] w-full shrink-0 items-center gap-1.5 overflow-hidden px-0.5"
+            style={{ height: NAME_ROW_PX, maxHeight: NAME_ROW_PX }}
+          >
+            <p
+              data-pinned-display-title=""
+              className="min-w-0 truncate text-left text-[10px] font-medium leading-none text-foreground"
+            >
+              {display.name}
+            </p>
+            <span className="min-w-1 flex-1" aria-hidden="true" />
+            {isPinnedProjectVideoDisplay(display) ? (
+              <div className="flex h-full shrink-0 items-center" data-pinned-video-controls="">
+                <VideoPlaybackControls
+                  displayId={display.id}
+                  canControl
+                  variant="pinned"
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
-      <p className="mt-0.5 w-full shrink-0 truncate px-0.5 pb-0.5 text-center text-[10px] font-medium leading-tight text-foreground">
-        {display.name}
-      </p>
     </div>
   );
 }

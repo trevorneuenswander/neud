@@ -9,7 +9,7 @@ import { AccessManagementTable } from "@/components/access-management/AccessMana
 import { USER_COLUMN_WIDTHS } from "@/lib/access-management/table-layout";
 import type { AccessManagementDirectory } from "@/lib/access-management/types";
 import {
-  countDirectProjectAccess,
+  formatEffectiveProjectAccessLabel,
   formatUserTeamLabel,
   listActiveTeamNamesForUser,
   matchesUserDirectorySearch,
@@ -68,14 +68,13 @@ export function UsersPanel({
             "Team Role(s)",
             "Project Access",
             "Scope",
-            "Status",
             "Actions",
           ]}
         >
           {filtered.map((user) => {
             const teamsLabel = formatUserTeamLabel(user.id, directory);
             const teamRoles = summarizeTeamRolesForUser(user.id, directory);
-            const projectAccessCount = countDirectProjectAccess(user.id, directory);
+            const projectAccessLabel = formatEffectiveProjectAccessLabel(user.id, directory);
             const scope = resolveUserAccessScope(user.id, directory);
             const primaryTeams = listActiveTeamNamesForUser(user.id, directory);
             const displayName = user.fullName?.trim() || "—";
@@ -105,11 +104,10 @@ export function UsersPanel({
                   {primaryTeams.length > 0 ? primaryTeams.join(", ") : teamsLabel}
                 </DataTableCell>
                 <DataTableCell className="whitespace-normal text-sm">{teamRoles}</DataTableCell>
-                <DataTableCell className="tabular-nums">
-                  {projectAccessCount > 0 ? projectAccessCount : "—"}
+                <DataTableCell className="whitespace-normal text-sm">
+                  {projectAccessLabel}
                 </DataTableCell>
                 <DataTableCell className="whitespace-normal text-sm">{scope}</DataTableCell>
-                <DataTableCell>{user.accountStatus}</DataTableCell>
                 <DataTableCell>
                   {currentUserId && onDirectoryRefresh ? (
                     <AccessUserDeleteButton

@@ -316,7 +316,7 @@
       reserveStatus:
         textValue(source.reserveStatus) ||
         textValue(ad.reserveStatus) ||
-        textValue(current.status) ||
+        textValue(current.reserveStatus) ||
         null,
       currencies: Array.isArray(source.currencies)
         ? source.currencies.filter(function (entry) {

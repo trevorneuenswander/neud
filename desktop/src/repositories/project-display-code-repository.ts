@@ -5,7 +5,7 @@ export type ProjectDisplayCodeRow = {
   projectId: string;
   slug: string;
   description: string | null;
-  sourceType: "built-in" | "project-html";
+  sourceType: "built-in" | "project-html" | "project-video";
   draftHtml: string | null;
   draftCss: string | null;
   draftJavascript: string | null;
@@ -55,7 +55,7 @@ export class ProjectDisplayCodeRepository {
     projectId: string;
     slug: string;
     description?: string | null;
-    sourceType?: "built-in" | "project-html";
+    sourceType?: "built-in" | "project-html" | "project-video";
     draftHtml?: string | null;
     draftCss?: string | null;
     draftJavascript?: string | null;
@@ -239,7 +239,12 @@ function mapRow(row: Record<string, unknown>): ProjectDisplayCodeRow {
     projectId: String(row.project_id),
     slug: String(row.slug),
     description: typeof row.description === "string" ? row.description : null,
-    sourceType: row.source_type === "project-html" ? "project-html" : "built-in",
+    sourceType:
+      row.source_type === "project-html"
+        ? "project-html"
+        : row.source_type === "project-video"
+          ? "project-video"
+          : "built-in",
     draftHtml: typeof row.draft_html === "string" ? row.draft_html : null,
     draftCss: typeof row.draft_css === "string" ? row.draft_css : null,
     draftJavascript:

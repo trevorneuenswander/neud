@@ -37,6 +37,15 @@ export function normalizeReserveStatus(value: unknown): ReserveStatus {
   const text = String(value).trim().toLowerCase();
   if (!text || text === "—" || text === "-") return "unknown";
 
+  // Auction/lot lifecycle labels are not reserve states (e.g. Active, Sold).
+  if (
+    /^(active|sold|unsold|pending|live|closed|open)$/.test(text) ||
+    text === "bid status" ||
+    text === "bidding"
+  ) {
+    return "unknown";
+  }
+
   const legacy = LEGACY_RESERVE_STATUS_MAP[text.replace(/\s+/g, "_")];
   if (legacy) return legacy;
 
@@ -71,6 +80,16 @@ export function getVisibleReserveLabel(status: ReserveStatus): string | null {
   return status === "offered_without_reserve"
     ? "OFFERED WITHOUT RESERVE"
     : null;
+}
+
+/**
+ * Stream Bid reserve row text. Only "Offered Without Reserve" is ever shown;
+ * Has Reserve, Unknown, and unrecognized values (e.g. Active) are blank.
+ */
+export function getStreamBidReserveText(value: unknown): string {
+  return normalizeReserveStatus(value) === "offered_without_reserve"
+    ? "Offered Without Reserve"
+    : "";
 }
 
 /** @deprecated Prefer getVisibleReserveLabel for display output. */

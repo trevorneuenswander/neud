@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import path from "path";
 import type { LocalDatabase } from "../database/connection";
 
 export type LocalProject = {
@@ -205,6 +206,9 @@ export class ProjectsRepository {
         "local_project_memberships",
         "user_display_order",
         "user_pinned_viewer_preferences",
+        // Pass 6: package install PK must move with the project or SEMA
+        // getInstalledDisplayKeys(projectId) returns null and hides Schedule Ticker.
+        "project_package_installs",
       ] as const;
 
       for (const table of tables) {
@@ -213,6 +217,29 @@ export class ProjectsRepository {
           .prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`)
           .run(hostedProjectId, localProjectId);
       }
+
+      this.db
+        .prepare(
+          `UPDATE project_package_directory
+           SET local_project_id = ?
+           WHERE local_project_id = ?`,
+        )
+        .run(hostedProjectId, localProjectId);
+
+      // package_root embeds projects/<id>/… — rewrite after identity move.
+      this.db
+        .prepare(
+          `UPDATE project_package_installs
+           SET package_root = REPLACE(REPLACE(package_root, ?, ?), ?, ?)
+           WHERE project_id = ?`,
+        )
+        .run(
+          `${path.sep}${localProjectId}${path.sep}`,
+          `${path.sep}${hostedProjectId}${path.sep}`,
+          `/${localProjectId}/`,
+          `/${hostedProjectId}/`,
+          hostedProjectId,
+        );
 
       this.db
         .prepare("UPDATE projects SET id = ? WHERE id = ?")

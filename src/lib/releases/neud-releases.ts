@@ -43,10 +43,20 @@ export function getVersionedWindowsDownloadUrl(version: string): string {
   return `https://github.com/${NEUD_GITHUB_RELEASE_OWNER}/${NEUD_GITHUB_RELEASE_REPO}/releases/download/v${version}/${filename}`;
 }
 
+const V030_HIGHLIGHTS = [
+  "Output Engine with external display routing, DeckLink Key/Fill, display stacking, and global LIVE/REC tally",
+  "Record to Disk on macOS: H.264 MP4, ProRes 422 HQ MOV, and ProRes 4444 MOV",
+  "Native ProRes video displays with alpha-capable playback, controls, and stack synchronization",
+  "Performance Monitor for system/NEUD CPU, GPU, RAM, macOS memory pressure, and output diagnostics",
+  "SEMA package updates including Manual Controller and Schedule Ticker refinements",
+  "Safer on-air guards when quitting, signing out, changing stacks, or deleting/archiving/disabling source displays",
+  "New official NEUD application icon for Windows and macOS",
+] as const;
+
 const V024_HIGHLIGHTS = [
   "Stream Bid no longer restores the previous lot photo after a lot change",
   "macOS recovers when a cached Chrome installation is incomplete",
-  "Manual Bid can be cleared from the Local Controller and live displays",
+  "Manual Bid can be cleared from the Manual Controller and live displays",
   "Signing out warns when a scraper is running and stops active data engines before ending the session",
   "Project team names appear correctly on user Associated Projects",
   "Display enabled state and display order follow the project across NEUD installations",
@@ -77,10 +87,44 @@ const V022_HIGHLIGHTS = [
 /** Authoritative NEUD desktop release catalog for neud.io and release-note parity. */
 export const NEUD_RELEASES: NeudReleaseEntry[] = [
   {
-    version: "0.2.4",
-    releaseDate: "2026-10-01",
+    version: "0.3.0",
+    releaseDate: "2026-10-22",
     status: "current",
     current: true,
+    summary:
+      "Output Engine, Record to Disk, native ProRes video displays, Performance Monitor, and SEMA package refinements for Windows x64 and Apple Silicon Macs.",
+    highlights: [...V030_HIGHLIGHTS],
+    platforms: {
+      windows: {
+        supported: true,
+        architecture: "x64",
+        downloadUrl: getVersionedWindowsDownloadUrl("0.3.0"),
+        artifactLabel: getVersionedWindowsInstallerFilename("0.3.0"),
+      },
+      macos: {
+        supported: true,
+        architecture: "Apple Silicon (arm64)",
+        downloadUrl: getMacDmgDownloadUrl("0.3.0"),
+        artifactLabel: "NEUD-0.3.0-arm64.dmg",
+      },
+    },
+    githubReleaseUrl: getGitHubReleaseTagUrl("0.3.0"),
+    knownLimitations: [
+      "Record to Disk encoders are implemented and validated on macOS; Windows recording support is not claimed in this release.",
+      "DeckLink Key/Fill requires compatible Blackmagic hardware; automated CI cannot validate physical DeckLink devices.",
+      "Alpha software; Windows builds may show SmartScreen warnings when unsigned.",
+      "macOS builds from CI are unsigned and not notarized until Developer ID signing secrets are configured — Gatekeeper may require manual approval on first open.",
+      "Intel Macs are not supported.",
+      "Display Transforms, IN/OUT Transitions, and Stream Deck integration are planned for a later release.",
+      "macOS auto-update feed exists (latest-mac.yml) but treat Mac updater as preview until signing is verified in production.",
+    ],
+    macosSigningStatus: "unsigned-ci",
+  },
+  {
+    version: "0.2.4",
+    releaseDate: "2026-10-01",
+    status: "published",
+    current: false,
     summary:
       "Reliability and workflow update for live auctions, cross-device display settings, and controller polish on Windows and Apple Silicon Macs.",
     highlights: [...V024_HIGHLIGHTS],

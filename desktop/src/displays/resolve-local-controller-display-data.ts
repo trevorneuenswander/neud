@@ -4,7 +4,7 @@ import {
   type LotPhotoOverrides,
 } from "../bag/live-state/lot-photo-overrides";
 import {
-  getVisibleReserveLabel,
+  getStreamBidReserveText,
   normalizeReserveStatus,
   readReserveStatusFromRecord,
   resolveMergedReserveStatusLabelOrUnknown,
@@ -246,12 +246,11 @@ export function resolveLocalControllerDisplayData(input: {
     submittedLot?.reserveStatus,
     datasetLot as Record<string, unknown> | null,
   );
-  const displayReserveStatus =
-    getVisibleReserveLabel(
-      normalizeReserveStatus(submittedLot?.reserveStatus) !== "unknown"
-        ? normalizeReserveStatus(submittedLot?.reserveStatus)
-        : readReserveStatusFromRecord(datasetLot as Record<string, unknown> | null),
-    ) ?? "";
+  const displayReserveStatus = getStreamBidReserveText(
+    normalizeReserveStatus(submittedLot?.reserveStatus) !== "unknown"
+      ? normalizeReserveStatus(submittedLot?.reserveStatus)
+      : readReserveStatusFromRecord(datasetLot as Record<string, unknown> | null),
+  );
 
   const currentLot = {
     lotNumber: submittedLot?.lotNumber ?? "",

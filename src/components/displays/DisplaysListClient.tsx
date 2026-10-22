@@ -46,7 +46,7 @@ type DuplicateDisplayPayload = {
   slug: string;
   displayKey: string;
   description: string | null;
-  sourceType: "built-in" | "project-html";
+  sourceType: "built-in" | "project-html" | "project-video";
   enabled: boolean;
   archived: boolean;
   refreshRateMs: number;

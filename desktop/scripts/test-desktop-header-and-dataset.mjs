@@ -236,7 +236,7 @@ test("local controller JSON enriches submitted lot for pylon feed", () => {
 test("json preview labels omit manual and automatic parentheticals", () => {
   const resolver = readSrc("src/lib/displays/resolve-effective-display-data.ts");
   const localResolver = readSrc("src/lib/displays/resolve-local-controller-display-data.ts");
-  assert.ok(resolver.includes('"Local Controller"'));
+  assert.ok(resolver.includes('"Manual Controller"'));
   assert.ok(resolver.includes('"Webpage Scraper"'));
   assert.ok(localResolver.includes("waiting-for-manual-input"));
   assert.ok(!resolver.includes("(manual)"));

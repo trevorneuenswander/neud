@@ -91,6 +91,48 @@ export class LocalProjectMembershipsRepository {
       .run(projectId, userId, now, now);
     return true;
   }
+
+  /**
+   * Direct Project Manager access (local role `admin`) for creators of no-Team projects.
+   * Does not downgrade an existing owner membership.
+   */
+  ensureManagerMembership(projectId: string, userId: string): boolean {
+    const existing = this.db
+      .prepare(
+        "SELECT role FROM local_project_memberships WHERE user_id = ? AND project_id = ?",
+      )
+      .get(userId, projectId) as { role: string } | undefined;
+
+    if (existing) {
+      if (existing.role === "owner" || existing.role === "admin") {
+        return false;
+      }
+      const now = new Date().toISOString();
+      this.db
+        .prepare(
+          "UPDATE local_project_memberships SET role = 'admin', updated_at = ? WHERE user_id = ? AND project_id = ?",
+        )
+        .run(now, userId, projectId);
+      return true;
+    }
+
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO local_project_memberships (
+          project_id, user_id, role, created_at, updated_at
+        ) VALUES (?, ?, 'admin', ?, ?)`,
+      )
+      .run(projectId, userId, now, now);
+    return true;
+  }
+
+  listProjectIdsForUser(userId: string): string[] {
+    const rows = this.db
+      .prepare("SELECT project_id FROM local_project_memberships WHERE user_id = ?")
+      .all(userId) as Array<{ project_id: string }>;
+    return rows.map((row) => row.project_id);
+  }
 }
 
 function normalizeRole(value: string): ProjectRole {

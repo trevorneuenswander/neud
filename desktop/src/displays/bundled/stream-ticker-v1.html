@@ -684,11 +684,28 @@
     if (slot.entry.classList.contains("hidden")) {
       return;
     }
-    if (!legacyTickerMarquee.hasActiveLoop(slot.title)) {
-      requestAnimationFrame(function () {
-        startMarquee(slot.title, slotStates.indexOf(slot));
-      });
+    // A loop (or a measurement that will start one) already owns this title, or the
+    // title was measured at this width and fits: repeated identical snapshots must not
+    // restart, re-measure, or rewrite the track.
+    if (
+      legacyTickerMarquee.hasActiveLoop(slot.title) ||
+      legacyTickerMarquee.hasSettledStaticLayout(slot.title)
+    ) {
+      return;
     }
+    var generation = slot.transitionGeneration;
+    requestAnimationFrame(function () {
+      if (generation !== slot.transitionGeneration) {
+        return;
+      }
+      if (
+        legacyTickerMarquee.hasActiveLoop(slot.title) ||
+        legacyTickerMarquee.hasSettledStaticLayout(slot.title)
+      ) {
+        return;
+      }
+      startMarquee(slot.title, slotStates.indexOf(slot));
+    });
   }
 
   function remeasureAllMarquees() {

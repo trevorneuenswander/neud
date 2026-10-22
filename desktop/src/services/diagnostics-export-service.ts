@@ -10,6 +10,11 @@ import type { AppPaths } from "./app-paths";
 const execFileAsync = promisify(execFile);
 
 const MAX_LOG_BYTES = 512 * 1024;
+let outputDiagnosticsProvider: (() => unknown) | null = null;
+
+export function setOutputDiagnosticsProvider(provider: (() => unknown) | null) {
+  outputDiagnosticsProvider = provider;
+}
 const SECRET_KEY_PATTERN =
   /(password|secret|token|refresh|access_token|service_role|apikey|api_key|authorization|cookie)/i;
 
@@ -161,6 +166,11 @@ export async function exportDiagnosticsBundle(paths: AppPaths): Promise<Diagnost
     fs.writeFileSync(
       path.join(stagingDir, "manifest.json"),
       `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(stagingDir, "output-engine.json"),
+      `${JSON.stringify(redactUnknown(outputDiagnosticsProvider?.() ?? []), null, 2)}\n`,
       "utf8",
     );
 

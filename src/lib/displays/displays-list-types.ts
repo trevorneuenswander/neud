@@ -34,6 +34,10 @@ export function buildCustomDisplayListItem(
   display: CreatedDisplayPayload,
   settings?: Record<string, unknown> | null,
 ): Extract<DisplayListItem, { kind: "custom" }> {
+  const resolvedSourceType =
+    display.sourceType === "project-video" || settings?.sourceType === "project-video"
+      ? "project-video"
+      : display.sourceType;
   const customDisplay: ProjectDisplaySource = {
     id: display.id,
     projectId: display.projectId,
@@ -41,7 +45,7 @@ export function buildCustomDisplayListItem(
     slug: display.slug,
     displayKey: display.displayKey,
     description: display.description,
-    sourceType: display.sourceType,
+    sourceType: resolvedSourceType,
     enabled: display.enabled,
     archived: display.archived,
     draftHtml: null,
@@ -52,6 +56,11 @@ export function buildCustomDisplayListItem(
     updatedAt: display.activeVersion.createdAt,
     updatedBy: null,
     draftSavedAt: null,
+    settings: {
+      ...(settings && typeof settings === "object" ? settings : {}),
+      sourceType: resolvedSourceType,
+      ...(display.mediaAssetId ? { mediaAssetId: display.mediaAssetId } : {}),
+    },
   };
 
   return {

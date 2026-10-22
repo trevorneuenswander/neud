@@ -464,6 +464,7 @@ export function DisplayCanvasPreview({
             key={iframeKey}
             ref={resolvedIframeRef}
             title={`${title} preview`}
+            tabIndex={-1}
             src={
               srcDoc
                 ? undefined

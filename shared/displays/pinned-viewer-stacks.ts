@@ -12,7 +12,13 @@ export const MAX_PINNED_DISPLAYS_MESSAGE =
 
 export type PinnedStackRecord = {
   id: string;
+  /**
+   * Member display ids. When `customOrder` is true this array is the stack
+   * hierarchy, TOP first … BOTTOM last. Otherwise layers follow the global
+   * Displays list order (legacy stacks).
+   */
   displayIds: string[];
+  customOrder?: true;
 };
 
 export type PinnedDisplayDimensions = {
@@ -87,7 +93,7 @@ export function parsePinnedStacks(raw: unknown): PinnedStackRecord[] {
     for (const memberId of displayIds) {
       seenMembers.add(memberId);
     }
-    stacks.push({ id, displayIds });
+    stacks.push(record.customOrder === true ? { id, displayIds, customOrder: true } : { id, displayIds });
   }
   return stacks;
 }
@@ -98,6 +104,18 @@ export function orderStackMemberIds(
 ): string[] {
   const memberSet = new Set(memberIds);
   return displayListOrderIds.filter((id) => memberSet.has(id));
+}
+
+/** Layer order TOP…BOTTOM for a stack, honoring a saved custom hierarchy. */
+export function orderStackLayers(
+  stack: PinnedStackRecord,
+  displayListOrderIds: string[],
+): string[] {
+  if (stack.customOrder !== true) {
+    return orderStackMemberIds(stack.displayIds, displayListOrderIds);
+  }
+  const known = new Set(displayListOrderIds);
+  return stack.displayIds.filter((id) => known.has(id));
 }
 
 export function stackBaseDisplayId(
@@ -118,7 +136,7 @@ export function deriveVisiblePinnedSlots(input: {
   const displayToStack = new Map<string, string>();
 
   for (const stack of input.stacks) {
-    const orderedMembers = orderStackMemberIds(stack.displayIds, input.displayListOrderIds).filter(
+    const orderedMembers = orderStackLayers(stack, input.displayListOrderIds).filter(
       (id) => pinnedSet.has(id),
     );
     if (orderedMembers.length < 2) {
@@ -140,10 +158,12 @@ export function deriveVisiblePinnedSlots(input: {
       emittedStacks.add(stackId);
       const stack = input.stacks.find((entry) => entry.id === stackId);
       if (!stack) continue;
-      const orderedMemberDisplayIds = orderStackMemberIds(stack.displayIds, input.displayListOrderIds).filter(
+      const orderedMemberDisplayIds = orderStackLayers(stack, input.displayListOrderIds).filter(
         (id) => pinnedSet.has(id),
       );
       if (orderedMemberDisplayIds.length < 2) continue;
+      // Slot placement and aspect anchor always follow the global Displays list,
+      // so reordering layers never moves the stack within the pinned band.
       const baseDisplayId = stackBaseDisplayId(
         orderedMemberDisplayIds,
         input.displayListOrderIds,
@@ -232,7 +252,7 @@ export function sanitizePinnedViewerStacks(input: {
   const assigned = new Set<string>();
 
   for (const stack of parsePinnedStacks(input.stacks)) {
-    const members = orderStackMemberIds(stack.displayIds, input.displayListOrderIds).filter((id) =>
+    const members = orderStackLayers(stack, input.displayListOrderIds).filter((id) =>
       pinnedSet.has(id),
     );
     const uniqueMembers = members.filter((id) => {
@@ -248,10 +268,11 @@ export function sanitizePinnedViewerStacks(input: {
     for (const memberId of uniqueMembers) {
       assigned.add(memberId);
     }
-    nextStacks.push({
-      id: stack.id,
-      displayIds: uniqueMembers,
-    });
+    nextStacks.push(
+      stack.customOrder === true
+        ? { id: stack.id, displayIds: uniqueMembers, customOrder: true }
+        : { id: stack.id, displayIds: uniqueMembers },
+    );
   }
 
   return {
@@ -327,9 +348,7 @@ export function buildAddToStackPreference(input: {
         throw new Error("Displays must share the same aspect ratio to stack.");
       }
       stacks = stacks.map((stack) =>
-        stack.id === targetStack.id
-          ? { id: stack.id, displayIds: mergedIds }
-          : stack,
+        stack.id === targetStack.id ? { ...stack, displayIds: mergedIds } : stack,
       );
     } else {
       const memberIds = [targetId, sourceId];
@@ -345,7 +364,7 @@ export function buildAddToStackPreference(input: {
       throw new Error("Displays must share the same aspect ratio to stack.");
     }
     stacks = stacks.map((stack) =>
-      stack.id === targetStack.id ? { id: stack.id, displayIds: mergedIds } : stack,
+      stack.id === targetStack.id ? { ...stack, displayIds: mergedIds } : stack,
     );
   } else {
     throw new Error("Invalid stack target.");
@@ -375,7 +394,7 @@ export function buildRemoveFromStackPreference(input: {
   const nextMembers = stack.displayIds.filter((id) => id !== displayId);
   let stacks = input.stacks.filter((entry) => entry.id !== stackId);
   if (nextMembers.length >= 2) {
-    stacks = [...stacks, { id: stack.id, displayIds: nextMembers }];
+    stacks = [...stacks, { ...stack, displayIds: nextMembers }];
   }
 
   const nextVisible = countVisiblePinnedSlots({
@@ -407,6 +426,46 @@ export function buildUnpinStackPreference(input: {
   return {
     pinnedDisplayIds: input.pinnedDisplayIds.filter((id) => !removeSet.has(id)),
     stacks: input.stacks.filter((entry) => entry.id !== stack.id),
+  };
+}
+
+/**
+ * Persist a new TOP…BOTTOM layer order for one stack.
+ * Only the stack record changes — pins and the global Displays list order are untouched.
+ */
+export function buildReorderStackPreference(input: {
+  stackId: string;
+  /** TOP first … BOTTOM last. Must contain exactly the stack's current members. */
+  orderedDisplayIds: string[];
+  pinnedDisplayIds: string[];
+  stacks: PinnedStackRecord[];
+  displaysById: Map<string, PinnedDisplayDimensions>;
+}): { pinnedDisplayIds: string[]; stacks: PinnedStackRecord[] } {
+  const stackId = input.stackId.trim();
+  const stack = input.stacks.find((entry) => entry.id === stackId);
+  if (!stack) {
+    throw new Error("Stack not found.");
+  }
+
+  const ordered = parsePinnedDisplayIds(input.orderedDisplayIds);
+  const currentMembers = new Set(stack.displayIds);
+  if (
+    ordered.length !== currentMembers.size ||
+    ordered.some((id) => !currentMembers.has(id))
+  ) {
+    throw new Error("Stack order must include exactly the displays in this stack.");
+  }
+  if (!stackMembersCompatible(ordered, input.displaysById)) {
+    throw new Error("Displays must share the same aspect ratio to stack.");
+  }
+
+  return {
+    pinnedDisplayIds: input.pinnedDisplayIds,
+    stacks: input.stacks.map((entry) =>
+      entry.id === stackId
+        ? { id: entry.id, displayIds: ordered, customOrder: true as const }
+        : entry,
+    ),
   };
 }
 

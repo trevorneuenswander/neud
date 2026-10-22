@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ProjectsPageClient } from "@/components/projects/ProjectsPageClient";
+import { ProjectsPageActions } from "@/components/projects/ProjectsPageActions";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { FormField } from "@/components/ui/FormField";
@@ -28,6 +29,12 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         <PageHeader
           title="Projects"
           description="Projects organize displays, controllers, workers, and assigned members for a graphics production."
+          action={
+            <ProjectsPageActions
+              canCreateProject={platformAccess.canCreateProject}
+              showRefresh
+            />
+          }
         />
 
         <form method="get" className="max-w-md">
@@ -71,11 +78,9 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         title="Projects"
         description="Projects organize displays, controllers, workers, and assigned members for a graphics production."
         action={
-          platformAccess.canCreateProject ? (
-            <Button href="/projects/new" variant="secondary">
-              New Project
-            </Button>
-          ) : undefined
+          <ProjectsPageActions
+            canCreateProject={platformAccess.canCreateProject}
+          />
         }
       />
 

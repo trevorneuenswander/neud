@@ -35,7 +35,11 @@ export default async function ProjectArchivedDisplaysPage({
           Back to Displays
         </Button>
       </div>
-      <ArchivedDisplaysList projectSlug={slug} initialArchived={archivedDisplays} />
+      <ArchivedDisplaysList
+        projectSlug={slug}
+        projectId={access.project.id}
+        initialArchived={archivedDisplays}
+      />
     </div>
   );
 }

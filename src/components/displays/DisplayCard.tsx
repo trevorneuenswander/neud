@@ -31,6 +31,8 @@ import { buildDisplayWindowFitPath } from "@/lib/displays/display-view-mode";
 import { recordDesktopActivity } from "@/lib/desktop/activity-session-client";
 import { getDesktopAPI } from "@/lib/desktop/client";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
+import { confirmAndStopOutputsForDisplay } from "@/lib/output/confirm-output-interruption";
+import { OutputInterruptionCanceledError } from "@/lib/output/output-interruption-guard";
 import { DisplayEditMenu } from "@/components/displays/DisplayEditMenu";
 import {
   DisplayCardActionSizeRow,
@@ -88,7 +90,7 @@ type DisplayCardProps = {
     slug: string;
     displayKey: string;
     description: string | null;
-    sourceType: "built-in" | "project-html";
+    sourceType: "built-in" | "project-html" | "project-video";
     enabled: boolean;
     archived: boolean;
     refreshRateMs: number;
@@ -328,6 +330,34 @@ export function DisplayCard({
 
   async function handleEnabledChange(nextEnabled: boolean) {
     const previousEnabled = persistedEnabled;
+    const previewDisplayId = displayPersistId ?? developerDisplay?.id ?? display.id;
+
+    if (
+      !nextEnabled &&
+      shouldUseLocalDataClient() &&
+      projectSlug &&
+      (displayPersistId || display.id)
+    ) {
+      try {
+        const allowed = await confirmAndStopOutputsForDisplay({
+          displayId: previewDisplayId,
+          projectSlug,
+          projectId,
+        });
+        if (!allowed) {
+          return;
+        }
+      } catch (error) {
+        if (error instanceof OutputInterruptionCanceledError) {
+          return;
+        }
+        setErrorMessage(
+          error instanceof Error ? error.message : "Unable to check active outputs.",
+        );
+        return;
+      }
+    }
+
     setEnabled(nextEnabled);
     setErrorMessage(null);
     onEnabledChange?.(nextEnabled);
@@ -339,7 +369,6 @@ export function DisplayCard({
 
     notifyDisplayConnectionChanged(display.id, nextEnabled);
 
-    const previewDisplayId = displayPersistId ?? developerDisplay?.id ?? display.id;
     if (!nextEnabled && projectId && shouldUseLocalDataClient()) {
       if (previewDisplayId) {
         requestPinnedViewerUnpin(previewDisplayId);
@@ -505,6 +534,12 @@ export function DisplayCard({
           url: viewerUrl,
           width: displayWidth,
           height: displayHeight,
+          sourceType:
+            developerDisplay?.sourceType === "project-video" ||
+            developerDisplay?.sourceType === "project-html" ||
+            developerDisplay?.sourceType === "built-in"
+              ? developerDisplay.sourceType
+              : undefined,
         })
       : undefined;
 
@@ -612,6 +647,7 @@ export function DisplayCard({
                   {canDeveloperTools && projectSlug && developerDisplay ? (
                     <DisplayEditMenu
                       projectSlug={projectSlug}
+                      projectId={projectId}
                       display={developerDisplay}
                       onArchived={onArchived}
                       onDeleted={onDeleted}

@@ -7,7 +7,7 @@ export type BroadArrowStreamDisplaySpec = {
   name: string;
   description: string;
   bundledRelativePath: string;
-  graphicType: "stream-bid" | "stream-ticker" | "led-display-quail";
+  graphicType: "stream-bid" | "stream-ticker" | "led-display-quail" | "lot-photos";
   displayWidth: number;
   displayHeight: number;
 };
@@ -48,10 +48,23 @@ export const LED_DISPLAY_QUAIL_SPEC: BroadArrowStreamDisplaySpec = {
   displayHeight: 1536,
 };
 
+export const LOT_PHOTOS_DISPLAY_SPEC: BroadArrowStreamDisplaySpec = {
+  importKey: "broad-arrow:lot-photos:v1",
+  slug: "lot-photos",
+  name: "Lot Photos",
+  description:
+    "3840×2160 full-frame lot photograph slideshow using the Stream Bid photo source and timing.",
+  bundledRelativePath: "lot-photos-v1.html",
+  graphicType: "lot-photos",
+  displayWidth: 3840,
+  displayHeight: 2160,
+};
+
 export const BROAD_ARROW_STREAM_DISPLAY_SPECS: BroadArrowStreamDisplaySpec[] = [
   STREAM_BID_DISPLAY_SPEC,
   STREAM_TICKER_DISPLAY_SPEC,
   LED_DISPLAY_QUAIL_SPEC,
+  LOT_PHOTOS_DISPLAY_SPEC,
 ];
 
 export function buildStreamDisplayRevisionName(prefix: string): string {

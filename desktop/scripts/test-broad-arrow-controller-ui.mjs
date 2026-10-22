@@ -503,20 +503,21 @@ test("project navigation exposes local controller once and removes members/contr
   assert.ok(!projectNav.includes('label: "Controllers"'));
   assert.ok(!projectNav.includes('href: "/members"'));
   assert.ok(!projectNav.includes('href: "/controllers"'));
-  assert.ok(projectNav.includes('label: "Local Controller"'));
-  assert.equal((projectNav.match(/Local Controller/g) ?? []).length, 1);
+  assert.ok(!projectNav.includes('label: "Local Controller"'));
   assert.ok(!navigation.includes('return "Members"'));
   assert.ok(!navigation.includes('return "Controllers"'));
-  assert.ok(navigation.includes('return "Local Controller"'));
+  assert.ok(navigation.includes('return "Manual Controller"'));
   assert.ok(!overview.includes('label="Members"'));
   assert.ok(!overview.includes('label="Controllers"'));
+  const capabilities = readSrc("src/lib/projects/capabilities.ts");
+  assert.ok(capabilities.includes('moduleLabel: "Manual Controller"'));
 });
 
-test("controller page title is local controller", () => {
-  const controllerPage = readSrc("src/app/(portal)/projects/[slug]/controller/page.tsx");
-  assert.ok(controllerPage.includes('title="Local Controller"'));
-  assert.ok(!controllerPage.includes('title="BAG Controller"'));
-  assert.ok(!controllerPage.includes('title="Controller"'));
+test("controller page title is manual controller", () => {
+  const controllerClient = readSrc("src/components/bag-graphics/BagControllerClient.tsx");
+  assert.ok(controllerClient.includes('title="Manual Controller"'));
+  assert.ok(!controllerClient.includes('title="BAG Controller"'));
+  assert.ok(!controllerClient.includes('title="Local Controller"'));
 });
 
 test("user-facing last run wording is replaced with last poll", () => {

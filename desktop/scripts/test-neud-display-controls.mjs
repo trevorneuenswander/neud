@@ -98,7 +98,7 @@ test("developer tools button is renamed to Edit with required menu items", () =>
   const menu = read("src/components/displays/DisplayEditMenu.tsx");
 
   assert.match(menu, /label="Edit"/);
-  assert.match(menu, /Edit Display/);
+  assert.match(menu, /Graphic Editor/);
   assert.match(menu, /Duplicate/);
   assert.match(menu, /Archive/);
   assert.doesNotMatch(menu, /Developer Tools/);

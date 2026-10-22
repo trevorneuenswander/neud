@@ -10,28 +10,50 @@ export type PinnedViewerDisplaySummary = {
   name: string;
   displayKey: string;
   url: string;
+  /** Custom (project HTML / Broad Arrow typed) display slug, used to resolve its Local URL. */
+  slug?: string;
   width: number;
   height: number;
   settings: Record<string, unknown>;
+  sourceType?: "built-in" | "project-html" | "project-video";
 };
+
+export function isPinnedProjectVideoDisplay(
+  display: Pick<PinnedViewerDisplaySummary, "settings" | "sourceType">,
+): boolean {
+  if (display.sourceType === "project-video") return true;
+  return display.settings?.sourceType === "project-video";
+}
 
 export function buildPinnedViewerDisplaySummary(input: {
   id: string;
   name: string;
   displayKey: string;
   url: string;
+  slug?: string;
   width?: number;
   height?: number;
   settings?: Record<string, unknown>;
+  sourceType?: "built-in" | "project-html" | "project-video";
 }): PinnedViewerDisplaySummary {
+  const settings = input.settings ?? {};
+  const sourceType =
+    input.sourceType ??
+    (settings.sourceType === "project-video" ||
+    settings.sourceType === "project-html" ||
+    settings.sourceType === "built-in"
+      ? settings.sourceType
+      : undefined);
   return {
     id: input.id,
     name: input.name,
     displayKey: input.displayKey,
     url: input.url,
+    ...(input.slug ? { slug: input.slug } : {}),
     width: input.width ?? 1920,
     height: input.height ?? 1080,
-    settings: input.settings ?? {},
+    settings,
+    ...(sourceType ? { sourceType } : {}),
   };
 }
 
@@ -146,6 +168,18 @@ export async function localRemovePinnedDisplayFromStack(
     action: "removeFromStack",
     stackId: input.stackId,
     displayId: input.displayId,
+  });
+}
+
+export async function localReorderPinnedViewerStack(
+  projectSlug: string,
+  projectId: string,
+  input: { stackId: string; orderedDisplayIds: string[] },
+): Promise<PinnedViewerState> {
+  return patchPinnedViewer(projectSlug, projectId, {
+    action: "reorderStack",
+    stackId: input.stackId,
+    orderedDisplayIds: input.orderedDisplayIds,
   });
 }
 

@@ -59,6 +59,10 @@ test("manifest lists all bundled display HTML files", () => {
     "auction-ticker-overlay-v1.html",
     "auction-pylon-display-v1.html",
     "auction-ticker-legacy-live-v1-2026-07-26-132400.html",
+    "lot-photos-v1.html",
+    "sema-schedule-ticker-v1.html",
+    "sema-schedule-pylon-v1.html",
+    "sema-schedule-ticker-editable-v1.html",
   ]);
 });
 

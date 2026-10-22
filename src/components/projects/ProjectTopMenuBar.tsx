@@ -5,12 +5,15 @@ import type { ProjectDataType } from "@/lib/projects/constants";
 import { ProjectNav } from "@/components/projects/ProjectNav";
 import { ProjectLastPollStatus } from "@/components/projects/ProjectLastPollStatus";
 import { ProjectDataSourceSelector } from "@/components/projects/ProjectDataSourceSelector";
+import { SemaProjectSourceControls } from "@/components/sema/SemaProjectSourceControls";
 import type { DisplayDataSource } from "@/lib/displays/display-data-source";
 import { useProjectNavLayoutMode } from "@/hooks/useProjectNavLayoutMode";
+import { projectSupportsSemaWorkflow } from "@/lib/projects/constants";
 
 type ProjectTopMenuBarProps = {
   slug: string;
   projectType: ProjectDataType;
+  capabilities?: string[] | null;
   engineId: string | null;
   canManageSettings: boolean;
   projectRole?: import("@/lib/projects/project-permissions").ProjectRole;
@@ -23,6 +26,7 @@ export const ProjectTopMenuBar = forwardRef<HTMLDivElement, ProjectTopMenuBarPro
     {
       slug,
       projectType,
+      capabilities,
       engineId,
       canManageSettings,
       projectRole,
@@ -70,18 +74,22 @@ export const ProjectTopMenuBar = forwardRef<HTMLDivElement, ProjectTopMenuBarPro
           <ProjectNav
             slug={slug}
             projectType={projectType}
+            capabilities={capabilities}
             canManageSettings={canManageSettings}
             projectRole={projectRole}
             layoutMode={layoutMode}
             navMeasureRef={navMeasureRef}
           />
           {showStatusControls ? (
-            <div
-              ref={statusRef}
-              className="ml-auto flex shrink-0 items-center gap-4"
-            >
-              <ProjectLastPollStatus engineId={engineId} />
-              <ProjectDataSourceSelector initialDataSource={initialDataSource} />
+            <div ref={statusRef} className="ml-auto flex shrink-0 items-center gap-4">
+              {projectSupportsSemaWorkflow(projectType) ? (
+                <SemaProjectSourceControls projectSlug={slug} />
+              ) : (
+                <>
+                  <ProjectLastPollStatus engineId={engineId} />
+                  <ProjectDataSourceSelector initialDataSource={initialDataSource} />
+                </>
+              )}
             </div>
           ) : null}
         </div>

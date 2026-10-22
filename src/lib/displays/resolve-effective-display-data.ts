@@ -149,5 +149,5 @@ export function resolveEffectiveDisplayData(input: {
 }
 
 export function displayDataSourcePreviewLabel(source: DisplayDataSource): string {
-  return source === "local-controller" ? "Local Controller" : "Webpage Scraper";
+  return source === "local-controller" ? "Manual Controller" : "Webpage Scraper";
 }

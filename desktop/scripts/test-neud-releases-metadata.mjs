@@ -15,12 +15,12 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
-test("current v0.2.4 is marked current and matches package.json", () => {
+test("current v0.3.0 is marked current and matches package.json", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
   const rootPkg = readJson("package.json");
-  assert.match(catalog, /version: "0\.2\.4"/);
+  assert.match(catalog, /version: "0\.3\.0"/);
   assert.match(catalog, /current: true/);
-  assert.equal(rootPkg.version, "0.2.4");
+  assert.equal(rootPkg.version, "0.3.0");
   assert.equal([...catalog.matchAll(/current: true/g)].length, 1);
 });
 
@@ -48,22 +48,23 @@ test("download page renders from shared release metadata", () => {
 
 test("Windows and macOS downloads visible for current release", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
-  assert.match(catalog, /version: "0\.2\.4"[\s\S]*?platforms:[\s\S]*?windows:[\s\S]*?supported: true/);
-  assert.match(catalog, /version: "0\.2\.4"[\s\S]*?macos:[\s\S]*?supported: true/);
+  assert.match(catalog, /version: "0\.3\.0"[\s\S]*?platforms:[\s\S]*?windows:[\s\S]*?supported: true/);
+  assert.match(catalog, /version: "0\.3\.0"[\s\S]*?macos:[\s\S]*?supported: true/);
   assert.match(catalog, /Apple Silicon \(arm64\)/);
   assert.match(catalog, /Intel Macs are not supported/);
-  assert.match(catalog, /getVersionedWindowsDownloadUrl\("0\.2\.4"\)/);
-  assert.match(catalog, /getMacDmgDownloadUrl\("0\.2\.4"\)/);
+  assert.match(catalog, /getVersionedWindowsDownloadUrl\("0\.3\.0"\)/);
+  assert.match(catalog, /getMacDmgDownloadUrl\("0\.3\.0"\)/);
 });
 
 test("previous versions are listed and only one release is current", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
+  assert.match(catalog, /version: "0\.2\.4"/);
   assert.match(catalog, /version: "0\.2\.3"/);
   assert.match(catalog, /version: "0\.2\.2"/);
   assert.match(catalog, /version: "0\.2\.1"/);
   assert.match(catalog, /version: "0\.2\.0"/);
+  assert.match(catalog, /getVersionedWindowsDownloadUrl\("0\.2\.4"\)/);
   assert.match(catalog, /getVersionedWindowsDownloadUrl\("0\.2\.3"\)/);
-  assert.match(catalog, /getVersionedWindowsDownloadUrl\("0\.2\.2"\)/);
   const currentFlags = [...catalog.matchAll(/current: (true|false)/g)].map((m) => m[1]);
   assert.equal(currentFlags.filter((v) => v === "true").length, 1);
 });
@@ -84,30 +85,32 @@ test("v0.2.0 Windows download uses immutable GitHub release asset URL", () => {
 
 test("GitHub release links match version tags", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
+  assert.match(catalog, /getGitHubReleaseTagUrl\("0\.3\.0"\)/);
   assert.match(catalog, /getGitHubReleaseTagUrl\("0\.2\.4"\)/);
   assert.match(catalog, /getGitHubReleaseTagUrl\("0\.2\.3"\)/);
-  assert.match(catalog, /getGitHubReleaseTagUrl\("0\.2\.2"\)/);
   assert.match(catalog, /releases\/tag\/v\$\{version\}/);
 });
 
 test("GitHub release body formatter shares highlights with website catalog", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
   assert.match(catalog, /formatGitHubReleaseBody/);
+  assert.match(catalog, /V030_HIGHLIGHTS/);
+  assert.match(catalog, /highlights: \[\.\.\.V030_HIGHLIGHTS\]/);
   assert.match(catalog, /V024_HIGHLIGHTS/);
   assert.match(catalog, /highlights: \[\.\.\.V024_HIGHLIGHTS\]/);
-  assert.match(catalog, /V022_HIGHLIGHTS/);
-  assert.match(catalog, /highlights: \[\.\.\.V022_HIGHLIGHTS\]/);
 });
 
 test("release notes doc points to authoritative catalog", () => {
-  const current = read("docs/releases/v0.2.4-github-release-notes.md");
-  assert.match(current, /NEUD v0\.2\.4/);
+  const current = read("docs/releases/v0.3.0-github-release-notes.md");
+  assert.match(current, /NEUD v0\.3\.0/);
   assert.match(current, /Apple Silicon/);
   assert.match(current, /Intel Macs are not supported/);
+  const prior = read("docs/releases/v0.2.4-github-release-notes.md");
+  assert.match(prior, /NEUD v0\.2\.4/);
   const notes = read("docs/releases/v0.2.3-github-release-notes.md");
   assert.match(notes, /fresh installations/);
   assert.match(notes, /Stream Bid, Stream Ticker, and LED Display \(Quail\)/);
-  const prior = read("docs/release-notes-v0.2.2.md");
-  assert.match(prior, /Apple Silicon macOS/);
-  assert.match(prior, /Faye/);
+  const older = read("docs/release-notes-v0.2.2.md");
+  assert.match(older, /Apple Silicon macOS/);
+  assert.match(older, /Faye/);
 });

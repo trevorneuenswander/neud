@@ -167,6 +167,7 @@ const REQUIRED_DISPLAY_BRIDGE_SCRIPTS = [
   "stream-bid-v2-bridge.js",
   "stream-ticker-v2-bridge.js",
   "led-display-quail-v2-bridge.js",
+  "lot-photos-v1-bridge.js",
 ];
 
 const ADDITIONAL_DISPLAY_RUNTIME_SCRIPTS = ["legacy-ticker-marquee.js"];

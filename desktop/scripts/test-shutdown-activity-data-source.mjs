@@ -136,7 +136,7 @@ test("display data source persists in app settings with default", async () => {
   assert.equal(DISPLAY_DATA_SOURCE_SETTING_KEY, "displayDataSource");
   assert.equal(isDisplayDataSource("webpage-scraper"), true);
   assert.equal(isDisplayDataSource("local-controller"), true);
-  assert.equal(displayDataSourceLabel("local-controller"), "Local Controller");
+  assert.equal(displayDataSourceLabel("local-controller"), "Manual Controller");
 
   const paths = createTestPaths("display-data-source");
   const db = await openLocalDatabase(paths);

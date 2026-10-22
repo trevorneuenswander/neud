@@ -12,6 +12,12 @@ export type DesktopAuthStatusResponse = {
   sharedAuthSnapshot?: Record<string, unknown> | null;
   profileIndicatorState?: "online" | "offline" | "sign_in";
   dashboardConnectionState?: "connected" | "offline" | "sign_in";
+  /** Distinguishes Network Offline / Cloud Temporarily Reconnecting / Authentication Required. */
+  cloudConnectionState?:
+    | "connected"
+    | "network_offline"
+    | "reconnecting"
+    | "authentication_required";
   localSessionValid?: boolean;
   networkReachable?: boolean;
   userDirectorySync: UserDirectorySyncState;

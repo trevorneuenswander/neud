@@ -84,10 +84,17 @@ export type LocalFetchFailureCategory =
   | "connection_refused"
   | "local_api_unreachable"
   | "route_not_found"
+  | "http_client_error"
+  | "http_server_error"
   | "malformed_response"
   | "timeout"
   | "directory_request_failed";
 
+/**
+ * Classify *network-level* fetch failures only.
+ * Do not use for HTTP responses that already arrived (4xx/5xx) — those must
+ * surface their status/body, not "Local API could not be reached".
+ */
 export function classifyLocalFetchFailure(
   error: unknown,
   baseUrl: string,
@@ -113,19 +120,76 @@ export function classifyLocalFetchFailure(
   ) {
     return {
       category: "connection_refused",
-      message: `Access management service could not be reached at ${baseUrl}.`,
+      message: `Local API connection refused at ${baseUrl}.`,
     };
   }
 
-  if (lower.includes("fetch failed") || lower.includes("network")) {
+  // Chromium uses "Failed to fetch"; Node often uses "fetch failed".
+  // This can also mean CORS preflight rejection — not necessarily that the
+  // process is down. Prefer a network-level message only when fetch never
+  // produced an HTTP response.
+  if (
+    lower.includes("fetch failed") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror") ||
+    (lower.includes("network") && !lower.includes("network_error"))
+  ) {
     return {
       category: "local_api_unreachable",
-      message: `Access management service could not be reached at ${baseUrl}.`,
+      message: `Local API could not be reached at ${baseUrl}. Check that NEUD desktop local services are running.`,
     };
   }
 
   return {
     category: "directory_request_failed",
     message,
+  };
+}
+
+export function formatLocalApiHttpError(input: {
+  status: number;
+  path: string;
+  error?: string | null;
+  code?: string | null;
+}): { category: LocalFetchFailureCategory; message: string; code?: string } {
+  const { status, path, error, code } = input;
+  if (status === 404) {
+    return {
+      category: "route_not_found",
+      message:
+        error?.trim() ||
+        `Local API route was not found (${path}).`,
+      code: code ?? "ROUTE_NOT_FOUND",
+    };
+  }
+  if (status === 405) {
+    return {
+      category: "http_client_error",
+      message: error?.trim() || `Local API method not allowed (${path}).`,
+      code: code ?? "METHOD_NOT_ALLOWED",
+    };
+  }
+  if (status >= 500) {
+    return {
+      category: "http_server_error",
+      message:
+        error?.trim() ||
+        `Local API server error (${status}) for ${path}.`,
+      code: code ?? undefined,
+    };
+  }
+  if (status >= 400) {
+    return {
+      category: "http_client_error",
+      message:
+        error?.trim() ||
+        `Local API request failed (${status}) for ${path}.`,
+      code: code ?? undefined,
+    };
+  }
+  return {
+    category: "directory_request_failed",
+    message: error?.trim() || `Local API request failed (${status}).`,
+    code: code ?? undefined,
   };
 }

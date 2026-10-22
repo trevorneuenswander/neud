@@ -43,6 +43,9 @@ test("delete creates tombstone and cleanup hooks", () => {
   assert.match(service, /deleteByResource/);
   assert.match(service, /deleteDisplayTree/);
   assert.match(service, /deleteByDisplayId/);
+  assert.match(service, /suppressOrphanRecovery/);
+  assert.match(service, /alreadyDeleted/);
+  assert.match(service, /purgeTombstonedDisplays/);
 });
 
 test("delete is disabled only for protected display keys", () => {

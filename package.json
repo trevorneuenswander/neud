@@ -1,6 +1,6 @@
 {
   "name": "neud",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "private": true,
   "description": "NEUD — The Ultimate Data Stripper",
   "workspaces": [
@@ -19,6 +19,11 @@
     "lint": "eslint",
     "test:password-reset": "node scripts/test-password-reset.mjs",
     "test:neud-branding": "node desktop/scripts/test-neud-branding.mjs",
+    "test:v0-3-0-phase4": "node --test desktop/scripts/test-neud-v0-3-0-phase4.mjs",
+    "test:v0-3-0-correction": "node --test desktop/scripts/test-neud-v0-3-0-correction-pass.mjs desktop/scripts/test-neud-v0-3-0-correction-pass-2.mjs desktop/scripts/test-neud-v0-3-0-correction-pass-3.mjs desktop/scripts/test-neud-v0-3-0-correction-pass-4.mjs desktop/scripts/test-neud-v0-3-0-correction-pass-5.mjs desktop/scripts/test-neud-v0-3-0-correction-pass-6.mjs desktop/scripts/test-neud-v0-3-0-correction-pass-7.mjs desktop/scripts/test-neud-package-directory-reconcile.mjs desktop/scripts/test-neud-teams-access-ui.mjs",
+    "test:v0-3-0-pass-23": "node --test desktop/scripts/test-neud-v0-3-0-correction-pass-23.mjs",
+    "test:v0-3-0-pass-24": "node --test desktop/scripts/test-neud-v0-3-0-correction-pass-24.mjs",
+    "test:sema-directory-seed-hardening": "node --test desktop/scripts/test-neud-sema-directory-seed-hardening.mjs",
     "test:activity-settings": "node desktop/scripts/test-activity-settings.mjs",
     "test:access-system": "node desktop/scripts/test-access-system.mjs",
     "test:users-access-phase2": "node desktop/scripts/test-users-access-phase2.mjs",
@@ -218,6 +223,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.7",
+    "lucide-react": "^1.61.0",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"

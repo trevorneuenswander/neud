@@ -117,6 +117,34 @@
 
   var isEmbedded = window.parent && window.parent !== window;
   var RECOVERY_POLL_MS = 60000;
+  var stackLayerMode =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("stackLayer") === "1";
+  if (stackLayerMode) {
+    // Stack outputs run N runtimes; keep recovery sparse while SSE is healthy.
+    RECOVERY_POLL_MS = 180000;
+  }
+  // DeckLink stack layers: rasterize near the selected video-mode size instead of
+  // keeping a full UHD backing store per iframe under the offscreen compositor.
+  (function applyDeckLinkStackRasterZoom() {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("decklinkRaster") !== "1") return;
+    var authoredW = Number(params.get("authoredWidth")) || 3840;
+    var authoredH = Number(params.get("authoredHeight")) || 2160;
+    var outputW = Number(params.get("outputWidth")) || authoredW;
+    var outputH = Number(params.get("outputHeight")) || authoredH;
+    if (!(authoredW > 0 && authoredH > 0 && outputW > 0 && outputH > 0)) return;
+    var zoom = Math.min(outputW / authoredW, outputH / authoredH);
+    // Pass 13: upscale (1080→4K) and downscale (UHD→HD) are both valid.
+    if (!(zoom > 0) || Math.abs(zoom - 1) < 1e-6) return;
+    try {
+      document.documentElement.style.zoom = String(zoom);
+      document.documentElement.setAttribute("data-neud-decklink-raster-zoom", String(zoom));
+    } catch (_error) {
+      // Ignore; outer stack-fit authored-stage scale remains as fallback.
+    }
+  })();
   var pollTimer = null;
   var activeRequest = null;
   var eventSource = null;
@@ -719,7 +747,10 @@
       if (dataUrl) {
         runtimeDiagnostics.initialFetchCount += 1;
         scheduleFetch(false);
-        startRecoveryWatchdog();
+        // Stack layers: rely on SSE; only start the recovery watchdog on disconnect.
+        if (!stackLayerMode) {
+          startRecoveryWatchdog();
+        }
       }
     } catch (error) {
       reportError("display bridge events unavailable", error);

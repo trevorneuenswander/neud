@@ -140,3 +140,55 @@ test("active revision push and pull logging is present", () => {
   assert.match(pull, /display\.active_revision\.pull\.applied/);
   assert.match(pull, /pending_local_active_revision_push/);
 });
+
+test("newer bundled import stays published over an older cloud pointer", async () => {
+  const sync = readSrc("desktop/src/services/display-sync/display-sync-service.ts");
+  const pull = readSrc("desktop/src/services/display-sync/display-sync-pull.ts");
+  const importer = readSrc("desktop/src/services/broad-arrow-stream-displays-import-service.ts");
+  assert.match(sync, /choosePushedActiveRevisionId/);
+  assert.match(pull, /shouldRetainNewerLocalPublishedRevision/);
+  assert.doesNotMatch(pull, /syncStatus !== "synced"/);
+  assert.match(importer, /findByResourceAndSourceHash/);
+  assert.match(importer, /duplicateRevisionPrevented/);
+
+  const { choosePushedActiveRevisionId, shouldRetainNewerLocalPublishedRevision } = await import(
+    "../src/services/display-sync/published-revision-precedence.ts"
+  );
+
+  const localA = "revision-a";
+  const cloudB = "revision-b";
+  assert.equal(
+    shouldRetainNewerLocalPublishedRevision(51, 30),
+    true,
+    "newer local bundled revision is kept when pull sees an older cloud pointer",
+  );
+  assert.equal(
+    choosePushedActiveRevisionId({
+      localRevisionId: localA,
+      remoteRevisionId: cloudB,
+      localReady: true,
+      localIsSeed: true,
+      localVersion: 51,
+      remoteVersion: 30,
+    }),
+    localA,
+    "sync push reconciles the cloud pointer forward to the newer bundled revision",
+  );
+  assert.equal(
+    shouldRetainNewerLocalPublishedRevision(30, 51),
+    false,
+    "an actually newer cloud revision is allowed to replace the local pointer",
+  );
+  assert.equal(
+    choosePushedActiveRevisionId({
+      localRevisionId: localA,
+      remoteRevisionId: cloudB,
+      localReady: true,
+      localIsSeed: true,
+      localVersion: 30,
+      remoteVersion: 51,
+    }),
+    cloudB,
+    "an older bundled seed does not overwrite a newer cloud revision",
+  );
+});

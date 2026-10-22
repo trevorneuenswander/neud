@@ -104,14 +104,52 @@ const neudDesktop = {
     respondCloseRequest: (action: "cancel" | "confirm" | "force") =>
       ipcRenderer.invoke("neud:app:respondCloseRequest", action) as Promise<{ ok: boolean }>,
     onCloseRequested: (
-      callback: (payload: { shutdownFailed?: boolean }) => void,
+      callback: (payload: {
+        shutdownFailed?: boolean;
+        scraperActive?: boolean;
+        activeOutputs?: Array<{
+          routeId: string;
+          name: string;
+          projectId: string;
+          sourceType: "display" | "stack";
+          sourceId: string;
+          status: "live" | "starting" | "recording" | "finalizing";
+          adapterType?: string;
+        }>;
+      }) => void,
     ) => {
-      const listener = (_event: unknown, payload: { shutdownFailed?: boolean }) => {
+      const listener = (
+        _event: unknown,
+        payload: {
+          shutdownFailed?: boolean;
+          scraperActive?: boolean;
+          activeOutputs?: Array<{
+            routeId: string;
+            name: string;
+            projectId: string;
+            sourceType: "display" | "stack";
+            sourceId: string;
+            status: "live" | "starting" | "recording" | "finalizing";
+            adapterType?: string;
+          }>;
+        },
+      ) => {
         callback(payload ?? {});
       };
       ipcRenderer.on("neud:app:closeRequested", listener);
       return () => {
         ipcRenderer.removeListener("neud:app:closeRequested", listener);
+      };
+    },
+    onLifecycle: (callback: (payload: { phase: "shutting-down" }) => void) => {
+      const listener = (_event: unknown, payload: { phase?: string }) => {
+        if (payload?.phase === "shutting-down") {
+          callback({ phase: "shutting-down" });
+        }
+      };
+      ipcRenderer.on("neud:app:lifecycle", listener);
+      return () => {
+        ipcRenderer.removeListener("neud:app:lifecycle", listener);
       };
     },
   },
@@ -206,6 +244,102 @@ const neudDesktop = {
       };
     },
   },
+  output: {
+    listDevices: () => ipcRenderer.invoke("neud:output:listDevices"),
+    decklinkAvailability: () =>
+      ipcRenderer.invoke("neud:output:decklinkAvailability") as Promise<{
+        sdkAvailable: boolean;
+        sdkVersion: string | null;
+        reason: string | null;
+      }>,
+    onDevicesChanged: (callback: (devices: unknown[]) => void) => {
+      const listener = (_event: unknown, devices: unknown[]) => {
+        callback(Array.isArray(devices) ? devices : []);
+      };
+      ipcRenderer.on("neud:output:devicesChanged", listener);
+      return () => {
+        ipcRenderer.removeListener("neud:output:devicesChanged", listener);
+      };
+    },
+    listRoutes: () => ipcRenderer.invoke("neud:output:listRoutes"),
+    nextDefaultName: () =>
+      ipcRenderer.invoke("neud:output:nextDefaultName") as Promise<string>,
+    nextDefaultRecordName: (projectId: string) =>
+      ipcRenderer.invoke("neud:output:nextDefaultRecordName", projectId) as Promise<string>,
+    hasActiveSession: () =>
+      ipcRenderer.invoke("neud:output:hasActiveSession") as Promise<boolean>,
+    getActiveOutputs: () =>
+      ipcRenderer.invoke("neud:output:getActiveOutputs") as Promise<
+        Array<{
+          routeId: string;
+          name: string;
+          projectId: string;
+          sourceType: "display" | "stack";
+          sourceId: string;
+          status: "live" | "starting" | "recording" | "finalizing";
+          adapterType?: string;
+        }>
+      >,
+    getTally: () => ipcRenderer.invoke("neud:output:getTally"),
+    recordingCodecs: () => ipcRenderer.invoke("neud:output:recordingCodecs"),
+    pickRecordingFolder: () =>
+      ipcRenderer.invoke("neud:output:pickRecordingFolder") as Promise<
+        { ok: true; path: string } | { ok: false; cancelled?: boolean; error?: string }
+      >,
+    openRecordingFolder: (folderPath: string) =>
+      ipcRenderer.invoke("neud:output:openRecordingFolder", folderPath) as Promise<
+        { ok: true; path: string } | { ok: false; error?: string }
+      >,
+    onSessionChanged: (callback: (tally?: unknown) => void) => {
+      const listener = (_event: unknown, tally: unknown) => {
+        callback(tally);
+      };
+      ipcRenderer.on("neud:output:sessionChanged", listener);
+      return () => {
+        ipcRenderer.removeListener("neud:output:sessionChanged", listener);
+      };
+    },
+    stopRoutes: (routeIds: string[]) =>
+      ipcRenderer.invoke("neud:output:stopRoutes", routeIds) as Promise<{ ok: boolean }>,
+    diagnostics: () => ipcRenderer.invoke("neud:output:diagnostics"),
+    catalog: () => ipcRenderer.invoke("neud:output:catalog"),
+    create: (payload: {
+      name: string;
+      projectId: string;
+      displayId?: string;
+      sourceType?: "display" | "stack";
+      sourceId?: string;
+      deviceId: string;
+      alwaysOnTop?: boolean;
+      hideCursor?: boolean;
+      displayModeId?: string;
+      presentationMode?: "fill" | "keyFill";
+      keyDeviceId?: string;
+    }) => ipcRenderer.invoke("neud:output:create", payload),
+    update: (payload: {
+      id: string;
+      name?: string;
+      projectId?: string;
+      displayId?: string;
+      sourceType?: "display" | "stack";
+      sourceId?: string;
+      deviceId?: string;
+      alwaysOnTop?: boolean;
+      hideCursor?: boolean;
+      displayModeId?: string;
+      presentationMode?: "fill" | "keyFill";
+      keyDeviceId?: string;
+    }) => ipcRenderer.invoke("neud:output:update", payload),
+    delete: (id: string) => ipcRenderer.invoke("neud:output:delete", id),
+    start: (payload: { id: string; confirmPrimary?: boolean }) =>
+      ipcRenderer.invoke("neud:output:start", payload),
+    stop: (id: string) => ipcRenderer.invoke("neud:output:stop", id),
+    restart: (payload: { id: string; confirmPrimary?: boolean }) =>
+      ipcRenderer.invoke("neud:output:restart", payload),
+  },
+  system: {
+    performanceMetrics: () => ipcRenderer.invoke("neud:system:performanceMetrics"),
+  },
   credentials: {
     hasCredentials: (engineId: string) =>
       ipcRenderer.invoke("neud:credentials:has", engineId) as Promise<boolean>,
@@ -257,6 +391,27 @@ const neudDesktop = {
         baseUrl: string;
         sessionToken: string | null;
       }>,
+    createProject: (input: {
+      name: string;
+      slug: string;
+      projectType: string;
+      description?: string | null;
+      theme?: string;
+      icon?: string;
+      capabilities?: string[];
+      teamIds?: string[];
+    }) =>
+      ipcRenderer.invoke("neud:local:createProject", input) as Promise<{
+        project: unknown;
+      }>,
+    updateProjectCapabilities: (input: {
+      projectSlug: string;
+      capabilities: string[];
+    }) =>
+      ipcRenderer.invoke(
+        "neud:local:updateProjectCapabilities",
+        input,
+      ) as Promise<{ project: unknown; capabilities: string[] }>,
   },
   displayDataSource: {
     get: () =>
@@ -322,6 +477,30 @@ const neudDesktop = {
       ipcRenderer.invoke("neud:activity:getSyncState") as Promise<ActivitySyncState | null>,
     syncNow: () =>
       ipcRenderer.invoke("neud:activity:syncNow") as Promise<ActivitySyncState | null>,
+  },
+  media: {
+    pickProResMov: () => ipcRenderer.invoke("neud:media:pickProResMov"),
+    createProResDisplay: (input: {
+      projectSlug: string;
+      name: string;
+      description?: string;
+      sourceFilePath: string;
+      originalFileName: string;
+      loopEnabled?: boolean;
+    }) => ipcRenderer.invoke("neud:media:createProResDisplay", input),
+    recoverOrphanVideoDisplays: (projectSlug: string) =>
+      ipcRenderer.invoke("neud:media:recoverOrphanVideoDisplays", { projectSlug }),
+  },
+  video: {
+    platform: () => ipcRenderer.invoke("neud:video:platform"),
+    getStatus: (displayId: string) => ipcRenderer.invoke("neud:video:getStatus", displayId),
+    play: (displayId: string) => ipcRenderer.invoke("neud:video:play", displayId),
+    pause: (displayId: string) => ipcRenderer.invoke("neud:video:pause", displayId),
+    stop: (displayId: string) => ipcRenderer.invoke("neud:video:stop", displayId),
+    restart: (displayId: string) => ipcRenderer.invoke("neud:video:restart", displayId),
+    setLoop: (displayId: string, enabled: boolean) =>
+      ipcRenderer.invoke("neud:video:setLoop", { displayId, enabled }),
+    thumbnail: (displayId: string) => ipcRenderer.invoke("neud:video:thumbnail", displayId),
   },
   offlineAuction: {
     hasValidScrape: (projectId: string) =>
@@ -455,6 +634,83 @@ const neudDesktop = {
         rates: { EUR: number; GBP: number; CHF: number; JPY: number };
         updatedAt: string;
       }>,
+  },
+  editor: {
+    open: (payload: {
+      projectId: string;
+      displayId: string;
+      projectSlug?: string;
+      title?: string;
+    }) =>
+      ipcRenderer.invoke("neud:editor:open", payload) as Promise<{
+        ok: boolean;
+        editorUrl?: string;
+      }>,
+    close: (payload: { projectId: string; displayId: string }) =>
+      ipcRenderer.invoke("neud:editor:close", payload) as Promise<{ ok: boolean }>,
+    requestClose: () =>
+      ipcRenderer.invoke("neud:editor:requestClose") as Promise<{ ok: boolean }>,
+    dirtyStateChanged: (payload: { dirty: boolean }) => {
+      ipcRenderer.send("neud:editor:dirtyStateChanged", payload);
+    },
+    snapshotUpdated: (payload: { editableGraphicSchema: unknown }) => {
+      ipcRenderer.send("neud:editor:snapshotUpdated", payload);
+    },
+    getEditableSchema: (payload: { projectSlug: string; displayId: string }) =>
+      ipcRenderer.invoke("neud:editor:getEditableSchema", payload) as Promise<{
+        result: Record<string, unknown>;
+      }>,
+    saveEditableSchema: (payload: {
+      projectSlug: string;
+      displayId: string;
+      editableGraphicSchema: unknown;
+    }) =>
+      ipcRenderer.invoke("neud:editor:saveEditableSchema", payload) as Promise<{
+        result: Record<string, unknown>;
+      }>,
+    importDisplayAsset: (payload: {
+      projectSlug: string;
+      displayId: string;
+      fileName: string;
+      mimeType: string;
+      dataBase64: string;
+    }) =>
+      ipcRenderer.invoke("neud:editor:importDisplayAsset", payload) as Promise<{
+        result: Record<string, unknown>;
+      }>,
+    pickImageFile: () =>
+      ipcRenderer.invoke("neud:editor:pickImageFile") as Promise<
+        | { canceled: true }
+        | { canceled: false; fileName: string; mimeType: string; dataBase64: string }
+      >,
+    onMenuAction: (
+      callback: (payload: { action: string }) => void,
+    ): (() => void) => {
+      const handler = (_event: unknown, payload: unknown) => {
+        if (!payload || typeof payload !== "object") return;
+        const action = (payload as { action?: unknown }).action;
+        if (typeof action !== "string") return;
+        callback({ action });
+      };
+      ipcRenderer.on("neud:editor:menu", handler);
+      return () => {
+        ipcRenderer.removeListener("neud:editor:menu", handler);
+      };
+    },
+  },
+  displaySettings: {
+    open: (payload: {
+      projectId: string;
+      displayId: string;
+      projectSlug?: string;
+      title?: string;
+    }) =>
+      ipcRenderer.invoke("neud:displaySettings:open", payload) as Promise<{
+        ok: boolean;
+        settingsUrl?: string;
+      }>,
+    close: (payload: { projectId: string; displayId: string }) =>
+      ipcRenderer.invoke("neud:displaySettings:close", payload) as Promise<{ ok: boolean }>,
   },
   displays: {
     openPreview: (payload: {

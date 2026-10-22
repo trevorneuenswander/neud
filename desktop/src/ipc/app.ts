@@ -6,6 +6,7 @@ import {
   APPLICATION_MENU_LABELS,
   buildApplicationMenu,
   popupApplicationMenuLabel,
+  setStoredMainApplicationMenu,
 } from "../menu/application-menu";
 import { registerIpcHandler } from "./channels";
 import type { DiagnosticsExportResult } from "../services/diagnostics-export-service";
@@ -21,6 +22,7 @@ export function registerAppIpc(
   exportDiagnostics?: () => Promise<DiagnosticsExportResult>,
 ) {
   applicationMenu = buildApplicationMenu(getMainWindow);
+  setStoredMainApplicationMenu(applicationMenu);
   Menu.setApplicationMenu(applicationMenu);
 
   registerIpcHandler("neud:app:getVersion", () => getCanonicalReleaseVersion());

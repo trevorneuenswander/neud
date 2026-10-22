@@ -23,11 +23,12 @@ import {
 } from "@/lib/developer-tools/revision-labels";
 import { LocalApiError } from "@/lib/local/errors";
 import type { ProjectCodeRevision, ValidationResult } from "@/lib/developer-tools/types";
-
 type DisplayEditClientProps = {
   projectSlug: string;
   projectName: string;
   displayId: string;
+  /** page = full route; modal = embedded in NeudModal (no page chrome) */
+  variant?: "page" | "modal";
 };
 
 type DisplayLoadState = "loading" | "loaded" | "not-found" | "forbidden" | "error";
@@ -58,9 +59,11 @@ export function DisplayEditClient({
   projectSlug,
   projectName,
   displayId,
+  variant = "page",
 }: DisplayEditClientProps) {
   const router = useRouter();
   const displaysHref = `/projects/${projectSlug}/displays`;
+  const isModal = variant === "modal";
   const [loadState, setLoadState] = useState<DisplayLoadState>("loading");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,21 +78,26 @@ export function DisplayEditClient({
   const [savedBaselineCss, setSavedBaselineCss] = useState("");
   const [savedBaselineJavascript, setSavedBaselineJavascript] = useState("");
   const [displaySlug, setDisplaySlug] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [publishedRevisionId, setPublishedRevisionId] = useState<string | null>(null);
-  const [sourceType, setSourceType] = useState<"built-in" | "project-html">("project-html");
+  const [sourceType, setSourceType] = useState<
+    "built-in" | "project-html" | "project-video"
+  >("project-html");
+  const [videoSettings, setVideoSettings] = useState<Record<string, unknown>>({});
   const [editorAccess, setEditorAccess] = useState<EditorAccessState>("loading");
   const [revisions, setRevisions] = useState<ProjectCodeRevision[]>([]);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [metadataStatus, setMetadataStatus] = useState<string | null>(null);
   const [revisionRefreshToken, setRevisionRefreshToken] = useState(0);
+  const isVideoDisplay = sourceType === "project-video";
 
   const applyActiveWorkingCopy = useCallback(
     (
       html: string,
       css: string,
       javascript: string,
-      nextSourceType: "built-in" | "project-html",
+      nextSourceType: "built-in" | "project-html" | "project-video",
     ) => {
       setDraftHtml(html);
       setSavedBaselineHtml(html);
@@ -97,7 +105,12 @@ export function DisplayEditClient({
       setDraftJavascript(javascript);
       setSavedBaselineCss(css);
       setSavedBaselineJavascript(javascript);
-      setEditorAccess(nextSourceType === "built-in" ? "readonly-built-in" : "editable");
+      // Video displays use a placeholder HTML shell — not editable via the HTML workflow.
+      setEditorAccess(
+        nextSourceType === "built-in" || nextSourceType === "project-video"
+          ? "readonly-built-in"
+          : "editable",
+      );
     },
     [],
   );
@@ -125,8 +138,14 @@ export function DisplayEditClient({
         setDisplayDescription(display.description ?? "");
         setSavedDisplayDescription(display.description ?? "");
         setDisplaySlug(display.slug);
+        setProjectId(display.projectId);
         setPublishedRevisionId(display.publishedRevisionId);
         setSourceType(display.sourceType);
+        setVideoSettings(
+          display.settings && typeof display.settings === "object"
+            ? (display.settings as Record<string, unknown>)
+            : {},
+        );
         setRevisions(nextRevisions.revisions);
         applyActiveWorkingCopy(
           display.html,
@@ -299,16 +318,20 @@ export function DisplayEditClient({
   }
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title={savedDisplayName || "Edit Display"}
-        description={projectName}
-        action={
-          <Button href={displaysHref} size="sm" variant="secondary">
-            Back to Displays
-          </Button>
-        }
-      />
+    <div className={isModal ? "space-y-6" : "space-y-8"}>
+      {isModal ? (
+        <p className="text-sm text-muted">{projectName}</p>
+      ) : (
+        <PageHeader
+          title={savedDisplayName ? `${savedDisplayName} — Display Settings` : "Display Settings"}
+          description={projectName}
+          action={
+            <Button href={displaysHref} size="sm" variant="secondary">
+              Back to Displays
+            </Button>
+          }
+        />
+      )}
 
       {loadState === "loading" ? (
         <p className="text-sm text-muted">Loading display…</p>
@@ -371,83 +394,144 @@ export function DisplayEditClient({
             canManage
           />
 
-          <Card className="space-y-4 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-foreground">Raw HTML</h3>
-              <Button type="button" size="sm" variant="secondary" onClick={downloadHtml}>
-                Download HTML
-              </Button>
-            </div>
-            {editorAccess === "readonly-built-in" ? (
-              <p className="text-sm text-muted">
-                Built-in displays are read-only here. Use Duplicate from the Displays page to
-                create an editable copy.
+          {isVideoDisplay ? (
+            <Card className="space-y-4 p-4">
+              <h3 className="text-sm font-semibold text-foreground">ProRes Video</h3>
+              <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted">Type</dt>
+                  <dd className="text-foreground">ProRes 4444 Video Display</dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Codec</dt>
+                  <dd className="text-foreground">
+                    {typeof videoSettings.codecLabel === "string"
+                      ? videoSettings.codecLabel
+                      : typeof videoSettings.codecFourCc === "string"
+                        ? videoSettings.codecFourCc
+                        : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Resolution</dt>
+                  <dd className="text-foreground">
+                    {typeof videoSettings.width === "number" &&
+                    typeof videoSettings.height === "number"
+                      ? `${videoSettings.width} × ${videoSettings.height}`
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Alpha</dt>
+                  <dd className="text-foreground">
+                    {videoSettings.hasAlpha === true
+                      ? "Supported"
+                      : videoSettings.hasAlpha === false
+                        ? "Not present"
+                        : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Source file</dt>
+                  <dd className="truncate text-foreground">
+                    {typeof videoSettings.uploadedFilename === "string"
+                      ? videoSettings.uploadedFilename
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Loop default</dt>
+                  <dd className="text-foreground">
+                    {videoSettings.loopEnabled === false ? "Off" : "On"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="text-xs text-muted">
+                Use Play, Pause, Restart, Stop, and Loop on the Displays page card. HTML source
+                editing and revision controls are not available for video displays.
               </p>
-            ) : null}
-            <CodeEditorPanel
-              value={draftHtml}
-              onChange={(nextValue) => {
-                if (isEditable) {
-                  setDraftHtml(nextValue);
-                }
-              }}
-              minHeight={520}
-              readOnly={!isEditable}
-            />
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              {!htmlChanged ? (
-                <span className="flex items-center text-sm text-muted">
-                  No HTML changes to save.
-                </span>
-              ) : isEditable ? (
-                <span className="flex items-center text-sm text-amber-300">
-                  Unsaved HTML changes
-                </span>
-              ) : null}
-              <Button
-                type="button"
-                disabled={busy || !isEditable || !htmlChanged}
-                onClick={() => setShowPublishDialog(true)}
-              >
-                Save as New Version
-              </Button>
-            </div>
-            {validation ? (
-              <div className="space-y-2 text-sm">
-                <h4 className="font-semibold text-foreground">Validation Output</h4>
-                {validation.issues.length === 0 ? (
-                  <p className="text-emerald-400">No issues found.</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {validation.issues.map((issue, index) => (
-                      <li
-                        key={`${issue.message}-${index}`}
-                        className={
-                          issue.severity === "error" ? "text-red-400" : "text-amber-300"
-                        }
-                      >
-                        {issue.message}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : null}
-          </Card>
+            </Card>
+          ) : (
+            <>
+              <Card className="space-y-4 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">Raw HTML</h3>
+                  <Button type="button" size="sm" variant="secondary" onClick={downloadHtml}>
+                    Download HTML
+                  </Button>
+                </div>
+                {editorAccess === "readonly-built-in" ? (
+                  <p className="text-sm text-muted">
+                    Built-in displays are read-only here. Use Duplicate from the Displays page to
+                    create an editable copy.
+                  </p>
+                ) : null}
+                <CodeEditorPanel
+                  value={draftHtml}
+                  onChange={(nextValue) => {
+                    if (isEditable) {
+                      setDraftHtml(nextValue);
+                    }
+                  }}
+                  minHeight={520}
+                  readOnly={!isEditable}
+                />
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  {!htmlChanged ? (
+                    <span className="flex items-center text-sm text-muted">
+                      No HTML changes to save.
+                    </span>
+                  ) : isEditable ? (
+                    <span className="flex items-center text-sm text-amber-300">
+                      Unsaved HTML changes
+                    </span>
+                  ) : null}
+                  <Button
+                    type="button"
+                    disabled={busy || !isEditable || !htmlChanged}
+                    onClick={() => setShowPublishDialog(true)}
+                  >
+                    Save as New Version
+                  </Button>
+                </div>
+                {validation ? (
+                  <div className="space-y-2 text-sm">
+                    <h4 className="font-semibold text-foreground">Validation Output</h4>
+                    {validation.issues.length === 0 ? (
+                      <p className="text-emerald-400">No issues found.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {validation.issues.map((issue, index) => (
+                          <li
+                            key={`${issue.message}-${index}`}
+                            className={
+                              issue.severity === "error" ? "text-red-400" : "text-amber-300"
+                            }
+                          >
+                            {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+              </Card>
 
-          <Card className="space-y-4 p-4">
-            <h3 className="text-sm font-semibold text-foreground">Saved Versions</h3>
-            <DisplayVersionList
-              projectSlug={projectSlug}
-              displayId={displayId}
-              publishedRevisionId={publishedRevisionId}
-              htmlDirty={htmlChanged}
-              busy={busy}
-              refreshToken={revisionRefreshToken}
-              onRevisionsLoaded={setRevisions}
-              onActivated={handleVersionActivated}
-            />
-          </Card>
+              <Card className="space-y-4 p-4">
+                <h3 className="text-sm font-semibold text-foreground">Saved Versions</h3>
+                <DisplayVersionList
+                  projectSlug={projectSlug}
+                  displayId={displayId}
+                  publishedRevisionId={publishedRevisionId}
+                  htmlDirty={htmlChanged}
+                  busy={busy}
+                  refreshToken={revisionRefreshToken}
+                  onRevisionsLoaded={setRevisions}
+                  onActivated={handleVersionActivated}
+                />
+              </Card>
+            </>
+          )}
         </>
       ) : null}
 

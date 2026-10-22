@@ -59,9 +59,11 @@ test("stream bid column uses deterministic layout and explicit typography", () =
   assert.doesNotMatch(html, /currency-label/);
   assert.doesNotMatch(html, /info-column/);
   assert.doesNotMatch(html, /min-height:\s*60px/);
-  assert.match(html, /id="vehicleTitle" class="vehicle-title bid-text/);
-  assert.match(html, /title-scroll-viewport/);
-  assert.match(html, /title-scroll-track/);
+  assert.match(html, /id="vehicleTitle"/);
+  assert.match(html, /title-region/);
+  assert.match(html, /id="lotTitleCanvas"/);
+  assert.match(html, /data-title-renderer="bitmap-composite"/);
+  assert.match(html, /data-title-layout="pass22"/);
   assert.match(html, /\.bid-text[\s\S]*margin:\s*0/);
 });
 
@@ -309,8 +311,8 @@ test("stream displays include title measurement helpers and bid value shrink-to-
   const bid = read("desktop/src/displays/bundled/stream-bid-display-v1.html");
   assert.match(bid, /function measureTitlePresentation/);
   assert.match(bid, /function applyTitleLayout/);
-  assert.match(bid, /title-measuring/);
-  assert.match(bid, /title-measure/);
+  assert.match(bid, /function buildNormalizedTitleBitmap/);
+  assert.match(bid, /id="lotTitleCanvas"/);
   assert.match(bid, /fitTextToWidth/);
   assert.match(bid, /object-fit:\s*cover/);
 });
@@ -350,9 +352,14 @@ test("stream bid right column gaps and title descender box are explicit", () => 
   assert.match(html, /--reserve-to-bid-gap:/);
   assert.match(html, /--bid-to-currencies-gap:/);
   assert.match(html, /--currency-row-gap:/);
-  assert.match(html, /--title-line-height:/);
-  assert.match(html, /--title-box-h:/);
+  assert.match(html, /--title-baseline-y:|--title-ink-h:/);
+  assert.match(html, /--title-region-h:|--title-ink-h:/);
   assert.match(html, /overflow:\s*visible/);
+  assert.match(html, /title-region/);
+  assert.match(html, /id="lotTitleCanvas"/);
+  assert.match(html, /--title-bottom-safety:\s*16px/);
+  assert.match(html, /TITLE_OPTICAL_PAD_TOP = 8/);
+  assert.match(html, /TITLE_DESCENDER_CLEARANCE_RATIO = 0\.3/);
 });
 
 test("stream bid doubles currency row gap with one shared spacing variable", () => {
@@ -424,23 +431,27 @@ test("stream bid title uses rendered overflow check and 30 percent faster marque
   const html = read("desktop/src/displays/bundled/stream-bid-display-v1.html");
   const legacy = read("desktop/src/displays/bundled/legacy-pylon-v1.html");
   assert.match(html, /TITLE_OVERFLOW_TOLERANCE/);
-  assert.match(html, /function measureTitleOverflow/);
+  assert.match(html, /function measureTitlePresentation/);
   assert.match(html, /TITLE_MARQUEE_V = 52/);
   assert.doesNotMatch(html, /TITLE_SCROLL_CHARACTER_LIMIT/);
   assert.doesNotMatch(html, /TITLE_SCALE_CHARACTER_LIMIT/);
   assert.match(html, /TITLE_SIZE_MAX = 120/);
   assert.match(html, /TITLE_SIZE_MIN = 72/);
-  assert.match(html, /scrollbar-width:\s*none/);
-  assert.match(html, /::-webkit-scrollbar/);
-  assert.match(html, /overflow-x:\s*hidden/);
-  assert.match(html, /function ensureTitleTrack/);
+  assert.match(html, /TITLE_FONT_FAMILY = '"Helvetica Neue", Arial, sans-serif'/);
+  assert.match(html, /id="lotTitleCanvas"/);
+  assert.match(html, /data-title-layout="pass22"/);
+  assert.match(html, /title-region/);
+  assert.match(html, /function buildNormalizedTitleBitmap/);
   assert.match(html, /function startTitleMarquee/);
+  assert.match(html, /imageSmoothingEnabled = true/);
+  assert.doesNotMatch(html, /imageSmoothingEnabled = false/);
+  assert.doesNotMatch(html, /function measureTitleOverflow/);
+  assert.doesNotMatch(html, /lot-title-svg/);
   assert.match(html, /originalAlignmentRestored:\s*true/);
   assert.match(html, /anchorOffset:\s*0/);
   assert.match(html, /fullTravelCompleted/);
-  assert.doesNotMatch(html, /title-scroll-viewport\.title-static/);
   assert.doesNotMatch(html, /title-static/);
-  assert.doesNotMatch(html, /\.title-scroll-viewport[\s\S]*justify-content:\s*center/);
+  assert.doesNotMatch(html, /is-marquee-clip/);
   assert.match(html, /__streamBidTitleMarqueeDiagnostics/);
   assert.match(html, /activeLotKey/);
   assert.match(html, /renderedBidState/);
@@ -870,9 +881,16 @@ test(
     );
     assert.equal(titles.long.scrollMode, true, "very long title enters scrolling mode");
     assert.equal(titles.long.hasLoopCopy, true, "very long title uses legacy loop copies");
-    assert.equal(titles.long.viewportOverflowX, "hidden", "horizontal clipping stays in viewport");
-    assert.equal(titles.long.viewportScrollbarWidth, "none", "title viewport hides scrollbars");
-
+    // Pass 14: overflow stays visible; horizontal marquee clipping is clip-path only.
+    assert.equal(titles.long.viewportOverflowX, "visible", "title-region overflow-x stays visible");
+    assert.equal(titles.long.viewportOverflowY, "visible", "title-region overflow-y stays visible");
+    assert.equal(
+      titles.long.viewportClipPath,
+      "canvas-horizontal-clip",
+      "marquee clips horizontally on the title canvas",
+    );
+    assert.equal(titles.long.canvasWidth, 3840, "title canvas backing width stays 3840");
+    assert.equal(titles.long.canvasHeight, 2160, "title canvas backing height stays 2160");
     assert.equal(
       titles.longRepeated.text,
       titles.long.text,

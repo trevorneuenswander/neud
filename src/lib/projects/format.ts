@@ -28,8 +28,30 @@ export function formatProjectAccessLevel(
   return PROJECT_ACCESS_LEVEL_LABELS[accessLevel] ?? accessLevel;
 }
 
-export function formatProjectDate(value: string): string {
-  return new Date(value).toLocaleString();
+/**
+ * Format a project timestamp for UI. Missing/invalid values must never render as
+ * Unix epoch (Dec 1969 / Jan 1970).
+ */
+export function formatProjectDate(value: string | number | null | undefined): string {
+  if (value == null) {
+    return "—";
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) {
+      return "—";
+    }
+    return new Date(value).toLocaleString();
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return "—";
+  }
+  const ms = Date.parse(trimmed);
+  // Reject missing/invalid and Unix-epoch (renders as Dec 1969 / Jan 1970 locally).
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return "—";
+  }
+  return new Date(ms).toLocaleString();
 }
 
 export function isValidHexColor(value: string): boolean {

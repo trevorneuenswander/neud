@@ -556,6 +556,8 @@ export async function runEngineLoop({ engineId, workerId, workerVersion }) {
                 workerVersion,
                 shouldContinue: () => running && !shuttingDown,
                 loadBundle: () => loadEngineBundle(engineId),
+                // Run Once keeps existing semantics; Start/Restart load initial auction state.
+                initialHydration: !(runOnceRequested && desiredState !== "running"),
               });
             }
 

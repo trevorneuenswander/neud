@@ -75,10 +75,9 @@ export function ProjectsPageClient({
       setProjectsError(null);
 
       try {
-        const suffix = initialQuery.trim()
-          ? `?q=${encodeURIComponent(initialQuery.trim())}`
-          : "";
-        const list = await localListProjects(suffix);
+        const list = await localListProjects(initialQuery.trim() || undefined, {
+          scope: "directory",
+        });
 
         const nextViewerMode = resolveProjectsViewerMode(nextMeta);
 
@@ -147,6 +146,26 @@ export function ProjectsPageClient({
       controller.abort();
     };
   }, [initialQuery, isLocalMode, loadProjects]);
+
+  useEffect(() => {
+    if (!isLocalMode) {
+      return;
+    }
+    const onDirectoryRefreshed = () => {
+      if (meta) {
+        void loadProjects(meta);
+      } else {
+        void localGetProjectsMeta({ wait: false }).then((nextMeta) => {
+          setMeta(nextMeta);
+          void loadProjects(nextMeta);
+        });
+      }
+    };
+    window.addEventListener("neud:projects-directory-refreshed", onDirectoryRefreshed);
+    return () => {
+      window.removeEventListener("neud:projects-directory-refreshed", onDirectoryRefreshed);
+    };
+  }, [isLocalMode, loadProjects, meta]);
 
   useEffect(() => {
     if (!isLocalMode || identityStatus !== "loading") {
@@ -279,7 +298,17 @@ export function ProjectsPageClient({
   }
 
   if (projects.length > 0) {
-    return <ProjectList projects={projects} viewerMode={viewerMode} />;
+    return (
+      <ProjectList
+        projects={projects}
+        viewerMode={viewerMode}
+        onPackageChanged={() => {
+          if (meta) {
+            void loadProjects(meta);
+          }
+        }}
+      />
+    );
   }
 
   return (

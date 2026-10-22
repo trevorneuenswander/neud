@@ -17,7 +17,7 @@ export default function DownloadPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader
-        title="Download NEUD Desktop"
+        title="Get NEUD"
         description="Install the authoritative desktop engine for scraping, control, editing, and publishing."
       />
       <div className="flex items-center justify-end">

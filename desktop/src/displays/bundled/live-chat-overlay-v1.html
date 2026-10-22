@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=3840, height=2160, initial-scale=1.0" />
+  <title>Live Chat Overlay</title>
+  <style>
+    :root {
+      --frame-w: 3840px;
+      --frame-h: 2160px;
+      --card-w: 1680px;
+      --pad-x: 72px;
+      --pad-y: 48px;
+      --accent: #2f6fed;
+      --text: rgba(248, 250, 252, 0.96);
+      --muted: rgba(226, 232, 240, 0.72);
+      --card-bg: rgba(12, 16, 24, 0.82);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: var(--frame-w);
+      height: var(--frame-h);
+      overflow: hidden;
+      background: transparent;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+    .stage {
+      position: relative;
+      width: var(--frame-w);
+      height: var(--frame-h);
+      background: transparent;
+    }
+    .card {
+      position: absolute;
+      left: 180px;
+      bottom: 220px;
+      width: var(--card-w);
+      max-height: 1400px;
+      overflow: hidden;
+      padding: var(--pad-y) var(--pad-x);
+      border-radius: 28px;
+      background: var(--card-bg);
+      border-left: 10px solid var(--accent);
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 280ms ease, transform 320ms ease;
+      pointer-events: none;
+    }
+    .card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .author {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      font-size: 42px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+    .avatar {
+      width: 96px;
+      height: 96px;
+      border-radius: 48px;
+      object-fit: cover;
+      flex: 0 0 auto;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .author-copy {
+      min-width: 0;
+    }
+    .author-name {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .message {
+      font-size: 72px;
+      font-weight: 500;
+      line-height: 1.25;
+      color: var(--text);
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="card" id="card" aria-hidden="true">
+      <div class="author" id="author">
+        <img class="avatar" id="avatar" alt="" hidden />
+        <div class="author-copy">
+          <div class="author-name" id="author-name"></div>
+          <div class="badge" id="badge" hidden></div>
+        </div>
+      </div>
+      <div class="message" id="message"></div>
+    </div>
+  </div>
+  <script src="/neud-display-runtime.js"></script>
+  <script>
+    (function () {
+      var card = document.getElementById("card");
+      var authorEl = document.getElementById("author-name");
+      var avatarEl = document.getElementById("avatar");
+      var badgeEl = document.getElementById("badge");
+      var messageEl = document.getElementById("message");
+      var lastId = null;
+      var providerLabels = {
+        "youtube-live": "YouTube",
+        zoom: "Zoom",
+        "facebook-live": "Facebook",
+        manual: "Manual"
+      };
+
+      function applyPayload(payload) {
+        var current = payload && payload.current ? payload.current : null;
+        var deleted = Boolean(current && (current.deleted || (current.metadata && current.metadata.deleted)));
+        var visible = Boolean(current && payload.visible !== false && !deleted);
+        if (!visible || !current) {
+          card.classList.remove("visible");
+          card.setAttribute("aria-hidden", "true");
+          lastId = null;
+          return;
+        }
+        if (current.id !== lastId) {
+          card.classList.remove("visible");
+          void card.offsetWidth;
+          lastId = current.id;
+        }
+        authorEl.textContent = current.authorName || "";
+        messageEl.textContent = current.text || "";
+        var avatarUrl = current.authorAvatarUrl || "";
+        if (avatarUrl) {
+          avatarEl.hidden = false;
+          avatarEl.src = avatarUrl;
+        } else {
+          avatarEl.hidden = true;
+          avatarEl.removeAttribute("src");
+        }
+        var providerLabel = providerLabels[current.provider] || "";
+        if (providerLabel) {
+          badgeEl.hidden = false;
+          badgeEl.textContent = providerLabel;
+        } else {
+          badgeEl.hidden = true;
+          badgeEl.textContent = "";
+        }
+        card.classList.add("visible");
+        card.setAttribute("aria-hidden", "false");
+      }
+
+      function fetchData() {
+        if (typeof window.neudDisplayGetDataUrl !== "function") {
+          return;
+        }
+        var url = window.neudDisplayGetDataUrl();
+        if (!url) return;
+        fetch(url, { cache: "no-store" })
+          .then(function (res) { return res.json(); })
+          .then(function (json) {
+            var data = json && json.data ? json.data : json;
+            applyPayload(data || {});
+          })
+          .catch(function () {});
+      }
+
+      if (typeof window.neudOnDisplayDataChanged === "function") {
+        window.neudOnDisplayDataChanged(function () {
+          fetchData();
+        });
+      }
+      if (typeof window.startDisplayBridgeEvents === "function") {
+        window.startDisplayBridgeEvents();
+      }
+      fetchData();
+      setInterval(fetchData, 5000);
+    })();
+  </script>
+</body>
+</html>

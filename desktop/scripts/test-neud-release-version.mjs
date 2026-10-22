@@ -15,7 +15,7 @@ function readJson(relativePath) {
 }
 
 function createVersionApi() {
-  const BUILD_APP_VERSION = "0.2.4";
+  const BUILD_APP_VERSION = "0.3.0";
 
   function stripChannelSuffix(version, channel) {
     const pattern = new RegExp(`[-.]?${channel}.*$`, "i");
@@ -87,7 +87,11 @@ function createVersionApi() {
 
 const versionApi = createVersionApi();
 
-test("0.2.4 formats as Alpha 0.2.4", () => {
+test("0.3.0 formats as Alpha 0.3.0", () => {
+  assert.equal(versionApi.getDisplayVersion("0.3.0"), "Alpha 0.3.0");
+});
+
+test("0.2.4 formats as Alpha 0.2.4 (prior published baseline)", () => {
   assert.equal(versionApi.getDisplayVersion("0.2.4"), "Alpha 0.2.4");
 });
 
@@ -113,8 +117,8 @@ test("alpha suffix does not duplicate Alpha prefix", () => {
 });
 
 test("missing runtime data does not render Alpha undefined", () => {
-  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.2.4");
-  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.2.4");
+  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.3.0");
+  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.3.0");
   assert.ok(!versionApi.getDisplayVersion("").includes("undefined"));
   assert.ok(!versionApi.getDisplayVersion("").includes("null"));
 });
@@ -123,12 +127,12 @@ test("0.1.4 still formats as Alpha 0.1.4 (latest published baseline)", () => {
   assert.equal(versionApi.getDisplayVersion("0.1.4"), "Alpha 0.1.4");
 });
 
-test("canonical package metadata stays at 0.2.4 in root and desktop packages", () => {
+test("canonical package metadata stays at 0.3.0 in root and desktop packages", () => {
   const rootPkg = readJson("package.json");
   const desktopPkg = readJson("desktop/package.json");
 
-  assert.equal(rootPkg.version, "0.2.4");
-  assert.equal(desktopPkg.version, "0.2.4");
+  assert.equal(rootPkg.version, "0.3.0");
+  assert.equal(desktopPkg.version, "0.3.0");
   assert.equal(rootPkg.version, desktopPkg.version);
 });
 
@@ -218,10 +222,10 @@ test("release versioning policy is documented", () => {
   assert.match(doc, /package\.json/);
   assert.match(doc, /getCanonicalReleaseVersion\(\)/);
   assert.match(doc, /Do not add automatic version bumps/);
-  assert.match(doc, /Latest published release.*v0\.2\.4/);
-  assert.match(milestones, /Latest published release.*v0\.2\.4/);
+  assert.match(doc, /Latest published release.*v0\.3\.0/);
+  assert.match(milestones, /Latest published release.*v0\.3\.0/);
   assert.match(milestones, /v0\.2\.2 → v0\.2\.3/);
-  assert.match(milestones, /v0\.3\.0.*LAN-accessible/);
+  assert.match(milestones, /v0\.3\.0.*Output Engine/);
   assert.match(milestones, /v0\.4\.0.*modular project packages/);
   assert.doesNotMatch(milestones, /LAN-accessible[\s\S]*ships in v0\.2\.0/i);
   assert.match(githubRelease, /NEUD-Setup-latest-x64\.exe/);

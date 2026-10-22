@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { AppTitleBar } from "@/components/portal/AppTitleBar";
 import { EmergencySessionRecovery } from "@/components/auth/EmergencySessionRecovery";
+import { OutputCleanMode } from "@/components/displays/OutputCleanMode";
 import { NeudAppDialogHost } from "@/components/portal/NeudAppDialogHost";
+import { PerformanceStatusBar } from "@/components/portal/PerformanceStatusBar";
 import { UpdateAvailableModalHost } from "@/components/settings/UpdateAvailableModal";
 import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
 import {
@@ -25,6 +27,10 @@ function isDisplayOutputRoute(pathname: string | null, mode: string | null, prev
     return false;
   }
   return resolveDisplayViewMode({ preview, mode }) === "output";
+}
+
+function isGraphicEditorRoute(pathname: string | null) {
+  return Boolean(pathname?.startsWith("/editor"));
 }
 
 function useShellRuntime(initialRuntime: "desktop" | "hosted"): "desktop" | "hosted" {
@@ -76,10 +82,18 @@ export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellPro
   const outputRoute =
     isDisplayOutputRoute(pathname, searchParams.get("mode"), searchParams.get("preview")) ||
     isHostedFullscreenViewerPath(pathname ?? "");
+  const editorRoute = isGraphicEditorRoute(pathname);
 
-  if (outputRoute) {
-    return <>{children}</>;
+  if (outputRoute || editorRoute) {
+    return (
+      <>
+        <OutputCleanMode />
+        {children}
+      </>
+    );
   }
+
+  const showPerfBar = desktopActive;
 
   return (
     <div
@@ -87,15 +101,20 @@ export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellPro
       data-desktop-shell={desktopActive ? "true" : "false"}
       data-runtime={runtime}
     >
+      <OutputCleanMode />
       <EmergencySessionRecovery />
       {showTitleBarShell ? <AppTitleBar active /> : null}
       <div
         id="neud-app-content"
-        className="app-body content-viewport absolute inset-x-0 bottom-0 flex flex-col overflow-hidden"
-        style={{ top: showTitleBarShell ? "var(--window-menu-height, 0px)" : 0 }}
+        className="app-body content-viewport absolute inset-x-0 flex flex-col overflow-hidden"
+        style={{
+          top: showTitleBarShell ? "var(--window-menu-height, 0px)" : 0,
+          bottom: showPerfBar ? "var(--neud-perf-bar-height, 0px)" : 0,
+        }}
       >
         {children}
       </div>
+      {showPerfBar ? <PerformanceStatusBar /> : null}
       <NeudAppDialogHost />
       <UpdateAvailableModalHost />
       <div

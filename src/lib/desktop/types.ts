@@ -182,8 +182,22 @@ export type NeudDesktopAPI = {
       action: "cancel" | "confirm" | "force",
     ): Promise<{ ok: boolean }>;
     onCloseRequested(
-      callback: (payload: { shutdownFailed?: boolean }) => void,
+      callback: (payload: {
+        shutdownFailed?: boolean;
+        scraperActive?: boolean;
+        activeOutputs?: Array<{
+          routeId: string;
+          name: string;
+          projectId: string;
+          sourceType: "display" | "stack";
+          sourceId: string;
+          status: "live" | "starting" | "recording" | "finalizing";
+          adapterType?: string;
+        }>;
+      }) => void,
     ): () => void;
+    /** Fired once when Electron begins graceful teardown (before local API stop). */
+    onLifecycle?(callback: (payload: { phase: "shutting-down" }) => void): () => void;
     getSupabasePublicConfig(): Promise<{
       supabaseUrl: string | null;
       supabasePublishableKey: string | null;
@@ -282,6 +296,20 @@ export type NeudDesktopAPI = {
       baseUrl: string;
       sessionToken: string | null;
     }>;
+    createProject?(input: {
+      name: string;
+      slug: string;
+      projectType: string;
+      description?: string | null;
+      theme?: string;
+      icon?: string;
+      capabilities?: string[];
+      teamIds?: string[];
+    }): Promise<{ project: unknown }>;
+    updateProjectCapabilities?(input: {
+      projectSlug: string;
+      capabilities: string[];
+    }): Promise<{ project: unknown; capabilities: string[] }>;
   };
   activity?: {
     getSnapshot(): Promise<ActivityEvent[]>;
@@ -373,6 +401,51 @@ export type NeudDesktopAPI = {
     refreshIfStale(): Promise<CurrencyRates>;
     refreshNow(): Promise<CurrencyRates>;
   };
+  displaySettings?: {
+    open: (payload: {
+      projectId: string;
+      displayId: string;
+      projectSlug?: string;
+      title?: string;
+    }) => Promise<{ ok: boolean; settingsUrl?: string }>;
+    close: (payload: { projectId: string; displayId: string }) => Promise<{ ok: boolean }>;
+  };
+  editor?: {
+    open(payload: {
+      projectId: string;
+      displayId: string;
+      projectSlug?: string;
+      title?: string;
+    }): Promise<{ ok: boolean; editorUrl?: string }>;
+    close(payload: {
+      projectId: string;
+      displayId: string;
+    }): Promise<{ ok: boolean }>;
+    requestClose?(): Promise<{ ok: boolean }>;
+    dirtyStateChanged?(payload: { dirty: boolean }): void;
+    snapshotUpdated?(payload: { editableGraphicSchema: unknown }): void;
+    getEditableSchema?(payload: {
+      projectSlug: string;
+      displayId: string;
+    }): Promise<{ result: Record<string, unknown> }>;
+    saveEditableSchema?(payload: {
+      projectSlug: string;
+      displayId: string;
+      editableGraphicSchema: unknown;
+    }): Promise<{ result: Record<string, unknown> }>;
+    importDisplayAsset?(payload: {
+      projectSlug: string;
+      displayId: string;
+      fileName: string;
+      mimeType: string;
+      dataBase64: string;
+    }): Promise<{ result: Record<string, unknown> }>;
+    pickImageFile?(): Promise<
+      | { canceled: true }
+      | { canceled: false; fileName: string; mimeType: string; dataBase64: string }
+    >;
+    onMenuAction?(callback: (payload: { action: string }) => void): () => void;
+  };
   displays?: {
     openPreview(payload: {
       projectId: string;
@@ -411,6 +484,150 @@ export type NeudDesktopAPI = {
       payload: { projectId: string } & Record<string, unknown>,
     ): Promise<import("@/lib/local/pinned-viewer-api").PinnedViewerState>;
   };
+  output: {
+    listDevices(): Promise<Array<{ id: string; name: string; primary: boolean; adapterType?: string }>>;
+    decklinkAvailability(): Promise<{ sdkAvailable: boolean; sdkVersion: string | null; reason: string | null }>;
+    onDevicesChanged(
+      callback: (devices: Array<{ id: string; name: string; primary: boolean }>) => void,
+    ): () => void;
+    listRoutes(): Promise<unknown[]>;
+    nextDefaultName(): Promise<string>;
+    nextDefaultRecordName?(projectId: string): Promise<string>;
+    hasActiveSession(): Promise<boolean>;
+    getActiveOutputs(): Promise<
+      Array<{
+        routeId: string;
+        name: string;
+        projectId: string;
+        sourceType: "display" | "stack";
+        sourceId: string;
+        status: "live" | "starting" | "recording" | "finalizing";
+        adapterType?: string;
+      }>
+    >;
+    getTally(): Promise<{
+      liveCount: number;
+      recordingCount: number;
+      startingCount: number;
+      finalizingCount: number;
+      errorCount: number;
+      hasLive: boolean;
+      hasRecording: boolean;
+      inactive: boolean;
+    }>;
+    recordingCodecs(): Promise<unknown[]>;
+    pickRecordingFolder(): Promise<
+      { ok: true; path: string } | { ok: false; cancelled?: boolean; error?: string }
+    >;
+    openRecordingFolder(
+      folderPath: string,
+    ): Promise<{ ok: true; path: string } | { ok: false; error?: string }>;
+    onSessionChanged(callback: (tally?: unknown) => void): () => void;
+    stopRoutes(routeIds: string[]): Promise<{ ok: boolean }>;
+    diagnostics(): Promise<unknown[]>;
+    catalog(): Promise<{
+      projects: Array<{ id: string; name: string; slug: string }>;
+      displays: Array<{
+        id: string;
+        projectId: string;
+        name: string;
+        slug: string;
+        width: number;
+        height: number;
+        enabled: boolean;
+      }>;
+      stacks?: Array<{
+        id: string;
+        projectId: string;
+        label: string;
+        memberCount: number;
+        memberDisplayIds: string[];
+      }>;
+    }>;
+    create(payload: {
+      name: string;
+      projectId: string;
+      displayId?: string;
+      sourceType?: "display" | "stack";
+      sourceId?: string;
+      deviceId: string;
+      alwaysOnTop?: boolean;
+      hideCursor?: boolean;
+      displayModeId?: string;
+      presentationMode?: "fill" | "keyFill";
+      keyDeviceId?: string;
+    }): Promise<unknown>;
+    update(payload: {
+      id: string;
+      name?: string;
+      projectId?: string;
+      displayId?: string;
+      sourceType?: "display" | "stack";
+      sourceId?: string;
+      deviceId?: string;
+      alwaysOnTop?: boolean;
+      hideCursor?: boolean;
+      displayModeId?: string;
+      presentationMode?: "fill" | "keyFill";
+      keyDeviceId?: string;
+    }): Promise<unknown>;
+    delete(id: string): Promise<{ ok: boolean }>;
+    start(payload: {
+      id: string;
+      confirmPrimary?: boolean;
+    }): Promise<{ ok: boolean; code?: string; error?: string; route?: unknown }>;
+    stop(id: string): Promise<unknown>;
+    restart(payload: {
+      id: string;
+      confirmPrimary?: boolean;
+    }): Promise<{ ok: boolean; code?: string; error?: string; route?: unknown }>;
+  };
+  system?: {
+    performanceMetrics(): Promise<{
+      collectedAt: string;
+      cpu: { neudPercent: number; systemPercent: number | null };
+      memory: {
+        neudBytes: number;
+        systemUsedBytes: number;
+        systemTotalBytes: number;
+        systemPercent: number | null;
+        accounting: string;
+        source: string;
+        pressureLevel: string | null;
+      };
+      gpu:
+        | {
+            available: true;
+            utilizationPercent: number;
+            model: string | null;
+            memoryAvailable: boolean;
+            memoryUsedBytes: number | null;
+            memoryTotalBytes: number | null;
+            source: string;
+            aggregation: string;
+            adapters: Array<{
+              name: string;
+              utilizationPercent: number;
+              memoryAvailable: boolean;
+              memoryUsedBytes: number | null;
+              memoryTotalBytes: number | null;
+            }>;
+          }
+        | {
+            available: false;
+            reason: string;
+            source?: string;
+            aggregation?: string;
+            adapters?: Array<{
+              name: string;
+              utilizationPercent: number;
+              memoryAvailable: boolean;
+              memoryUsedBytes: number | null;
+              memoryTotalBytes: number | null;
+            }>;
+          };
+    }>;
+  };
   updates: {
     getStatus(): Promise<NeudUpdateStatus>;
     check(reason?: "manual" | "menu" | "startup"): Promise<NeudUpdateStatus>;
@@ -418,6 +635,89 @@ export type NeudDesktopAPI = {
     dismiss(): Promise<NeudUpdateStatus>;
     install(): Promise<{ ok: true } | { ok: false; error: string }>;
     onStatus(callback: (status: NeudUpdateStatus) => void): () => void;
+  };
+  media?: {
+    pickProResMov(): Promise<
+      | {
+          ok: true;
+          probe: {
+            codecLabel: string;
+            width: number;
+            height: number;
+            durationSeconds: number | null;
+            fileSizeBytes: number;
+            originalFileName: string;
+            sourceFilePath: string;
+          };
+        }
+      | { ok: false; cancelled?: boolean; error?: string }
+    >;
+    createProResDisplay(input: {
+      projectSlug: string;
+      name: string;
+      description?: string;
+      sourceFilePath: string;
+      originalFileName: string;
+      loopEnabled?: boolean;
+    }): Promise<
+      | { ok: true; display: import("@/lib/local/displays-api").CreatedDisplayPayload }
+      | { ok: false; error?: string }
+    >;
+    recoverOrphanVideoDisplays(projectSlug: string): Promise<
+      | {
+          ok: true;
+          recovered: Array<{ displayId: string; mediaAssetId: string; name: string }>;
+        }
+      | { ok: false; error?: string }
+    >;
+  };
+  video?: {
+    platform(): Promise<{ decoder: string; available: boolean }>;
+    getStatus(displayId: string): Promise<
+      | {
+          ok: true;
+          session: {
+            displayId: string;
+            projectId: string;
+            mediaAssetId: string;
+            state: string;
+            loop: boolean;
+            error: string | null;
+            info: {
+              width: number;
+              height: number;
+              durationSeconds: number;
+              frameRate: number;
+              hasAlpha: boolean;
+              codecLabel: string;
+            } | null;
+            hasFrame: boolean;
+            ptsUs: number;
+          };
+        }
+      | { ok: false; error?: string }
+    >;
+    play(displayId: string): Promise<{ ok: boolean; session?: unknown; error?: string }>;
+    pause(displayId: string): Promise<{ ok: boolean; session?: unknown; error?: string }>;
+    stop(displayId: string): Promise<{ ok: boolean; session?: unknown; error?: string }>;
+    restart(displayId: string): Promise<{ ok: boolean; session?: unknown; error?: string }>;
+    setLoop(
+      displayId: string,
+      enabled: boolean,
+    ): Promise<{ ok: boolean; session?: unknown; error?: string }>;
+    thumbnail(displayId: string): Promise<
+      | {
+          ok: true;
+          frame: {
+            width: number;
+            height: number;
+            stride: number;
+            ptsUs: number;
+            bgraBase64: string;
+          };
+        }
+      | { ok: false; error?: string }
+    >;
   };
 };
 

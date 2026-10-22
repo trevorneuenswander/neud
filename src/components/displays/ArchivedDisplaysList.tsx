@@ -13,9 +13,12 @@ import {
 import { localDeleteDisplay } from "@/lib/local/displays-api";
 import { formatDisplayRefreshRateLabel } from "@/lib/displays/refresh-rate";
 import { formatDisplaySizeLabel } from "@/lib/displays/display-size";
+import { confirmAndStopOutputsForDisplay } from "@/lib/output/confirm-output-interruption";
+import { OutputInterruptionCanceledError } from "@/lib/output/output-interruption-guard";
 
 type ArchivedDisplaysListProps = {
   projectSlug: string;
+  projectId?: string;
   initialArchived: ArchivedDisplaySummary[];
 };
 
@@ -28,6 +31,7 @@ function formatArchivedTimestamp(value: string | null) {
 
 export function ArchivedDisplaysList({
   projectSlug,
+  projectId,
   initialArchived,
 }: ArchivedDisplaysListProps) {
   const router = useRouter();
@@ -66,6 +70,23 @@ export function ArchivedDisplaysList({
     setBusyId(display.id);
     setError(null);
     try {
+      try {
+        const allowed = await confirmAndStopOutputsForDisplay({
+          displayId: display.id,
+          projectSlug,
+          projectId,
+        });
+        if (!allowed) {
+          setDeleteDisplayTarget(null);
+          return;
+        }
+      } catch (guardError) {
+        if (guardError instanceof OutputInterruptionCanceledError) {
+          setDeleteDisplayTarget(null);
+          return;
+        }
+        throw guardError;
+      }
       await localDeleteDisplay(projectSlug, display.id);
       setArchived((current) => current.filter((entry) => entry.id !== display.id));
       setDeleteDisplayTarget(null);

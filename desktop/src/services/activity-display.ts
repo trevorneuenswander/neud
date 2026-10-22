@@ -1,6 +1,7 @@
 import type { ActivityEvent } from "./activity-session-store";
 import { resolveActivityActorName } from "./activity-message";
 import { getCleanActivityDescription } from "../lib/activity/description";
+import { enrichAccessActivityDescription } from "../lib/activity/access-activity-description";
 
 import { selectNewestActivityEvents } from "../lib/activity/sort";
 
@@ -69,12 +70,17 @@ export function normalizeActivityEventForDisplay(
   const actorName = resolveActivityActorName(event.actor, event.type);
   const actorId =
     (typeof event.actor?.id === "string" ? event.actor.id : null) ??
-    (typeof metadata.userId === "string" ? metadata.userId : null) ??
+    (typeof metadata.actorUserId === "string" ? metadata.actorUserId : null) ??
     (typeof metadata.actorId === "string" ? metadata.actorId : null) ??
     undefined;
+  const enrichedAccessMessage = enrichAccessActivityDescription({
+    eventType: event.type,
+    description: messageRaw,
+    metadata,
+  });
   const message =
     getCleanActivityDescription(
-      messageRaw || humanizeActivityType(event.type),
+      (enrichedAccessMessage ?? messageRaw) || humanizeActivityType(event.type),
       actorName,
     ) || humanizeActivityType(event.type);
   if (!messageRaw) {

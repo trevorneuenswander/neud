@@ -19,11 +19,16 @@ test("project activity route renders full activity view", () => {
   const activityPage = readSrc("src/app/(portal)/projects/[slug]/activity/page.tsx");
   const projectNav = readSrc("src/components/projects/ProjectNav.tsx");
   const navigation = readSrc("src/lib/portal/navigation.ts");
+  const caps = readSrc("src/lib/projects/capabilities.ts");
 
   assert.ok(activityPage.includes("ProjectActivityFullView"));
   assert.ok(!activityPage.includes("redirect("));
-  assert.ok(!projectNav.includes('href: "/activity"'));
-  assert.ok(!projectNav.includes('label: "Activity"'));
+  // Project Activity nav is removed for SEMA and Broad Arrow; global Activity remains.
+  assert.doesNotMatch(projectNav, /href: "\/activity"/);
+  assert.match(projectNav, /\/google-sheet/);
+  assert.match(caps, /moduleLabel: "Data Source"/);
+  assert.match(caps, /moduleLabel: "Manual Controller"/);
+  assert.doesNotMatch(projectNav, /href: "\/activity"[^\n]*bagOrSema/);
   assert.ok(!navigation.includes('pathname.endsWith("/activity")'));
 });
 
@@ -56,18 +61,20 @@ test("plural controllers is absent from project navigation surfaces", () => {
   );
 });
 
-test("local controller appears exactly once and singular controller route remains", () => {
+test("manual controller appears exactly once and singular controller route remains", () => {
   const projectNav = readSrc("src/components/projects/ProjectNav.tsx");
   const navigation = readSrc("src/lib/portal/navigation.ts");
-  const controllerPage = readSrc("src/app/(portal)/projects/[slug]/controller/page.tsx");
+  const capabilities = readSrc("src/lib/projects/capabilities.ts");
+  const controllerClient = readSrc("src/components/bag-graphics/BagControllerClient.tsx");
   const labels = extractNavLabels(projectNav);
 
-  assert.equal(labels.filter((label) => label === "Local Controller").length, 1);
+  assert.equal(labels.filter((label) => label === "Local Controller").length, 0);
+  assert.match(capabilities, /moduleLabel: "Manual Controller"/);
   assert.ok(!labels.includes("Controller"));
   assert.ok(!labels.includes("Controllers"));
-  assert.ok(projectNav.includes('href: "/controller"'));
-  assert.ok(navigation.includes('return "Local Controller"'));
-  assert.ok(controllerPage.includes('title="Local Controller"'));
+  assert.match(projectNav, /\/controller/);
+  assert.ok(navigation.includes('return "Manual Controller"'));
+  assert.ok(controllerClient.includes('title="Manual Controller"'));
   assert.equal(
     existsSync(path.join(repoRoot, "src/app/(portal)/projects/[slug]/controller/page.tsx")),
     true,
