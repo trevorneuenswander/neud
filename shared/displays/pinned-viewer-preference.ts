@@ -45,6 +45,71 @@ export function normalizePinnedViewerHeight(
   return clampPinnedViewerHeight(numeric, viewportHeight);
 }
 
+/**
+ * SSR / pre-mount fallback for the layout-anchor cap.
+ * Deterministic — never reads browser globals.
+ */
+export const PINNED_ANCHOR_MAX_HEIGHT_SSR_FALLBACK_PX = MAX_PINNED_VIEWER_HEIGHT_PX;
+
+/**
+ * Half of the layout anchor (project root / main content), clamped to pinned limits.
+ * Pure — safe for SSR and unit tests. Pass measured DOM height only after mount.
+ */
+export function computePinnedAnchorMaxHeightPx(anchorHeightPx: number | null | undefined): number {
+  if (
+    typeof anchorHeightPx !== "number" ||
+    !Number.isFinite(anchorHeightPx) ||
+    anchorHeightPx <= 0
+  ) {
+    return PINNED_ANCHOR_MAX_HEIGHT_SSR_FALLBACK_PX;
+  }
+  const anchor = Math.floor(anchorHeightPx);
+  return clampPinnedViewerHeight(Math.floor(anchor * 0.5), anchor);
+}
+
+/**
+ * Content-fit is the maximum pinned height for the current pin count, further
+ * capped by the layout-anchor half-height.
+ */
+export function resolvePinnedMaxHeightPx(input: {
+  contentFitHeightPx: number;
+  anchorHeightPx?: number | null;
+}): number {
+  const contentFit = Math.max(MIN_PINNED_VIEWER_HEIGHT_PX, Math.floor(input.contentFitHeightPx));
+  const anchorMax = computePinnedAnchorMaxHeightPx(input.anchorHeightPx);
+  return Math.min(contentFit, anchorMax);
+}
+
+/**
+ * Pass 7 contract: min <= userHeight <= calculatedMax.
+ * Default schema height means "unset" → follow max until the operator resizes.
+ */
+export function resolvePinnedEffectiveHeightPx(input: {
+  storedHeightPx: number | null | undefined;
+  maxPinnedHeightPx: number;
+  dragHeightPx?: number | null;
+  viewportHeightPx?: number | null;
+}): number {
+  const maxPinned = Math.max(MIN_PINNED_VIEWER_HEIGHT_PX, Math.floor(input.maxPinnedHeightPx));
+  const viewport =
+    typeof input.viewportHeightPx === "number" && Number.isFinite(input.viewportHeightPx)
+      ? input.viewportHeightPx
+      : undefined;
+
+  if (typeof input.dragHeightPx === "number" && Number.isFinite(input.dragHeightPx)) {
+    return Math.min(normalizePinnedViewerHeight(input.dragHeightPx, viewport), maxPinned);
+  }
+
+  const stored = input.storedHeightPx;
+  const hasCustomHeight =
+    typeof stored === "number" &&
+    Number.isFinite(stored) &&
+    stored !== DEFAULT_PINNED_VIEWER_HEIGHT_PX;
+
+  const preferred = hasCustomHeight ? stored : maxPinned;
+  return Math.min(normalizePinnedViewerHeight(preferred, viewport), maxPinned);
+}
+
 export function parsePinnedDisplayIds(raw: unknown): string[] {
   if (!Array.isArray(raw)) {
     return [];

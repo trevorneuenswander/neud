@@ -17,6 +17,7 @@ import { connectivityToneClassName } from "@/lib/connectivity/connectivity-prese
 import { formatPlatformRole } from "@/lib/portal/navigation";
 import { resolveSidebarTeamName } from "@/lib/profile/resolve-profile-team";
 import { getUserDetailsHref } from "@/lib/routes/activity-navigation";
+import { useAppShutdown } from "@/lib/desktop/use-app-shutdown";
 import type { LocalProjectsListMeta } from "@/lib/displays/types";
 import type { Profile } from "@/types/database";
 
@@ -83,6 +84,7 @@ export function SidebarUserPanel({
   const [retryPending, setRetryPending] = useState(false);
   const [showConnectivityIndicator, setShowConnectivityIndicator] = useState(false);
   const connectivity = useConnectivityPresentation();
+  const appShuttingDown = useAppShutdown();
 
   useEffect(() => {
     setShowConnectivityIndicator(shouldRunDesktopConnectivityProbe());
@@ -98,11 +100,19 @@ export function SidebarUserPanel({
     }
 
     let cancelled = false;
+    let intervalId: number | null = null;
 
     const refreshProfileFromMeta = async () => {
+      if (cancelled || appShuttingDown || document.documentElement.dataset.neudShutdown === "1") {
+        return;
+      }
       try {
         const nextMeta = await localGetProjectsMeta({ wait: false });
-        if (cancelled) {
+        if (
+          cancelled ||
+          appShuttingDown ||
+          document.documentElement.dataset.neudShutdown === "1"
+        ) {
           return;
         }
 
@@ -115,9 +125,15 @@ export function SidebarUserPanel({
             : null,
         );
       } catch {
-        if (!cancelled) {
-          setIdentityStatus("error");
+        // Ignore teardown failures so last-known account info stays visible on quit.
+        if (
+          cancelled ||
+          appShuttingDown ||
+          document.documentElement.dataset.neudShutdown === "1"
+        ) {
+          return;
         }
+        setIdentityStatus("error");
       }
     };
 
@@ -129,7 +145,7 @@ export function SidebarUserPanel({
       }
     };
 
-    const intervalId = window.setInterval(() => {
+    intervalId = window.setInterval(() => {
       void refreshProfileFromMeta();
     }, 5_000);
 
@@ -138,11 +154,22 @@ export function SidebarUserPanel({
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      if (intervalId != null) window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", refreshProfileFromMeta);
     };
-  }, []);
+  }, [appShuttingDown]);
+
+  useEffect(() => {
+    if (!appShuttingDown) return;
+    // Prefer last-known profile over a teardown-induced error flash.
+    const hasDisplayableAccount =
+      Boolean(profile.full_name?.trim()) || Boolean(initialProfile.full_name?.trim());
+    if (hasDisplayableAccount) {
+      setIdentityStatus("ready");
+      setIdentityMessage(null);
+    }
+  }, [appShuttingDown, profile.full_name, initialProfile.full_name]);
 
   async function handleRetry() {
     setRetryPending(true);

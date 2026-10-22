@@ -7,6 +7,8 @@ export type DeveloperToolsMenuItem = {
   label: string;
   onSelect: () => void;
   disabled?: boolean;
+  /** Shown as native title tooltip (especially for disabled items). */
+  title?: string;
   variant?: "default" | "destructive";
   separatorBefore?: boolean;
 };
@@ -93,6 +95,8 @@ export function DeveloperToolsDropdown({
                 type="button"
                 role="menuitem"
                 disabled={item.disabled}
+                title={item.title}
+                aria-label={item.title ? `${item.label}. ${item.title}` : item.label}
                 className={`block w-full cursor-pointer px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:text-muted ${
                   item.variant === "destructive"
                     ? "text-danger hover:bg-danger/10 focus-visible:bg-danger/10"

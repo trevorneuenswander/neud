@@ -45,7 +45,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <p className="mt-4 text-center text-sm text-muted">
             Need the desktop app?{" "}
             <Link href="/download" className="font-medium text-primary hover:underline">
-              Download NEUD Desktop
+              Get NEUD
             </Link>
           </p>
         </div>

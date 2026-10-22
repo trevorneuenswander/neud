@@ -1,0 +1,2134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NEUD Brand Style Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --midnight: #070A25;
+    --deep-navy: #0B1550;
+    --neud-blue: #1769FF;
+    --data-cyan: #35D9F5;
+    --neud-violet: #7839F5;
+    --signal-lavender: #C29AFF;
+    --data-pink: #E57AF5;
+    --spectrum-mid: #9A8CFF;
+    --iface-white: #F5F7FF;
+    --slate: #9298AD;
+    --panel: #0E1438;
+    --panel-raised: #121A48;
+    --border: rgba(245, 247, 255, 0.10);
+    --border-strong: rgba(245, 247, 255, 0.18);
+    --live: #22C55E;
+    --warn: #F59E0B;
+    --danger: #EF4444;
+    --spectrum: linear-gradient(90deg, #35D9F5 0%, #1769FF 25%, #9A8CFF 50%, #7839F5 75%, #E57AF5 100%);
+    --spectrum-diag: linear-gradient(135deg, #35D9F5 0%, #1769FF 25%, #9A8CFF 50%, #7839F5 75%, #E57AF5 100%);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: #050712;
+    color: var(--iface-white);
+    font-family: Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  @page {
+    size: letter;
+    margin: 0;
+  }
+
+  .page {
+    width: 8.5in;
+    height: 11in;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+    background: var(--midnight);
+  }
+
+  .page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .page-inner {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 0.72in 0.75in 0.68in;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .glow-cyan {
+    width: 4.2in;
+    height: 4.2in;
+    background: rgba(53, 217, 245, 0.22);
+    top: -1.2in;
+    left: -1.1in;
+  }
+  .glow-violet {
+    width: 4.4in;
+    height: 4.4in;
+    background: rgba(120, 57, 245, 0.28);
+    bottom: -1.4in;
+    right: -1.2in;
+  }
+  .glow-blue {
+    width: 3.2in;
+    height: 3.2in;
+    background: rgba(23, 105, 255, 0.18);
+    top: 30%;
+    right: -0.8in;
+  }
+
+  .eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin-bottom: 0.18in;
+  }
+
+  .page-title {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 0.18in;
+  }
+
+  .lede {
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: rgba(245, 247, 255, 0.82);
+    max-width: 6.4in;
+    font-weight: 400;
+  }
+
+  .lede strong, .body strong {
+    color: var(--iface-white);
+    font-weight: 600;
+  }
+
+  .body {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: rgba(245, 247, 255, 0.78);
+  }
+
+  .rule {
+    height: 2px;
+    width: 1.1in;
+    background: var(--spectrum);
+    border: none;
+    border-radius: 2px;
+    margin: 0.22in 0 0.28in;
+  }
+
+  .footer {
+    margin-top: auto;
+    padding-top: 0.28in;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(146, 152, 173, 0.85);
+    border-top: 1px solid var(--border);
+  }
+
+  .footer .page-num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.12em;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.08in;
+    padding: 0.06in 0.14in;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: rgba(14, 20, 56, 0.7);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--iface-white);
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.28in; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.2in; }
+  .grid-chars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.14in; margin-top: 0.28in; }
+
+  .card {
+    background: linear-gradient(180deg, rgba(18, 26, 72, 0.92), rgba(11, 21, 80, 0.55));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 0.22in;
+  }
+
+  .card-tight { padding: 0.18in; }
+
+  .char-card {
+    background: rgba(14, 20, 56, 0.75);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.16in 0.18in;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .char-card span {
+    display: block;
+    margin-top: 0.04in;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--slate);
+    letter-spacing: 0;
+  }
+
+  .concept-banner {
+    margin-top: 0.32in;
+    padding: 0.28in 0.3in;
+    border-radius: 16px;
+    background:
+      radial-gradient(circle at 12% 20%, rgba(53, 217, 245, 0.22), transparent 42%),
+      radial-gradient(circle at 88% 80%, rgba(229, 122, 245, 0.18), transparent 45%),
+      linear-gradient(135deg, #0B1550, #070A25 55%, #1a0b40);
+    border: 1px solid var(--border-strong);
+  }
+
+  .concept-banner h3 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: var(--spectrum);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 0.12in;
+  }
+
+  .logo-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--midnight);
+    border: 1px solid var(--border);
+    min-height: 2.4in;
+  }
+
+  .logo-stage img {
+    max-width: 100%;
+    max-height: 2.2in;
+    object-fit: contain;
+    display: block;
+  }
+
+  .logo-stage.tall { min-height: 3.1in; }
+  .logo-stage.tall img { max-height: 2.85in; }
+
+  .caption {
+    margin-top: 0.12in;
+    font-size: 11.5px;
+    color: var(--slate);
+    line-height: 1.4;
+  }
+
+  .caption strong {
+    color: var(--iface-white);
+    font-weight: 600;
+  }
+
+  .note {
+    margin-top: 0.22in;
+    padding: 0.16in 0.18in;
+    border-radius: 12px;
+    border-left: 3px solid var(--data-cyan);
+    background: rgba(14, 20, 56, 0.8);
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: rgba(245, 247, 255, 0.88);
+  }
+
+  .variant-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.18in;
+    margin-top: 0.18in;
+  }
+
+  .variant {
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: var(--panel);
+  }
+
+  .variant-preview {
+    height: 1.55in;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.16in;
+  }
+
+  .variant-preview.dark { background: var(--midnight); }
+  .variant-preview.checker {
+    background:
+      linear-gradient(45deg, #1a1f3a 25%, transparent 25%),
+      linear-gradient(-45deg, #1a1f3a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a1f3a 75%),
+      linear-gradient(-45deg, transparent 75%, #1a1f3a 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-color: #12182e;
+  }
+  .variant-preview.light { background: #F5F7FF; }
+
+  .variant-preview img, .variant-preview svg {
+    width: 0.85in;
+    height: 0.85in;
+  }
+
+  .variant-preview .wm {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .variant-preview .wm.grad {
+    background: var(--spectrum);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .variant-preview .wm.white { color: #F5F7FF; }
+  .variant-preview .wm.black { color: #070A25; }
+
+  .variant-meta {
+    padding: 0.12in 0.14in 0.14in;
+    border-top: 1px solid var(--border);
+  }
+
+  .variant-meta h4 {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 0.03in;
+  }
+
+  .variant-meta p {
+    font-size: 10.5px;
+    color: var(--slate);
+    line-height: 1.35;
+  }
+
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.16in;
+    margin-top: 0.12in;
+  }
+
+  .swatch {
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  .swatch-color {
+    height: 0.95in;
+  }
+
+  .swatch-meta {
+    padding: 0.12in 0.14in 0.14in;
+  }
+
+  .swatch-meta h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 0.04in;
+  }
+
+  .swatch-meta .hex {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--data-cyan);
+    margin-bottom: 0.06in;
+  }
+
+  .swatch-meta p {
+    font-size: 11px;
+    color: var(--slate);
+    line-height: 1.35;
+  }
+
+  .grad-bar {
+    height: 0.55in;
+    border-radius: 12px;
+    background: var(--spectrum);
+    border: 1px solid var(--border-strong);
+    box-shadow: 0 0 28px rgba(23, 105, 255, 0.25);
+  }
+
+  .grad-bar.diag {
+    background: var(--spectrum-diag);
+  }
+
+  .ribbon {
+    height: 0.42in;
+    border-radius: 999px;
+    background: var(--spectrum-diag);
+    box-shadow:
+      0 10px 28px rgba(23, 105, 255, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transform: rotate(-8deg);
+    margin: 0.28in 0.2in;
+  }
+
+  .atm-bar {
+    height: 1.05in;
+    border-radius: 14px;
+    background:
+      radial-gradient(circle at 8% 40%, rgba(53, 217, 245, 0.55), transparent 28%),
+      radial-gradient(circle at 92% 60%, rgba(120, 57, 245, 0.55), transparent 30%),
+      linear-gradient(90deg, #0B1550, #070A25 50%, #1a0b40);
+    border: 1px solid var(--border-strong);
+  }
+
+  .do-dont {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.22in;
+    margin-top: 0.22in;
+  }
+
+  .do, .dont {
+    border-radius: 14px;
+    padding: 0.2in;
+    border: 1px solid var(--border);
+    min-height: 2.1in;
+  }
+
+  .do {
+    background: linear-gradient(180deg, rgba(34, 197, 94, 0.08), rgba(14, 20, 56, 0.7));
+    border-color: rgba(34, 197, 94, 0.28);
+  }
+
+  .dont {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.08), rgba(14, 20, 56, 0.7));
+    border-color: rgba(239, 68, 68, 0.28);
+  }
+
+  .label-do, .label-dont {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 0.12in;
+  }
+  .label-do { color: var(--live); }
+  .label-dont { color: var(--danger); }
+
+  .use-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.1in 0.22in;
+    margin: 0.22in 0;
+  }
+
+  .use-list li {
+    list-style: none;
+    font-size: 13px;
+    padding: 0.1in 0.12in;
+    border-radius: 10px;
+    background: rgba(14, 20, 56, 0.75);
+    border: 1px solid var(--border);
+    color: rgba(245, 247, 255, 0.88);
+  }
+
+  .use-list li::before {
+    content: "";
+    display: inline-block;
+    width: 0.1in;
+    height: 0.1in;
+    border-radius: 50%;
+    background: var(--spectrum);
+    margin-right: 0.1in;
+    vertical-align: middle;
+  }
+
+  .type-block {
+    margin-top: 0.18in;
+  }
+
+  .type-name {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin-bottom: 0.08in;
+  }
+
+  .weights {
+    display: flex;
+    gap: 0.18in;
+    flex-wrap: wrap;
+    margin: 0.16in 0 0.2in;
+  }
+
+  .weights span {
+    font-size: 14px;
+    padding: 0.08in 0.12in;
+    border-radius: 8px;
+    background: rgba(14, 20, 56, 0.8);
+    border: 1px solid var(--border);
+  }
+
+  .mono-sample {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    background: rgba(14, 20, 56, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.16in 0.18in;
+    color: var(--data-cyan);
+    line-height: 1.55;
+  }
+
+  .hierarchy {
+    margin-top: 0.12in;
+    display: flex;
+    flex-direction: column;
+    gap: 0.14in;
+  }
+
+  .h-row {
+    display: grid;
+    grid-template-columns: 1.55in 1fr;
+    gap: 0.18in;
+    align-items: center;
+    padding: 0.12in 0.14in;
+    border-radius: 12px;
+    background: rgba(14, 20, 56, 0.55);
+    border: 1px solid var(--border);
+  }
+
+  .h-meta {
+    font-size: 10.5px;
+    color: var(--slate);
+    line-height: 1.35;
+  }
+
+  .h-meta strong {
+    display: block;
+    color: var(--iface-white);
+    font-size: 11.5px;
+    font-weight: 600;
+    margin-bottom: 0.02in;
+  }
+
+  .ui-card {
+    background: #0E1438;
+    border: 1px solid rgba(245, 247, 255, 0.12);
+    border-radius: 12px;
+    padding: 0.2in;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+
+  .ui-card .ui-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.16in;
+  }
+
+  .ui-card .ui-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .status-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0.04in 0.1in;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--live);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+  }
+
+  .ui-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 0.1in 0;
+    border-top: 1px solid rgba(245, 247, 255, 0.08);
+    color: rgba(245, 247, 255, 0.85);
+  }
+
+  .ui-row .meta { color: var(--slate); font-size: 12px; }
+  .ui-row .val {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--data-cyan);
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 0.1in;
+    margin-top: 0.16in;
+  }
+
+  .btn {
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 0.09in 0.16in;
+    border-radius: 8px;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #1769FF, #7839F5);
+    color: white;
+  }
+
+  .btn-secondary {
+    background: rgba(14, 20, 56, 0.9);
+    border-color: rgba(245, 247, 255, 0.16);
+    color: var(--iface-white);
+  }
+
+  .btn-danger {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #FCA5A5;
+  }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.14in;
+    margin-top: 0.18in;
+  }
+
+  .status-item {
+    border-radius: 12px;
+    padding: 0.16in;
+    border: 1px solid var(--border);
+    background: rgba(14, 20, 56, 0.7);
+  }
+
+  .status-item .dot {
+    width: 0.14in;
+    height: 0.14in;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 0.08in;
+    vertical-align: middle;
+  }
+
+  .status-item h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 0.05in;
+  }
+
+  .status-item p {
+    font-size: 11.5px;
+    color: var(--slate);
+    line-height: 1.35;
+  }
+
+  .pipeline {
+    margin: 0.28in 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.12in;
+    padding: 0.28in 0.24in;
+    border-radius: 16px;
+    background:
+      radial-gradient(circle at 20% 50%, rgba(53, 217, 245, 0.18), transparent 40%),
+      radial-gradient(circle at 80% 50%, rgba(229, 122, 245, 0.16), transparent 40%),
+      var(--panel);
+    border: 1px solid var(--border-strong);
+  }
+
+  .pipe-node {
+    text-align: center;
+    min-width: 1.3in;
+  }
+
+  .pipe-node .box {
+    height: 0.7in;
+    border-radius: 12px;
+    border: 1px solid var(--border-strong);
+    background: rgba(7, 10, 37, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.08in;
+  }
+
+  .pipe-node.center .box {
+    background: var(--spectrum-diag);
+    color: white;
+    border: none;
+    box-shadow: 0 0 24px rgba(23, 105, 255, 0.35);
+  }
+
+  .pipe-node .label {
+    font-size: 11px;
+    color: var(--slate);
+  }
+
+  .pipe-flow {
+    flex: 1;
+    height: 0.12in;
+    border-radius: 999px;
+    background: var(--spectrum);
+    position: relative;
+    box-shadow: 0 0 18px rgba(53, 217, 245, 0.35);
+  }
+
+  .timing-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.16in;
+  }
+
+  .motion-traits {
+    display: flex;
+    gap: 0.1in;
+    flex-wrap: wrap;
+    margin-top: 0.16in;
+  }
+
+  .motion-traits span {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0.07in 0.12in;
+    border-radius: 999px;
+    background: rgba(53, 217, 245, 0.1);
+    border: 1px solid rgba(53, 217, 245, 0.28);
+    color: var(--iface-white);
+  }
+
+  .avoid-traits span {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.25);
+    color: #FCA5A5;
+  }
+
+  .ribbon-demo {
+    position: relative;
+    height: 2.4in;
+    border-radius: 16px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(53, 217, 245, 0.2), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(120, 57, 245, 0.22), transparent 42%),
+      var(--midnight);
+    border: 1px solid var(--border-strong);
+    margin: 0.18in 0;
+  }
+
+  .ribbon-path {
+    position: absolute;
+    left: -0.3in;
+    top: 0.85in;
+    width: 7.6in;
+    height: 0.48in;
+    border-radius: 999px;
+    background: var(--spectrum);
+    transform: rotate(-12deg);
+    box-shadow:
+      0 12px 36px rgba(23, 105, 255, 0.35),
+      inset 0 2px 0 rgba(255, 255, 255, 0.28);
+  }
+
+  .ribbon-path.secondary {
+    top: 1.35in;
+    width: 5.2in;
+    left: 1.4in;
+    height: 0.28in;
+    opacity: 0.55;
+    transform: rotate(8deg);
+  }
+
+  .misuse-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.12in;
+    margin-top: 0.16in;
+  }
+
+  .misuse {
+    display: flex;
+    gap: 0.12in;
+    align-items: flex-start;
+    padding: 0.12in 0.14in;
+    border-radius: 10px;
+    background: rgba(239, 68, 68, 0.06);
+    border: 1px solid rgba(239, 68, 68, 0.18);
+    font-size: 12px;
+    line-height: 1.35;
+    color: rgba(245, 247, 255, 0.85);
+  }
+
+  .misuse::before {
+    content: "×";
+    color: var(--danger);
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .voice-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.16in;
+    margin: 0.18in 0;
+  }
+
+  .prefer, .avoid {
+    border-radius: 12px;
+    padding: 0.16in;
+    border: 1px solid var(--border);
+  }
+
+  .prefer {
+    background: rgba(34, 197, 94, 0.07);
+    border-color: rgba(34, 197, 94, 0.25);
+  }
+
+  .avoid {
+    background: rgba(239, 68, 68, 0.07);
+    border-color: rgba(239, 68, 68, 0.22);
+  }
+
+  .prefer h4, .avoid h4 {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 0.08in;
+  }
+  .prefer h4 { color: var(--live); }
+  .avoid h4 { color: #FCA5A5; }
+
+  .prefer p, .avoid p {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .naming {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.08in;
+    margin-top: 0.14in;
+  }
+
+  .naming span {
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 0.07in 0.12in;
+    border-radius: 8px;
+    background: rgba(14, 20, 56, 0.85);
+    border: 1px solid var(--border);
+  }
+
+  .statement {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    max-width: 6.2in;
+  }
+
+  .statement.grad {
+    background: var(--spectrum);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .app-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.18in;
+    margin-top: 0.16in;
+  }
+
+  .app-mock {
+    border-radius: 14px;
+    border: 1px solid var(--border-strong);
+    overflow: hidden;
+    min-height: 2.05in;
+    position: relative;
+    background: var(--midnight);
+  }
+
+  .app-mock .mock-inner {
+    position: relative;
+    z-index: 1;
+    height: 100%;
+    min-height: 2.05in;
+    padding: 0.2in;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-mock .mock-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin-bottom: 0.14in;
+  }
+
+  .app-mock .mock-brand {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+
+  .app-mock .mock-sub {
+    font-size: 12px;
+    color: rgba(245, 247, 255, 0.75);
+    margin-top: 0.06in;
+    line-height: 1.4;
+  }
+
+  .app-mock .mock-pipe {
+    margin-top: auto;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--data-cyan);
+  }
+
+  .cover-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .cover-logo {
+    width: 2.35in;
+    height: 2.35in;
+    object-fit: contain;
+    margin-bottom: 0.28in;
+    border-radius: 20px;
+    box-shadow: 0 0 60px rgba(23, 105, 255, 0.28);
+  }
+
+  .cover-title {
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    line-height: 1;
+    margin-bottom: 0.14in;
+  }
+
+  .cover-sub {
+    font-size: 22px;
+    font-weight: 500;
+    color: rgba(245, 247, 255, 0.88);
+    letter-spacing: -0.01em;
+    margin-bottom: 0.18in;
+  }
+
+  .cover-tag {
+    font-size: 13px;
+    color: var(--slate);
+    letter-spacing: 0.04em;
+  }
+
+  .cover-meta {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(146, 152, 173, 0.9);
+  }
+
+  .spec-list {
+    margin-top: 0.16in;
+    display: grid;
+    gap: 0.08in;
+  }
+
+  .spec-list div {
+    font-size: 13px;
+    color: rgba(245, 247, 255, 0.82);
+    padding-left: 0.14in;
+    border-left: 2px solid transparent;
+    border-image: linear-gradient(180deg, #35D9F5, #7839F5) 1;
+  }
+
+  .two-col-body {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 0.28in;
+    margin-top: 0.2in;
+    flex: 1;
+  }
+
+  .clearspace-demo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2in;
+    margin: 0.18in 0;
+    padding: 0.24in;
+    border-radius: 14px;
+    background: rgba(14, 20, 56, 0.7);
+    border: 1px solid var(--border);
+  }
+
+  .clearspace-box {
+    position: relative;
+    width: 1.6in;
+    height: 1.6in;
+    border: 1px dashed rgba(53, 217, 245, 0.45);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--midnight);
+  }
+
+  .clearspace-box img {
+    width: 1.05in;
+    height: 1.05in;
+  }
+
+  .clearspace-box .cs-label {
+    position: absolute;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--data-cyan);
+    text-transform: uppercase;
+  }
+  .cs-label.t { top: 0.04in; }
+  .cs-label.b { bottom: 0.04in; }
+  .cs-label.l { left: 0.04in; writing-mode: vertical-rl; transform: rotate(180deg); }
+  .cs-label.r { right: 0.04in; writing-mode: vertical-rl; }
+
+  .final-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-width: 6.5in;
+  }
+
+  .final-center.centered {
+    align-items: center;
+    text-align: center;
+    max-width: none;
+    margin: 0 auto;
+  }
+
+  .token-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.1in;
+    margin-top: 0.2in;
+  }
+
+  .token {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0.08in 0.12in;
+    border-radius: 8px;
+    background: rgba(14, 20, 56, 0.85);
+    border: 1px solid var(--border);
+  }
+
+  .page.alt {
+    background: #090d2e;
+  }
+
+  .page.lightish {
+    background: #0a1035;
+  }
+
+  .icon-row {
+    display: flex;
+    gap: 0.14in;
+    margin: 0.18in 0;
+  }
+
+  .icon-sample {
+    width: 0.55in;
+    height: 0.55in;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(14, 20, 56, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .icon-sample svg {
+    width: 0.28in;
+    height: 0.28in;
+    stroke: var(--iface-white);
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.1in;
+    margin-top: 0.16in;
+  }
+
+  .photo-tile {
+    height: 0.95in;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    padding: 0.1in;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: rgba(245, 247, 255, 0.9);
+    background-size: cover;
+    background-position: center;
+  }
+
+  .photo-tile:nth-child(1) {
+    background: linear-gradient(160deg, rgba(7,10,37,0.2), rgba(7,10,37,0.85)),
+      radial-gradient(circle at 30% 40%, #1769FF, #070A25 70%);
+  }
+  .photo-tile:nth-child(2) {
+    background: linear-gradient(160deg, rgba(7,10,37,0.15), rgba(7,10,37,0.85)),
+      radial-gradient(circle at 70% 30%, #35D9F5, #0B1550 65%);
+  }
+  .photo-tile:nth-child(3) {
+    background: linear-gradient(160deg, rgba(7,10,37,0.2), rgba(7,10,37,0.88)),
+      radial-gradient(circle at 40% 70%, #7839F5, #070A25 70%);
+  }
+  .photo-tile:nth-child(4) {
+    background: linear-gradient(160deg, rgba(7,10,37,0.15), rgba(7,10,37,0.88)),
+      radial-gradient(circle at 60% 40%, #C29AFF, #0B1550 70%);
+  }
+  .photo-tile:nth-child(5) {
+    background: linear-gradient(160deg, rgba(7,10,37,0.2), rgba(7,10,37,0.9)),
+      radial-gradient(circle at 35% 50%, #1769FF 0%, #7839F5 50%, #070A25 80%);
+  }
+  .photo-tile:nth-child(6) {
+    background: linear-gradient(160deg, rgba(7,10,37,0.15), rgba(7,10,37,0.9)),
+      radial-gradient(circle at 50% 40%, #35D9F5 0%, #E57AF5 55%, #070A25 85%);
+  }
+
+  .bullet-clean {
+    margin-top: 0.14in;
+    display: grid;
+    gap: 0.08in;
+  }
+
+  .bullet-clean li {
+    list-style: none;
+    font-size: 13px;
+    color: rgba(245, 247, 255, 0.82);
+    padding-left: 0.18in;
+    position: relative;
+  }
+
+  .bullet-clean li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.08in;
+    width: 0.08in;
+    height: 0.08in;
+    border-radius: 50%;
+    background: var(--neud-blue);
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== PAGE 1: COVER ===================== -->
+<section class="page">
+  <div class="glow glow-cyan"></div>
+  <div class="glow glow-violet"></div>
+  <div class="page-inner">
+    <div class="cover-meta">
+      <span>NEUD Brand Standards</span>
+      <span>2026</span>
+    </div>
+    <div class="cover-center">
+      <img class="cover-logo" src="assets/neud-icon.jpg" alt="NEUD Icon" />
+      <div class="cover-title">NEUD</div>
+      <div class="cover-sub">Brand Style Guide</div>
+      <div class="cover-tag">The Ultimate Data Stripper</div>
+    </div>
+    <div class="cover-meta">
+      <span>Internal &amp; Partner Reference</span>
+      <span>v1.0</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 2: BRAND FOUNDATION ===================== -->
+<section class="page alt">
+  <div class="glow glow-cyan" style="opacity:0.55"></div>
+  <div class="glow glow-violet" style="opacity:0.5"></div>
+  <div class="page-inner">
+    <div class="eyebrow">01 — Foundation</div>
+    <h1 class="page-title">Brand Direction</h1>
+    <hr class="rule" />
+    <p class="lede">
+      NEUD should feel like professional broadcast technology that has moved beyond traditional broadcast software:
+      powerful, technical, and modern — but visually approachable.
+    </p>
+
+    <div class="grid-chars">
+      <div class="char-card">Precision<span>Exact, controlled, intentional</span></div>
+      <div class="char-card">Data<span>Live signals, clarity, flow</span></div>
+      <div class="char-card">Motion<span>Continuous, purposeful progress</span></div>
+      <div class="char-card">Connectivity<span>Systems linked in real time</span></div>
+      <div class="char-card">Live Production<span>Built for the control room</span></div>
+      <div class="char-card">Intelligence<span>Quiet capability, not spectacle</span></div>
+    </div>
+
+    <div class="concept-banner">
+      <h3>Dark broadcast environment + luminous flowing data</h3>
+      <p class="body">
+        The dark interface represents the professional production workspace — focused, calm, and operational.
+        The cyan-to-violet spectrum represents live data moving through NEUD: arriving, transforming, and becoming graphics.
+      </p>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">02</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 3: LOGO SYSTEM ===================== -->
+<section class="page">
+  <div class="glow glow-blue" style="opacity:0.45"></div>
+  <div class="page-inner">
+    <div class="eyebrow">02 — Identity</div>
+    <h1 class="page-title">Primary Logo System</h1>
+    <hr class="rule" />
+    <p class="lede">Two complementary marks form the NEUD identity system: the stylized N icon and the full wordmark.</p>
+
+    <div class="grid-2" style="margin-top:0.28in; flex:1;">
+      <div>
+        <div class="logo-stage tall">
+          <img src="assets/neud-icon.jpg" alt="NEUD N Icon" style="max-height:2.7in; border-radius:12px;" />
+        </div>
+        <p class="caption"><strong>N Icon</strong> — Primary application and product symbol.</p>
+      </div>
+      <div>
+        <div class="logo-stage tall">
+          <img src="assets/neud-wordmark.jpg" alt="NEUD Wordmark" style="max-height:2.35in; width:95%; object-fit:contain;" />
+        </div>
+        <p class="caption"><strong>NEUD Wordmark</strong> — Full brand lockup for broader surfaces.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:0.22in;">
+      <p class="body" style="margin-bottom:0.1in;"><strong>Wordmark intended for</strong></p>
+      <div class="token-row">
+        <span class="token">Website headers</span>
+        <span class="token">Installer screens</span>
+        <span class="token">Splash screens</span>
+        <span class="token">Marketing</span>
+        <span class="token">Documentation</span>
+        <span class="token">Presentation covers</span>
+        <span class="token">Trade-show graphics</span>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>The N icon should remain the primary application icon</strong> rather than attempting to fit the full wordmark inside an app icon.
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">03</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 4: LOGO VARIATIONS ===================== -->
+<section class="page lightish">
+  <div class="page-inner">
+    <div class="eyebrow">02 — Identity</div>
+    <h1 class="page-title">Approved Logo Variations</h1>
+    <hr class="rule" />
+    <p class="lede">Use only these official treatments. Prefer gradient marks on dark surfaces; use white or black monochrome when contrast or reproduction requires it.</p>
+
+    <div class="variant-grid">
+      <div class="variant">
+        <div class="variant-preview dark" style="padding:0; overflow:hidden;">
+          <img src="assets/neud-icon.jpg" alt="N Gradient Dark" style="width:100%;height:100%;object-fit:cover;" />
+        </div>
+        <div class="variant-meta">
+          <h4>N — Gradient / Dark</h4>
+          <p>Primary icon on midnight backgrounds.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="variant-preview checker">
+          <img src="assets/n-gradient.svg" alt="N Transparent" style="width:0.95in;height:0.95in;" />
+        </div>
+        <div class="variant-meta">
+          <h4>N — Gradient / Transparent</h4>
+          <p>For overlays and layered compositions.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="variant-preview dark">
+          <img src="assets/n-white.svg" alt="N White" />
+        </div>
+        <div class="variant-meta">
+          <h4>N — White</h4>
+          <p>Monochrome icon for constrained contexts.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="variant-preview dark" style="padding:0; overflow:hidden;">
+          <img src="assets/neud-wordmark.jpg" alt="NEUD Gradient" style="width:100%;height:100%;object-fit:cover;" />
+        </div>
+        <div class="variant-meta">
+          <h4>NEUD — Gradient</h4>
+          <p>Primary wordmark treatment.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="variant-preview dark">
+          <div class="wm white">NEUD</div>
+        </div>
+        <div class="variant-meta">
+          <h4>NEUD — White</h4>
+          <p>Clean wordmark on dark UI and docs.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="variant-preview light">
+          <div class="wm black">NEUD</div>
+        </div>
+        <div class="variant-meta">
+          <h4>Optional Black Monochrome</h4>
+          <p>Light backgrounds and print one-color.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:0.24in;">
+      Always preserve the ribbon geometry of the N. Do not recreate the mark from generic type unless using an approved wordmark treatment.
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">04</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 5: CORE COLOR PALETTE ===================== -->
+<section class="page">
+  <div class="glow glow-violet" style="opacity:0.35"></div>
+  <div class="page-inner">
+    <div class="eyebrow">03 — Color</div>
+    <h1 class="page-title">Core Color Palette</h1>
+    <hr class="rule" />
+    <p class="lede">Deep navy anchors the system. Spectrum colors illuminate data, selection, and brand moments.</p>
+
+    <div class="swatch-grid">
+      <div class="swatch">
+        <div class="swatch-color" style="background:#070A25;"></div>
+        <div class="swatch-meta">
+          <h4>NEUD Midnight</h4>
+          <div class="hex">#070A25</div>
+          <p>Primary dark background.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#0B1550;"></div>
+        <div class="swatch-meta">
+          <h4>Deep Navy</h4>
+          <div class="hex">#0B1550</div>
+          <p>Elevated surfaces and atmospheric gradients.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#1769FF;"></div>
+        <div class="swatch-meta">
+          <h4>NEUD Blue</h4>
+          <div class="hex">#1769FF</div>
+          <p>Selected states, data viz, controlled highlights.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#35D9F5;"></div>
+        <div class="swatch-meta">
+          <h4>Data Cyan</h4>
+          <div class="hex">#35D9F5</div>
+          <p>Incoming/live data, connections, active highlights.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#7839F5;"></div>
+        <div class="swatch-meta">
+          <h4>NEUD Violet</h4>
+          <div class="hex">#7839F5</div>
+          <p>Core secondary brand color.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#C29AFF;"></div>
+        <div class="swatch-meta">
+          <h4>Signal Lavender</h4>
+          <div class="hex">#C29AFF</div>
+          <p>Gradients, illumination, larger visual accents.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#E57AF5;"></div>
+        <div class="swatch-meta">
+          <h4>Data Pink</h4>
+          <div class="hex">#E57AF5</div>
+          <p>Warm spectrum endpoint. Accent only.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#F5F7FF;"></div>
+        <div class="swatch-meta">
+          <h4>Interface White</h4>
+          <div class="hex">#F5F7FF</div>
+          <p>Primary text on dark backgrounds.</p>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#9298AD;"></div>
+        <div class="swatch-meta">
+          <h4>Slate</h4>
+          <div class="hex">#9298AD</div>
+          <p>Secondary text and metadata.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">05</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 6: SIGNATURE GRADIENT ===================== -->
+<section class="page alt">
+  <div class="glow glow-cyan" style="opacity:0.4"></div>
+  <div class="page-inner">
+    <div class="eyebrow">03 — Color</div>
+    <h1 class="page-title">The NEUD Data Spectrum</h1>
+    <hr class="rule" />
+    <p class="lede">
+      The gradient should feel continuous and luminous rather than like visible color bands.
+      It is the signature expression of data flowing through NEUD.
+    </p>
+
+    <div class="card" style="margin-top:0.22in;">
+      <p class="body" style="margin-bottom:0.1in;"><strong>Primary gradient</strong></p>
+      <div class="mono-sample" style="margin-bottom:0.14in;">#35D9F5 → #1769FF → #9A8CFF → #7839F5 → #E57AF5</div>
+      <div class="grad-bar"></div>
+      <p class="caption" style="margin-top:0.1in;">Horizontal continuum</p>
+    </div>
+
+    <div class="grid-2" style="margin-top:0.2in;">
+      <div class="card card-tight">
+        <div class="grad-bar diag"></div>
+        <p class="caption"><strong>Diagonal</strong> — Preferred for ribbons and hero accents.</p>
+      </div>
+      <div class="card card-tight" style="overflow:hidden;">
+        <div class="ribbon"></div>
+        <p class="caption" style="margin-top:0.05in;"><strong>Ribbon flow</strong> — Geometry derived from the N.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:0.2in;">
+      <p class="body" style="margin-bottom:0.1in;"><strong>Atmospheric dark gradient</strong></p>
+      <div class="atm-bar"></div>
+      <p class="caption" style="margin-top:0.1in;">Electric Blue illumination → Midnight → Violet illumination</p>
+    </div>
+
+    <div class="note">
+      <strong>The center of large background gradients should usually remain dark.</strong>
+      Keep luminosity at the edges so the interface stays operational and readable.
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">06</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 7: GRADIENT USAGE ===================== -->
+<section class="page">
+  <div class="page-inner">
+    <div class="eyebrow">03 — Color</div>
+    <h1 class="page-title">Using the NEUD Spectrum</h1>
+    <hr class="rule" />
+    <p class="lede">The gradient is a brand element, not decoration. Deploy it where data, selection, or brand emphasis matters.</p>
+
+    <ul class="use-list">
+      <li>Logo artwork</li>
+      <li>Hero graphics</li>
+      <li>Major active states</li>
+      <li>Data-flow visualization</li>
+      <li>Selected marketing headlines</li>
+      <li>Loading / progress animation</li>
+      <li>Connection visualization</li>
+      <li>High-value graphical moments</li>
+    </ul>
+
+    <div class="do-dont">
+      <div class="do">
+        <div class="label-do">Do</div>
+        <p class="body" style="margin-bottom:0.14in;">Use restrained gradient accents that point attention to brand, data, or selection.</p>
+        <div style="height:0.9in;border-radius:12px;background:linear-gradient(180deg,#0E1438,#0B1550);border:1px solid rgba(245,247,255,0.1);padding:0.16in;display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:13px;font-weight:600;">Project Online</span>
+          <span style="font-size:11px;font-weight:600;padding:0.05in 0.12in;border-radius:999px;background:linear-gradient(90deg,#35D9F5,#7839F5);">Selected</span>
+        </div>
+      </div>
+      <div class="dont">
+        <div class="label-dont">Don’t</div>
+        <p class="body" style="margin-bottom:0.14in;">Cover the entire application interface in gradients.</p>
+        <div style="height:0.9in;border-radius:12px;background:linear-gradient(135deg,#35D9F5,#1769FF,#7839F5,#E57AF5);padding:0.16in;display:flex;align-items:center;justify-content:center;">
+          <span style="font-size:12px;font-weight:600;color:white;opacity:0.9;">Too much spectrum</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="concept-banner" style="margin-top:0.24in;padding:0.22in 0.26in;">
+      <h3 style="font-size:18px;margin-bottom:0;">Gradient = NEUD / data / selection</h3>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">07</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 8: TYPOGRAPHY ===================== -->
+<section class="page lightish">
+  <div class="page-inner">
+    <div class="eyebrow">04 — Type</div>
+    <h1 class="page-title">Typography</h1>
+    <hr class="rule" />
+
+    <div class="card">
+      <p class="eyebrow" style="margin-bottom:0.08in;">Primary typeface</p>
+      <div class="type-name">Inter</div>
+      <p class="body">Use for app UI, website, documentation, forms, tables, settings, and marketing copy.</p>
+      <div class="weights">
+        <span style="font-weight:400;">400 Regular</span>
+        <span style="font-weight:500;">500 Medium</span>
+        <span style="font-weight:600;">600 Semibold</span>
+        <span style="font-weight:700;">700 Bold</span>
+      </div>
+      <p class="body"><strong>Display treatment:</strong> Inter / Inter Display — 600 or 700 for large headlines and covers.</p>
+    </div>
+
+    <div class="grid-2" style="margin-top:0.2in;">
+      <div class="card">
+        <p class="eyebrow" style="margin-bottom:0.08in;">Technical typeface</p>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:500;letter-spacing:-0.02em;margin-bottom:0.1in;">JetBrains Mono</div>
+        <p class="body" style="margin-bottom:0.12in;">JSON, URLs, IDs, diagnostics, code, and technical values.</p>
+        <div class="mono-sample">project_id: bag-graphics-042<br/>wss://live.neud.app/stream</div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center;">
+        <p class="body" style="margin-bottom:0.16in;">Avoid futuristic novelty fonts. Personality belongs to the mark — not the typeface.</p>
+        <div class="note" style="margin-top:0;">
+          <strong>The NEUD icon provides the personality. Typography should stay clean and technical.</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">08</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 9: TYPE HIERARCHY ===================== -->
+<section class="page">
+  <div class="glow glow-blue" style="opacity:0.3"></div>
+  <div class="page-inner">
+    <div class="eyebrow">04 — Type</div>
+    <h1 class="page-title">Type Hierarchy</h1>
+    <hr class="rule" />
+    <p class="lede">A restrained scale keeps operational UI clear while preserving brand presence on larger surfaces.</p>
+
+    <div class="hierarchy">
+      <div class="h-row">
+        <div class="h-meta"><strong>Page Title</strong>28–32 px / 600</div>
+        <div style="font-size:30px;font-weight:600;letter-spacing:-0.03em;">Projects</div>
+      </div>
+      <div class="h-row">
+        <div class="h-meta"><strong>Section Heading</strong>18–20 px / 600</div>
+        <div style="font-size:19px;font-weight:600;">Data Engines</div>
+      </div>
+      <div class="h-row">
+        <div class="h-meta"><strong>Card Heading</strong>15–16 px / 600</div>
+        <div style="font-size:15.5px;font-weight:600;">Broad Arrow Auction</div>
+      </div>
+      <div class="h-row">
+        <div class="h-meta"><strong>Body / UI</strong>14–15 px / 400–500</div>
+        <div style="font-size:14.5px;font-weight:450;color:rgba(245,247,255,0.88);">Connected · Publishing display</div>
+      </div>
+      <div class="h-row">
+        <div class="h-meta"><strong>Metadata</strong>12–13 px / 400–500</div>
+        <div style="font-size:12.5px;color:var(--slate);">Updated 2 minutes ago · Owner</div>
+      </div>
+      <div class="h-row">
+        <div class="h-meta"><strong>Technical / Data</strong>12–14 px / Mono</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--data-cyan);">lot: 142 · bid: $285,000</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">09</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 10: UI DESIGN LANGUAGE ===================== -->
+<section class="page alt">
+  <div class="page-inner">
+    <div class="eyebrow">05 — Interface</div>
+    <h1 class="page-title">Interface Design Language</h1>
+    <hr class="rule" />
+    <p class="lede">
+      NEUD’s interface should belong to the same world as the logo without reproducing the full dimensional logo treatment everywhere.
+    </p>
+
+    <div class="grid-2" style="margin-top:0.22in;flex:1;">
+      <div>
+        <div class="spec-list">
+          <div><strong>Background</strong> — Near-black / navy</div>
+          <div><strong>Panels</strong> — Slightly lighter navy or charcoal</div>
+          <div><strong>Borders</strong> — Thin, subtle, low contrast</div>
+          <div><strong>Corner radius</strong> — 6–10 px controls · 10–14 px cards</div>
+          <div><strong>Depth</strong> — Tonal separation, subtle borders, restrained shadows</div>
+        </div>
+        <div class="note" style="margin-top:0.2in;">
+          Avoid heavy drop shadows and excessive glassmorphism. Clarity beats spectacle.
+        </div>
+      </div>
+      <div>
+        <div class="ui-card">
+          <div class="ui-head">
+            <div class="ui-title">Stream Bid Display</div>
+            <span class="status-pill">Live</span>
+          </div>
+          <div class="ui-row"><span>Lot</span><span class="val">142</span></div>
+          <div class="ui-row"><span>Current Bid</span><span class="val">$285,000</span></div>
+          <div class="ui-row"><span>Status</span><span class="meta">Bidding open</span></div>
+          <div class="ui-row"><span>Engine</span><span class="meta">Webpage Scraper</span></div>
+          <div class="btn-row">
+            <span class="btn btn-primary">Publish</span>
+            <span class="btn btn-secondary">Preview</span>
+          </div>
+        </div>
+        <p class="caption">Sample branded UI card — tonal depth, subtle border, operational hierarchy.</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">10</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 11: CONTROLS & STATUS ===================== -->
+<section class="page">
+  <div class="page-inner">
+    <div class="eyebrow">05 — Interface</div>
+    <h1 class="page-title">Controls &amp; Status</h1>
+    <hr class="rule" />
+    <p class="lede">Brand color and operational color serve different jobs. Never confuse them.</p>
+
+    <div class="card" style="margin-top:0.1in;">
+      <div class="btn-row" style="margin-top:0;">
+        <span class="btn btn-primary">Primary action</span>
+        <span class="btn btn-secondary">Secondary</span>
+        <span class="btn btn-danger">Destructive</span>
+      </div>
+      <p class="caption" style="margin-top:0.14in;">
+        <strong>Primary:</strong> bright controlled blue or blue-violet ·
+        <strong>Secondary:</strong> dark surface with subtle border ·
+        <strong>Destructive:</strong> traditional red
+      </p>
+    </div>
+
+    <div class="status-grid">
+      <div class="status-item">
+        <h4><span class="dot" style="background:var(--live);"></span>Live / Healthy</h4>
+        <p>Green. Engines running, connections healthy, outputs live.</p>
+      </div>
+      <div class="status-item">
+        <h4><span class="dot" style="background:var(--warn);"></span>Warning / Pending</h4>
+        <p>Yellow. Changed, unsaved, pending, or attention required.</p>
+      </div>
+      <div class="status-item">
+        <h4><span class="dot" style="background:var(--danger);"></span>Error / Destructive</h4>
+        <p>Red. Failures, destructive actions, critical stop states.</p>
+      </div>
+      <div class="status-item">
+        <h4><span class="dot" style="background:linear-gradient(90deg,#35D9F5,#7839F5);"></span>Brand / Selection</h4>
+        <p>Spectrum. NEUD identity, data emphasis, selected states.</p>
+      </div>
+    </div>
+
+    <div class="concept-banner" style="margin-top:0.24in;padding:0.2in 0.24in;">
+      <h3 style="font-size:16px;margin-bottom:0.1in;">The brand gradient should never replace universally understood operational status colors.</h3>
+      <p class="body" style="font-size:13px;">
+        Gradient = NEUD / data / selection &nbsp;·&nbsp;
+        Green = Live / healthy &nbsp;·&nbsp;
+        Yellow = Warning / changed / pending &nbsp;·&nbsp;
+        Red = Error / destructive
+      </p>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">11</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 12: DATA IN MOTION ===================== -->
+<section class="page lightish">
+  <div class="glow glow-cyan" style="opacity:0.35"></div>
+  <div class="page-inner">
+    <div class="eyebrow">06 — Motion</div>
+    <h1 class="page-title">Data in Motion</h1>
+    <hr class="rule" />
+    <p class="lede">Animations should suggest data moving through a pipeline — smooth, fast, purposeful, continuous.</p>
+
+    <div class="pipeline">
+      <div class="pipe-node">
+        <div class="box">SOURCE</div>
+        <div class="label">External data</div>
+      </div>
+      <div class="pipe-flow"></div>
+      <div class="pipe-node center">
+        <div class="box">NEUD</div>
+        <div class="label">Transform</div>
+      </div>
+      <div class="pipe-flow"></div>
+      <div class="pipe-node">
+        <div class="box">DISPLAY</div>
+        <div class="label">Live graphics</div>
+      </div>
+    </div>
+
+    <div class="timing-grid">
+      <div class="card">
+        <p class="eyebrow" style="margin-bottom:0.08in;">UI interactions</p>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-0.03em;">150–250 ms</div>
+        <p class="caption">Buttons, panels, toggles, focus changes.</p>
+      </div>
+      <div class="card">
+        <p class="eyebrow" style="margin-bottom:0.08in;">Branded transitions</p>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-0.03em;">400–700 ms</div>
+        <p class="caption">Splash, publish moments, large reveals.</p>
+      </div>
+    </div>
+
+    <div style="margin-top:0.2in;">
+      <p class="body" style="margin-bottom:0.08in;"><strong>Motion characteristics</strong></p>
+      <div class="motion-traits">
+        <span>Smooth</span><span>Fast</span><span>Purposeful</span><span>Continuous</span>
+      </div>
+      <p class="body" style="margin:0.14in 0 0.08in;"><strong>Avoid</strong></p>
+      <div class="motion-traits avoid-traits">
+        <span>Bouncing</span><span>Cartoon easing</span><span>Excessive spinning</span><span>Gaming-style effects</span>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">12</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 13: DATA RIBBON ===================== -->
+<section class="page">
+  <div class="glow glow-violet" style="opacity:0.4"></div>
+  <div class="page-inner">
+    <div class="eyebrow">06 — Motion</div>
+    <h1 class="page-title">The Data Ribbon</h1>
+    <hr class="rule" />
+    <p class="lede">
+      A secondary brand device derived from the geometry of the N.
+      A thick, rounded gradient ribbon that visually represents information flowing through the NEUD ecosystem.
+    </p>
+
+    <div class="ribbon-demo">
+      <div class="ribbon-path"></div>
+      <div class="ribbon-path secondary"></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <p class="body" style="margin-bottom:0.1in;"><strong>Use cases</strong></p>
+        <ul class="bullet-clean">
+          <li>Connect systems in diagrams</li>
+          <li>Wrap imagery</li>
+          <li>Form data paths</li>
+          <li>Transition between sections</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="body" style="margin-bottom:0.1in;"><strong>Also suited for</strong></p>
+        <ul class="bullet-clean">
+          <li>Loading animation</li>
+          <li>Marketing graphics</li>
+          <li>System architecture diagrams</li>
+          <li>Hero compositions</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">
+      Keep ribbon geometry thick, rounded, and continuous — echoing the N without copying the full logo.
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">13</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 14: ICONOGRAPHY & IMAGERY ===================== -->
+<section class="page alt">
+  <div class="page-inner">
+    <div class="eyebrow">07 — Systems</div>
+    <h1 class="page-title">Iconography &amp; Imagery</h1>
+    <hr class="rule" />
+
+    <div class="grid-2">
+      <div class="card">
+        <p class="body" style="margin-bottom:0.12in;"><strong>Icon style</strong></p>
+        <div class="icon-row">
+          <div class="icon-sample">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8M12 18v2"/></svg>
+          </div>
+          <div class="icon-sample">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4"/></svg>
+          </div>
+          <div class="icon-sample">
+            <svg viewBox="0 0 24 24"><path d="M4 12h4l2-6 4 12 2-6h4"/></svg>
+          </div>
+          <div class="icon-sample">
+            <svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h10M5 17h12"/></svg>
+          </div>
+        </div>
+        <ul class="bullet-clean">
+          <li>Rounded geometry</li>
+          <li>Consistent stroke weight</li>
+          <li>Minimal detail</li>
+          <li>Mostly monochrome</li>
+          <li>Interface-white / slate</li>
+          <li>Color only for state or hierarchy</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="body" style="margin-bottom:0.12in;"><strong>Photography should emphasize</strong></p>
+        <div class="photo-grid">
+          <div class="photo-tile">Control rooms</div>
+          <div class="photo-tile">LED walls</div>
+          <div class="photo-tile">Broadcast monitors</div>
+          <div class="photo-tile">Production trucks</div>
+          <div class="photo-tile">Live events</div>
+          <div class="photo-tile">Streaming ops</div>
+        </div>
+        <p class="caption" style="margin-top:0.14in;">
+          Also: cameras, graphics operators, real data-driven production environments.
+          Avoid generic corporate technology stock imagery.
+        </p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">14</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 15: LOGO RULES ===================== -->
+<section class="page">
+  <div class="page-inner">
+    <div class="eyebrow">07 — Systems</div>
+    <h1 class="page-title">Logo Clear Space &amp; Misuse</h1>
+    <hr class="rule" />
+
+    <div class="clearspace-demo">
+      <div class="clearspace-box">
+        <span class="cs-label t">½ stroke</span>
+        <span class="cs-label b">½ stroke</span>
+        <span class="cs-label l">½ stroke</span>
+        <span class="cs-label r">½ stroke</span>
+        <img src="assets/n-gradient.svg" alt="Clear space" />
+      </div>
+      <div style="max-width:3.4in;">
+        <p class="body">
+          Maintain approximately <strong>half the width/height of the N’s main stroke</strong> around the logo as clear space.
+          Keep the area free of type, UI chrome, and competing graphics.
+        </p>
+      </div>
+    </div>
+
+    <p class="body" style="margin-bottom:0.08in;"><strong>Never</strong></p>
+    <div class="misuse-grid">
+      <div class="misuse">Change the gradient to unrelated colors</div>
+      <div class="misuse">Stretch the logo</div>
+      <div class="misuse">Rotate the N</div>
+      <div class="misuse">Add a heavy drop shadow</div>
+      <div class="misuse">Add outlines</div>
+      <div class="misuse">Place it on chaotic backgrounds</div>
+      <div class="misuse">Color each NEUD letter differently</div>
+      <div class="misuse">Add chrome / metal effects</div>
+      <div class="misuse">Change the N geometry</div>
+      <div class="misuse">Add permanent taglines inside the logo lockup</div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">15</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 16: BRAND VOICE ===================== -->
+<section class="page lightish">
+  <div class="page-inner">
+    <div class="eyebrow">08 — Voice</div>
+    <h1 class="page-title">Brand Voice</h1>
+    <hr class="rule" />
+    <p class="lede">Tone: direct, technical, confident, concise.</p>
+
+    <div class="voice-compare">
+      <div class="prefer">
+        <h4>Prefer</h4>
+        <p><strong>Connected to Zoom</strong></p>
+      </div>
+      <div class="avoid">
+        <h4>Instead of</h4>
+        <p>“Great news! NEUD has successfully established a connection with your Zoom account!”</p>
+      </div>
+      <div class="prefer">
+        <h4>Prefer</h4>
+        <p><strong>Publishing display…</strong></p>
+      </div>
+      <div class="avoid">
+        <h4>Instead of</h4>
+        <p>“Please wait while we publish your display.”</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>NEUD should communicate like professional production equipment.</strong>
+    </div>
+
+    <div class="card" style="margin-top:0.22in;">
+      <p class="body" style="margin-bottom:0.1in;"><strong>Naming conventions</strong> — Always write NEUD in uppercase.</p>
+      <div class="naming">
+        <span>NEUD</span>
+        <span>NEUD Desktop</span>
+        <span>NEUD Cloud</span>
+        <span>NEUD Displays</span>
+        <span>NEUD Controller</span>
+        <span>NEUD Output</span>
+        <span>NEUD Projects</span>
+      </div>
+      <p class="caption" style="margin-top:0.14in;">
+        Avoid overly corporate constructions such as “NEUD™ Graphics Management Solution Platform.”
+      </p>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">16</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 17: POSITIONING ===================== -->
+<section class="page">
+  <div class="glow glow-cyan" style="opacity:0.45"></div>
+  <div class="glow glow-violet" style="opacity:0.4"></div>
+  <div class="page-inner">
+    <div class="eyebrow">08 — Voice</div>
+    <h1 class="page-title">Brand Positioning</h1>
+    <hr class="rule" />
+
+    <div class="final-center" style="justify-content:flex-start;padding-top:0.35in;">
+      <p class="eyebrow">Primary identity</p>
+      <div class="statement" style="font-size:56px;letter-spacing:0.12em;margin:0.08in 0 0.36in;">NEUD</div>
+
+      <p class="eyebrow">Personality tagline</p>
+      <div class="statement grad" style="font-size:26px;margin:0.08in 0 0.14in;">The Ultimate Data Stripper</div>
+      <p class="body" style="max-width:5.8in;margin-bottom:0.36in;">
+        This tagline may be used selectively and does not need to be permanently attached to the logo.
+      </p>
+
+      <p class="eyebrow">Supporting professional messaging</p>
+      <div style="margin-top:0.12in;display:grid;gap:0.12in;">
+        <div class="card card-tight" style="font-size:18px;font-weight:600;">Turn live data into live graphics.</div>
+        <div class="card card-tight" style="font-size:18px;font-weight:600;">Data in. Graphics out.</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">17</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 18: APPLICATIONS ===================== -->
+<section class="page alt">
+  <div class="page-inner">
+    <div class="eyebrow">09 — Applications</div>
+    <h1 class="page-title">Brand Applications</h1>
+    <hr class="rule" />
+
+    <div class="app-grid">
+      <div class="app-mock">
+        <div class="glow glow-cyan" style="opacity:0.5;width:2.2in;height:2.2in;"></div>
+        <div class="mock-inner" style="align-items:center;justify-content:center;text-align:center;">
+          <div class="mock-label">App Splash Screen</div>
+          <img src="assets/neud-icon.jpg" alt="" style="width:0.72in;height:0.72in;object-fit:cover;border-radius:14px;margin-bottom:0.1in;box-shadow:0 0 24px rgba(23,105,255,0.35);" />
+          <div class="mock-brand">NEUD</div>
+          <div class="mock-sub">Alpha 0.2.4</div>
+        </div>
+      </div>
+      <div class="app-mock">
+        <div class="glow glow-violet" style="opacity:0.45;width:2.4in;height:2.4in;"></div>
+        <div class="mock-inner">
+          <div class="mock-label">Website Hero</div>
+          <div class="mock-brand" style="letter-spacing:0.12em;">NEUD</div>
+          <div class="mock-sub">Turn live data into live graphics.</div>
+          <div class="mock-pipe">SOURCE → NEUD → OUTPUT</div>
+        </div>
+      </div>
+      <div class="app-mock">
+        <div class="mock-inner">
+          <div class="mock-label">Installer / Desktop</div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:0.1in;">
+            <div style="height:0.28in;border-radius:8px;background:rgba(14,20,56,0.95);border:1px solid rgba(245,247,255,0.12);width:85%;"></div>
+            <div style="height:0.28in;border-radius:8px;background:linear-gradient(90deg,#1769FF,#7839F5);width:55%;"></div>
+            <div style="height:0.28in;border-radius:8px;background:rgba(14,20,56,0.95);border:1px solid rgba(245,247,255,0.12);width:70%;"></div>
+          </div>
+          <div class="mock-sub">Clean branded dark UI</div>
+        </div>
+      </div>
+      <div class="app-mock">
+        <div class="glow glow-cyan" style="opacity:0.35;"></div>
+        <div class="glow glow-violet" style="opacity:0.4;"></div>
+        <div class="mock-inner" style="align-items:center;justify-content:center;text-align:center;">
+          <div class="mock-label">Presentation Cover</div>
+          <div class="mock-brand grad" style="background:linear-gradient(90deg,#35D9F5,#1769FF,#9A8CFF,#7839F5,#E57AF5);-webkit-background-clip:text;background-clip:text;color:transparent;">NEUD</div>
+          <div class="mock-sub">Wordmark with atmospheric gradient</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:0.18in;">
+      <p class="body"><strong>Documentation</strong> — Use white or dark logo treatments depending on background. Prefer the gradient mark on dark pages; use black monochrome on light print pages.</p>
+    </div>
+
+    <div class="footer">
+      <span>NEUD Brand Style Guide</span>
+      <span class="page-num">18</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 19: VISUAL FORMULA ===================== -->
+<section class="page">
+  <div class="glow glow-cyan"></div>
+  <div class="glow glow-violet"></div>
+  <div class="page-inner">
+    <div class="cover-meta">
+      <span>Visual Formula</span>
+      <span>19</span>
+    </div>
+    <div class="final-center centered">
+      <div class="statement grad" style="font-size:26px;margin-bottom:0.4in;max-width:6.4in;">
+        90% professional dark broadcast interface + 10% luminous NEUD data spectrum.
+      </div>
+      <hr class="rule" />
+      <p class="lede" style="font-size:16px;max-width:6.2in;margin-top:0.1in;">
+        The rounded flowing N, dark midnight environment, and cyan → blue → lavender → violet/pink spectrum define the core NEUD visual identity.
+      </p>
+      <img src="assets/neud-icon.jpg" alt="NEUD" style="width:1.55in;height:1.55in;object-fit:contain;border-radius:18px;margin-top:0.45in;box-shadow:0 0 48px rgba(23,105,255,0.35);" />
+    </div>
+    <div class="cover-meta">
+      <span>NEUD Brand Style Guide</span>
+      <span>The Ultimate Data Stripper</span>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

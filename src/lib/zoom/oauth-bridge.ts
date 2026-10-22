@@ -38,13 +38,44 @@ export function buildNeudZoomDeepLink(params: ZoomBridgeOAuthParams): string {
   return url.toString();
 }
 
-export function zoomBridgeOutcome(
-  params: ZoomBridgeOAuthParams,
-): "success" | "error" | "empty" {
-  if (params.error) return "error";
-  if (params.code && params.state) return "success";
-  if (params.code || params.state) return "error";
-  return "empty";
+const OAUTH_VALUE_MAX = 2048;
+
+function safeOAuthValue(value: string | null): value is string {
+  if (!value) return false;
+  if (value.length > OAUTH_VALUE_MAX) return false;
+  return !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+/**
+ * Deep link only for a complete Zoom callback: code+state, or error+state.
+ * Incomplete callbacks return null so the page cannot open an arbitrary link.
+ */
+export function zoomBridgeLaunchLink(params: ZoomBridgeOAuthParams): string | null {
+  if (!safeOAuthValue(params.state)) return null;
+  const code = safeOAuthValue(params.code) ? params.code : null;
+  const error = safeOAuthValue(params.error) ? params.error : null;
+  if (code && error) return null;
+  if (!code && !error) return null;
+  const description =
+    error && safeOAuthValue(params.errorDescription) && params.errorDescription.length <= 300
+      ? params.errorDescription
+      : null;
+  const link = buildNeudZoomDeepLink({
+    code,
+    state: params.state,
+    error,
+    errorDescription: description,
+  });
+  if (!link.startsWith(`${ZOOM_OAUTH_DESKTOP_DEEP_LINK_BASE}?`)) return null;
+  return link;
+}
+
+export type ZoomBridgePageState = "received" | "denied" | "invalid";
+
+export function zoomBridgeOutcome(params: ZoomBridgeOAuthParams): ZoomBridgePageState {
+  if (params.error === "access_denied") return "denied";
+  if (params.code && params.state && !params.error) return "received";
+  return "invalid";
 }
 
 export { ALLOWED_KEYS as ZOOM_BRIDGE_ALLOWED_QUERY_KEYS };

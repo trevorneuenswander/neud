@@ -14,6 +14,20 @@ type NeudModalProps = {
   icon?: ReactNode;
   footer?: ReactNode;
   initialFocusRef?: React.RefObject<HTMLElement | null>;
+  /** default = max-w-lg; wide = max-w-4xl; xl = large settings surfaces */
+  size?: "default" | "wide" | "xl";
+};
+
+const MODAL_SIZE_CLASS: Record<NonNullable<NeudModalProps["size"]>, string> = {
+  default: "max-w-lg",
+  wide: "max-w-4xl",
+  xl: "max-w-6xl",
+};
+
+const MODAL_HEIGHT_CLASS: Record<NonNullable<NeudModalProps["size"]>, string> = {
+  default: "max-h-[min(90vh,42rem)]",
+  wide: "max-h-[min(90vh,42rem)]",
+  xl: "max-h-[min(92vh,56rem)]",
 };
 
 export function NeudModal({
@@ -27,6 +41,7 @@ export function NeudModal({
   icon,
   footer,
   initialFocusRef,
+  size = "default",
 }: NeudModalProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -67,10 +82,11 @@ export function NeudModal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className="w-full max-w-lg rounded-lg border border-border bg-surface p-5 shadow-lg outline-none"
+        className={`flex ${MODAL_HEIGHT_CLASS[size]} w-full ${MODAL_SIZE_CLASS[size]} flex-col rounded-lg border border-border bg-surface p-5 shadow-lg outline-none`}
+        data-neud-modal-size={size}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             {icon ? (
               <div aria-hidden="true" className="mt-0.5 shrink-0">
@@ -91,9 +107,9 @@ export function NeudModal({
           {showCloseButton ? <OverlayCloseButton onClick={handleClose} /> : null}
         </div>
 
-        {children ? <div className="mt-4">{children}</div> : null}
+        {children ? <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{children}</div> : null}
 
-        {footer ? <div className="mt-5">{footer}</div> : null}
+        {footer ? <div className="mt-5 shrink-0">{footer}</div> : null}
       </div>
     </div>
   );

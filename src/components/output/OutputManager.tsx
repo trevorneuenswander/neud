@@ -1,0 +1,1225 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { NeudModal } from "@/components/ui/NeudModal";
+import { Switch } from "@/components/ui/Switch";
+import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
+import type { LocalProjectsListMeta, ProjectDisplay } from "@/lib/displays/types";
+import { localListProjects } from "@/lib/local/api";
+import { localGetProjectDisplays, localGetProjectsMeta } from "@/lib/local/displays-api";
+import { isDesktopRenderer } from "@/lib/local/local-api-origin";
+import {
+  encodeOutputSourceValue,
+  monitorSelectorMessage,
+  outputSourceChoices,
+  parseOutputSourceValue,
+  projectSelectorMessage,
+  sourceSelectorMessage,
+  type OutputLoadState,
+} from "@/lib/output/add-output-hydration";
+import { localGetPinnedViewerState } from "@/lib/local/pinned-viewer-api";
+import {
+  adapterTypeToOperatorLabel,
+  EXTERNAL_NO_DEVICES,
+  operatorFacingExternalDeviceUnavailable,
+} from "@/lib/output/output-adapter-labels";
+
+type DeckLinkMode = {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  frameRateNumerator: number;
+  frameRateDenominator: number;
+  interlaced?: boolean;
+  pixelFormats?: string[];
+};
+type Device = {
+  id: string;
+  name: string;
+  primary: boolean;
+  adapterType?: string;
+  capabilities?: {
+    kind?: string;
+    width: number;
+    height: number;
+    internal?: boolean;
+    modes?: DeckLinkMode[];
+    external?: {
+      fill?: boolean;
+      keyFill?: boolean;
+      keyFillTransport?: "nativeExternalKey" | "pairedPorts" | null;
+    };
+  };
+};
+type ProjectOption = { id: string; name: string; slug: string };
+type RouteView = {
+  id: string;
+  name: string;
+  projectId: string;
+  displayId: string;
+  sourceType?: "display" | "stack";
+  sourceId?: string;
+  deviceId: string;
+  adapterType?: string;
+  configuration?: {
+    alwaysOnTop?: boolean;
+    hideCursor?: boolean;
+    decklink?: {
+      endpointName?: string;
+      modeName?: string;
+      displayModeId?: string;
+      width?: number;
+      height?: number;
+      presentationMode?: "fill" | "keyFill";
+      keyFillTransport?: "nativeExternalKey" | "pairedPorts";
+      keyEndpointId?: string | null;
+    };
+    recording?: {
+      format?: string;
+      destinationFolder?: string;
+      width?: number;
+      height?: number;
+      frameRateId?: string;
+      alphaMode?: "preserve" | "flatten";
+      backgroundColor?: string;
+    };
+  };
+  deviceName: string | null;
+  displayName: string | null;
+  resolutionLabel: string | null;
+  sourceAvailable?: boolean;
+  decklink?: {
+    droppedFrames: number;
+    lateFrames?: number;
+    underruns: number;
+    displayModeName?: string | null;
+    playbackStartedAt?: string | null;
+    lastError?: string | null;
+  } | null;
+  recording?: {
+    lifecycle?: string;
+    durationSeconds?: number;
+    byteSize?: number;
+    droppedFrames?: number;
+    encodedFrames?: number;
+    outputPath?: string | null;
+    format?: string | null;
+    supportsAlpha?: boolean;
+    lastError?: string | null;
+  } | null;
+  session: { status: string; lastError: string | null; startedAt?: string | null };
+};
+
+type FormMode = "create" | "edit";
+
+const STATUS_LABEL: Record<string, string> = {
+  stopped: "Stopped",
+  starting: "Starting",
+  stopping: "Stopping",
+  live: "Live",
+  recording: "Recording",
+  finalizing: "Finalizing",
+  "device-unavailable": "Device unavailable",
+  error: "Error",
+};
+
+const DISK_DEVICE_ID = "disk:local";
+
+const RECORDING_FORMAT_OPTIONS = [
+  { id: "prores-4444-mov", label: "ProRes 4444 (MOV) — alpha supported", supportsAlpha: true },
+  { id: "prores-422hq-mov", label: "ProRes 422 HQ (MOV) — flattened", supportsAlpha: false },
+  { id: "h264-mp4", label: "H.264 (MP4) — flattened", supportsAlpha: false },
+] as const;
+
+const RECORDING_FRAME_RATE_OPTIONS = [
+  { id: "23.976", label: "23.976 fps (24000/1001)" },
+  { id: "24", label: "24 fps" },
+  { id: "25", label: "25 fps" },
+  { id: "29.97", label: "29.97 fps (30000/1001)" },
+  { id: "30", label: "30 fps" },
+  { id: "50", label: "50 fps" },
+  { id: "59.94", label: "59.94 fps (60000/1001)" },
+  { id: "60", label: "60 fps" },
+] as const;
+
+const RECORDING_RESOLUTION_OPTIONS = [
+  { id: "1280x720", label: "1280 × 720 — HD", width: 1280, height: 720 },
+  { id: "1920x1080", label: "1920 × 1080 — Full HD", width: 1920, height: 1080 },
+  { id: "2560x1440", label: "2560 × 1440 — QHD", width: 2560, height: 1440 },
+  { id: "3840x2160", label: "3840 × 2160 — UHD 4K", width: 3840, height: 2160 },
+  { id: "4096x2160", label: "4096 × 2160 — DCI 4K", width: 4096, height: 2160 },
+] as const;
+
+function recordingResolutionValue(width: number, height: number): string {
+  const match = RECORDING_RESOLUTION_OPTIONS.find(
+    (entry) => entry.width === width && entry.height === height,
+  );
+  return match?.id ?? `custom:${width}x${height}`;
+}
+
+function isAutoGeneratedOutputOrRecordName(name: string): boolean {
+  return /^Output \d+$/i.test(name.trim()) || /^Record \d+$/i.test(name.trim());
+}
+
+const FIELD_CLASS =
+  "rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary disabled:cursor-not-allowed disabled:bg-surface-raised disabled:text-muted disabled:opacity-60";
+
+function identityReady(meta: LocalProjectsListMeta | null): OutputLoadState {
+  if (!meta) return "loading";
+  if (meta.identityStatus === "loading-session" || meta.identityStatus === "loading-profile") {
+    return "loading";
+  }
+  if (meta.identityStatus === "ready" || meta.identityStatus === "offline-ready") {
+    return "ready";
+  }
+  return "error";
+}
+
+function formatStartedAt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return `Started ${new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date)}`;
+}
+
+function timingWarning(route: RouteView): string | null {
+  const metrics = route.decklink;
+  if (!metrics) return null;
+  const parts: string[] = [];
+  if (metrics.droppedFrames > 0) parts.push(`${metrics.droppedFrames} dropped`);
+  if ((metrics.lateFrames ?? 0) > 0) parts.push(`${metrics.lateFrames} late`);
+  if (metrics.underruns > 0) parts.push(`${metrics.underruns} underrun`);
+  if (parts.length === 0) return null;
+  return `Output timing warning · ${parts.join(", ")}`;
+}
+
+type FormState = {
+  name: string;
+  projectId: string;
+  sourceType: "display" | "stack";
+  sourceId: string;
+  deviceId: string;
+  alwaysOnTop: boolean;
+  hideCursor: boolean;
+  outputType: "display" | "decklink" | "disk";
+  displayModeId: string;
+  presentationMode: "fill" | "keyFill";
+  keyDeviceId: string;
+  recordingFormat: string;
+  recordingFolder: string;
+  recordingWidth: number;
+  recordingHeight: number;
+  recordingFrameRateId: string;
+  recordingAlphaMode: "preserve" | "flatten";
+  recordingBackgroundColor: string;
+};
+
+const emptyForm = (): FormState => ({
+  name: "",
+  projectId: "",
+  sourceType: "display",
+  sourceId: "",
+  deviceId: "",
+  alwaysOnTop: true,
+  hideCursor: true,
+  outputType: "display",
+  displayModeId: "",
+  presentationMode: "fill",
+  keyDeviceId: "",
+  recordingFormat: "prores-4444-mov",
+  recordingFolder: "",
+  recordingWidth: 1920,
+  recordingHeight: 1080,
+  recordingFrameRateId: "29.97",
+  recordingAlphaMode: "preserve",
+  recordingBackgroundColor: "#000000",
+});
+
+export function OutputManager() {
+  const [desktop, setDesktop] = useState(false);
+  const [routes, setRoutes] = useState<RouteView[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [displays, setDisplays] = useState<ProjectDisplay[]>([]);
+  const [stacks, setStacks] = useState<Array<{ id: string; label: string; memberCount: number }>>([]);
+  const [projectsState, setProjectsState] = useState<OutputLoadState>("loading");
+  const [displaysState, setDisplaysState] = useState<OutputLoadState>("idle");
+  const [monitorsState, setMonitorsState] = useState<OutputLoadState>("loading");
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [formMode, setFormMode] = useState<FormMode | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [decklinkStatus, setDecklinkStatus] = useState<{ sdkAvailable: boolean; reason: string | null } | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const loadMonitors = useCallback(async () => {
+    const api = getDesktopAPI();
+    if (!api?.output?.listDevices) {
+      setDevices([]);
+      setMonitorsState("blocked");
+      return;
+    }
+    setMonitorsState("loading");
+    try {
+      const next = (await api.output.listDevices()) as Device[];
+      setDevices(next);
+      setMonitorsState(next.some((device) => device.adapterType !== "decklink") ? "ready" : "empty");
+      const status = await api.output.decklinkAvailability?.();
+      if (status) setDecklinkStatus(status);
+    } catch (loadError) {
+      console.error("[output] monitor discovery failed", loadError);
+      setDevices([]);
+      setMonitorsState("error");
+    }
+  }, []);
+
+  const loadProjects = useCallback(async () => {
+    setProjectsState("loading");
+    try {
+      const meta = await localGetProjectsMeta({ wait: false });
+      const identity = identityReady(meta);
+      if (identity === "loading") return "loading" as const;
+      if (identity === "error") {
+        setProjects([]);
+        setProjectsState("error");
+        return "error" as const;
+      }
+      const list = await localListProjects();
+      const next = (list.projects ?? [])
+        .map((project) => ({
+          id: String(project.id ?? ""),
+          name: String(project.name ?? "Untitled project"),
+          slug: String(project.slug ?? ""),
+        }))
+        .filter((project) => project.id && project.slug);
+      setProjects(next);
+      setProjectsState(next.length > 0 ? "ready" : "empty");
+      return "ready" as const;
+    } catch (loadError) {
+      console.error("[output] project list failed", loadError);
+      setProjects([]);
+      setProjectsState("error");
+      return "error" as const;
+    }
+  }, []);
+
+  useEffect(() => {
+    const shell = isDesktopRenderer() || isDesktopEnvironment();
+    setDesktop(shell);
+    if (!shell) {
+      setMonitorsState("blocked");
+      setProjectsState("blocked");
+      return;
+    }
+
+    let cancelled = false;
+    const startedAt = Date.now();
+    const boot = async () => {
+      while (!cancelled && Date.now() - startedAt < 30_000) {
+        const result = await loadProjects();
+        if (result !== "loading") return;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    };
+    void boot();
+    void loadMonitors();
+    const api = getDesktopAPI();
+    void api?.output
+      .listRoutes()
+      .then((next) => {
+        if (!cancelled) setRoutes(next as RouteView[]);
+      })
+      .catch((loadError) => {
+        console.error("[output] route list failed", loadError);
+      });
+    const unsubscribe = api?.output.onDevicesChanged?.((next) => {
+      const devicesNext = next as Device[];
+      setDevices(devicesNext);
+      setMonitorsState(devicesNext.length > 0 ? "ready" : "empty");
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [loadMonitors, loadProjects]);
+
+  useEffect(() => {
+    if (!form.projectId) {
+      setDisplays([]);
+      setStacks([]);
+      setDisplaysState("idle");
+      return;
+    }
+    const project = projects.find((entry) => entry.id === form.projectId);
+    if (!project) return;
+    let cancelled = false;
+    setDisplaysState("loading");
+    void Promise.all([
+      localGetProjectDisplays(project.slug),
+      localGetPinnedViewerState(project.slug, project.id).catch(() => null),
+    ])
+      .then(([{ displays: next }, pinned]) => {
+        if (cancelled) return;
+        setDisplays(next ?? []);
+        const stackChoices = (pinned?.pinnedStacks ?? [])
+          .map((stack) => {
+            const names = stack.displayIds
+              .map((id) => (next ?? []).find((display) => display.id === id)?.name)
+              .filter((name): name is string => Boolean(name));
+            if (stack.displayIds.length < 2 || names.length < 2) return null;
+            return {
+              id: stack.id,
+              label:
+                names.length <= 2
+                  ? `Stack · ${names.join(" + ")}`
+                  : `Stack · ${names.length} displays`,
+              memberCount: stack.displayIds.length,
+            };
+          })
+          .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+        setStacks(stackChoices);
+        setDisplaysState((next ?? []).length > 0 || stackChoices.length > 0 ? "ready" : "empty");
+      })
+      .catch((loadError) => {
+        console.error("[output] display list failed", loadError);
+        if (cancelled) return;
+        setDisplays([]);
+        setStacks([]);
+        setDisplaysState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.projectId, projects]);
+
+  const editingRoute = useMemo(
+    () => (editingId ? (routes.find((route) => route.id === editingId) ?? null) : null),
+    [editingId, routes],
+  );
+  const routingLocked =
+    formMode === "edit" &&
+    (editingRoute?.session.status === "live" || editingRoute?.session.status === "starting");
+
+  const displayOptions = outputSourceChoices({
+    displays: displays.map((display) => ({
+      id: display.id,
+      name: display.name,
+      enabled: display.enabled !== false,
+    })),
+    stacks,
+    currentSourceType: formMode === "edit" ? form.sourceType : null,
+    currentSourceId: formMode === "edit" ? form.sourceId : null,
+  });
+  const displayChoicesReady =
+    displaysState === "ready" && displays.length === 0 && stacks.length === 0 && displayOptions.length === 0
+      ? "empty"
+      : displaysState;
+  const projectMessage = projectSelectorMessage(projectsState);
+  const displayMessage = sourceSelectorMessage({
+    projectSelected: Boolean(form.projectId),
+    state: displayChoicesReady,
+    hasChoices: displayOptions.length > 0,
+  });
+  const monitorMessage = monitorSelectorMessage({ desktop, state: monitorsState });
+
+  const displayDevices = devices.filter(
+    (device) => device.adapterType !== "decklink" && device.adapterType !== "disk",
+  );
+  const decklinkDevices = devices.filter((device) => device.adapterType === "decklink");
+  const selectedDeckLink = decklinkDevices.find((device) => device.id === form.deviceId);
+  const deckLinkModes = selectedDeckLink?.capabilities?.modes ?? [];
+  const keyFillCapable = Boolean(selectedDeckLink?.capabilities?.external?.keyFill);
+  const keyFillTransport = selectedDeckLink?.capabilities?.external?.keyFillTransport ?? null;
+  const needsPairedKeyPort = keyFillTransport === "pairedPorts";
+  const recordingSupportsAlpha =
+    RECORDING_FORMAT_OPTIONS.find((entry) => entry.id === form.recordingFormat)?.supportsAlpha ===
+    true;
+  const canSave = Boolean(
+    form.projectId &&
+      form.sourceId &&
+      form.name.trim() &&
+      (form.outputType === "disk"
+        ? form.recordingFolder.trim() && form.recordingFormat
+        : form.deviceId &&
+          (form.outputType === "display" || form.displayModeId) &&
+          (form.presentationMode !== "keyFill" ||
+            (keyFillCapable &&
+              (!needsPairedKeyPort || (form.keyDeviceId && form.keyDeviceId !== form.deviceId))))),
+  );
+
+  async function refreshRoutes() {
+    const api = getDesktopAPI();
+    if (!api?.output) return;
+    setRoutes((await api.output.listRoutes()) as RouteView[]);
+  }
+
+  function closeRouteModal() {
+    setFormMode(null);
+    setEditingId(null);
+    setForm(emptyForm());
+    setError(null);
+    setSaving(false);
+  }
+
+  async function openAddModal() {
+    const api = getDesktopAPI();
+    const defaultName = (await api?.output.nextDefaultName?.()) ?? "Output 1";
+    setEditingId(null);
+    setForm({ ...emptyForm(), name: defaultName });
+    setFormMode("create");
+    setError(null);
+  }
+
+  function beginEdit(route: RouteView) {
+    const sourceType = route.sourceType === "stack" ? "stack" : "display";
+    const sourceId =
+      route.sourceId?.trim() ||
+      (sourceType === "display" ? route.displayId : "") ||
+      route.displayId;
+    setEditingId(route.id);
+    setForm({
+      name: route.name,
+      projectId: route.projectId,
+      sourceType,
+      sourceId,
+      deviceId: route.deviceId,
+      alwaysOnTop: route.configuration?.alwaysOnTop !== false,
+      hideCursor: route.configuration?.hideCursor !== false,
+      outputType:
+        route.adapterType === "disk"
+          ? "disk"
+          : route.adapterType === "decklink"
+            ? "decklink"
+            : "display",
+      displayModeId: route.configuration?.decklink?.displayModeId ?? "",
+      presentationMode: route.configuration?.decklink?.presentationMode === "keyFill" ? "keyFill" : "fill",
+      keyDeviceId: route.configuration?.decklink?.keyEndpointId ?? "",
+      recordingFormat: route.configuration?.recording?.format ?? "prores-4444-mov",
+      recordingFolder: route.configuration?.recording?.destinationFolder ?? "",
+      recordingWidth: route.configuration?.recording?.width ?? 1920,
+      recordingHeight: route.configuration?.recording?.height ?? 1080,
+      recordingFrameRateId: route.configuration?.recording?.frameRateId ?? "29.97",
+      recordingAlphaMode: route.configuration?.recording?.alphaMode ?? "preserve",
+      recordingBackgroundColor: route.configuration?.recording?.backgroundColor ?? "#000000",
+    });
+    setFormMode("edit");
+    setError(null);
+  }
+
+  async function saveRoute() {
+    const api = getDesktopAPI();
+    if (!api?.output || !canSave || saving) return;
+    setSaving(true);
+    setError(null);
+    const payload = {
+      name: form.name.trim(),
+      projectId: form.projectId,
+      sourceType: form.sourceType,
+      sourceId: form.sourceId,
+      displayId: form.sourceType === "display" ? form.sourceId : "",
+      deviceId: form.outputType === "disk" ? DISK_DEVICE_ID : form.deviceId,
+      alwaysOnTop: form.alwaysOnTop,
+      hideCursor: form.hideCursor,
+      displayModeId: form.outputType === "decklink" ? form.displayModeId : undefined,
+      presentationMode: form.outputType === "decklink" ? form.presentationMode : undefined,
+      keyDeviceId:
+        form.outputType === "decklink" &&
+        form.presentationMode === "keyFill" &&
+        needsPairedKeyPort
+          ? form.keyDeviceId
+          : undefined,
+      recording:
+        form.outputType === "disk"
+          ? {
+              format: form.recordingFormat,
+              destinationFolder: form.recordingFolder.trim(),
+              width: form.recordingWidth,
+              height: form.recordingHeight,
+              frameRateId: form.recordingFrameRateId,
+              alphaMode: recordingSupportsAlpha ? form.recordingAlphaMode : "flatten",
+              backgroundColor: form.recordingBackgroundColor,
+            }
+          : undefined,
+    };
+    try {
+      if (formMode === "edit" && editingId) {
+        await api.output.update({ id: editingId, ...payload });
+      } else {
+        await api.output.create(payload);
+      }
+      await refreshRoutes();
+      closeRouteModal();
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : "Unable to save output.";
+      console.error("[output] save failed", { stage: formMode === "edit" ? "update" : "create", payload, message });
+      setError(message);
+      setSaving(false);
+    }
+  }
+
+  async function toggleLive(route: RouteView, next: boolean) {
+    const api = getDesktopAPI();
+    if (!api?.output || togglingId) return;
+    setTogglingId(route.id);
+    // Route start/stop failures surface on the card via session.lastError after refresh.
+    // Keep the top-level error area for application-wide issues only.
+    try {
+      if (next) {
+        const result = await api.output.start({ id: route.id, confirmPrimary: false });
+        if (!result.ok && result.code === "primary-warning") {
+          const confirmed = window.confirm(result.error ?? "Cover the primary display?");
+          if (confirmed) {
+            await api.output.start({ id: route.id, confirmPrimary: true });
+          }
+        }
+      } else {
+        await api.output.stop(route.id);
+      }
+      await refreshRoutes();
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  /** Shared Add/Edit Output route form (create | edit). */
+  function renderOutputRouteForm() {
+    return (
+      <div className="grid gap-3" data-output-route-form={formMode ?? "closed"}>
+        {routingLocked ? (
+          <p className="text-sm text-muted">Stop this output to change its routing or video mode.</p>
+        ) : null}
+        <label className="grid gap-1 text-sm">
+          Name
+          <input
+            className={FIELD_CLASS}
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          Project
+          <select
+            className={FIELD_CLASS}
+            value={form.projectId}
+            disabled={routingLocked}
+            onChange={(event) => {
+              const nextProjectId = event.target.value;
+              setForm((current) => ({
+                ...current,
+                projectId: nextProjectId,
+                sourceType: "display",
+                sourceId: "",
+              }));
+              if (formMode === "create" && form.outputType === "disk" && nextProjectId) {
+                const api = getDesktopAPI();
+                void (async () => {
+                  const recordName = api?.output.nextDefaultRecordName
+                    ? await api.output.nextDefaultRecordName(nextProjectId)
+                    : "Record 1";
+                  setForm((current) => {
+                    if (current.outputType !== "disk" || current.projectId !== nextProjectId) {
+                      return current;
+                    }
+                    if (
+                      current.name.trim() &&
+                      !isAutoGeneratedOutputOrRecordName(current.name)
+                    ) {
+                      return current;
+                    }
+                    return { ...current, name: recordName };
+                  });
+                })();
+              }
+            }}
+          >
+            <option value="">{projectMessage ?? "Select a project"}</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm">
+          Source
+          <select
+            className={FIELD_CLASS}
+            value={
+              form.sourceId
+                ? encodeOutputSourceValue(form.sourceType, form.sourceId)
+                : ""
+            }
+            disabled={routingLocked}
+            onChange={(event) => {
+              const parsed = parseOutputSourceValue(event.target.value);
+              setForm((current) => ({
+                ...current,
+                sourceType: parsed?.sourceType ?? "display",
+                sourceId: parsed?.sourceId ?? "",
+              }));
+            }}
+          >
+            <option value="">{displayMessage ?? "Select a display or stack"}</option>
+            {displayOptions.some((choice) => choice.group === "Displays") ? (
+              <optgroup label="Displays">
+                {displayOptions
+                  .filter((choice) => choice.group === "Displays")
+                  .map((choice) => (
+                    <option
+                      key={encodeOutputSourceValue(choice.sourceType, choice.sourceId)}
+                      value={encodeOutputSourceValue(choice.sourceType, choice.sourceId)}
+                    >
+                      {choice.label}
+                    </option>
+                  ))}
+              </optgroup>
+            ) : null}
+            {displayOptions.some((choice) => choice.group === "Stacks") ? (
+              <optgroup label="Stacks">
+                {displayOptions
+                  .filter((choice) => choice.group === "Stacks")
+                  .map((choice) => (
+                    <option
+                      key={encodeOutputSourceValue(choice.sourceType, choice.sourceId)}
+                      value={encodeOutputSourceValue(choice.sourceType, choice.sourceId)}
+                    >
+                      {choice.label}
+                    </option>
+                  ))}
+              </optgroup>
+            ) : null}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm">
+          Output type
+          <select
+            className={FIELD_CLASS}
+            value={form.outputType}
+            disabled={routingLocked}
+            onChange={(event) => {
+              const nextType =
+                event.target.value === "disk"
+                  ? "disk"
+                  : event.target.value === "decklink"
+                    ? "decklink"
+                    : "display";
+              setForm((current) => ({
+                ...current,
+                outputType: nextType,
+                deviceId: nextType === "disk" ? DISK_DEVICE_ID : "",
+                displayModeId: "",
+              }));
+              if (nextType === "disk" && formMode === "create") {
+                const api = getDesktopAPI();
+                const projectId = form.projectId;
+                void (async () => {
+                  const recordName =
+                    projectId && api?.output.nextDefaultRecordName
+                      ? await api.output.nextDefaultRecordName(projectId)
+                      : "Record 1";
+                  setForm((current) => {
+                    if (current.outputType !== "disk") return current;
+                    if (
+                      current.name.trim() &&
+                      !isAutoGeneratedOutputOrRecordName(current.name)
+                    ) {
+                      return current;
+                    }
+                    return { ...current, name: recordName };
+                  });
+                })();
+              }
+            }}
+          >
+            <option value="display">{adapterTypeToOperatorLabel("display")}</option>
+            <option value="decklink">{adapterTypeToOperatorLabel("decklink")}</option>
+            <option value="disk">{adapterTypeToOperatorLabel("disk")}</option>
+          </select>
+        </label>
+        {form.outputType === "disk" ? (
+          <div className="grid gap-3">
+            <label className="grid gap-1 text-sm">
+              Format
+              <select
+                className={FIELD_CLASS}
+                value={form.recordingFormat}
+                disabled={routingLocked}
+                onChange={(event) => {
+                  const nextFormat = event.target.value;
+                  const supportsAlpha =
+                    RECORDING_FORMAT_OPTIONS.find((entry) => entry.id === nextFormat)
+                      ?.supportsAlpha === true;
+                  setForm((current) => ({
+                    ...current,
+                    recordingFormat: nextFormat,
+                    recordingAlphaMode: supportsAlpha ? current.recordingAlphaMode : "flatten",
+                  }));
+                }}
+              >
+                {RECORDING_FORMAT_OPTIONS.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm">
+              Destination folder
+              <div className="flex gap-2">
+                <input
+                  className={`${FIELD_CLASS} min-w-0 flex-1`}
+                  value={form.recordingFolder}
+                  readOnly
+                  placeholder="Choose a folder"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={routingLocked}
+                  onClick={() => {
+                    void getDesktopAPI()
+                      ?.output.pickRecordingFolder?.()
+                      .then((result) => {
+                        if (result && "ok" in result && result.ok && "path" in result) {
+                          setForm((current) => ({
+                            ...current,
+                            recordingFolder: String(result.path),
+                          }));
+                        }
+                      });
+                  }}
+                >
+                  Browse
+                </Button>
+              </div>
+            </label>
+            <label className="grid gap-1 text-sm">
+              Resolution
+              <select
+                className={FIELD_CLASS}
+                value={recordingResolutionValue(form.recordingWidth, form.recordingHeight)}
+                disabled={routingLocked}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (next.startsWith("custom:")) return;
+                  const preset = RECORDING_RESOLUTION_OPTIONS.find((entry) => entry.id === next);
+                  if (!preset) return;
+                  setForm((current) => ({
+                    ...current,
+                    recordingWidth: preset.width,
+                    recordingHeight: preset.height,
+                  }));
+                }}
+              >
+                {RECORDING_RESOLUTION_OPTIONS.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.label}
+                  </option>
+                ))}
+                {!RECORDING_RESOLUTION_OPTIONS.some(
+                  (entry) =>
+                    entry.width === form.recordingWidth && entry.height === form.recordingHeight,
+                ) ? (
+                  <option
+                    value={`custom:${form.recordingWidth}x${form.recordingHeight}`}
+                  >
+                    Custom ({form.recordingWidth} × {form.recordingHeight})
+                  </option>
+                ) : null}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm">
+              Frame rate
+              <select
+                className={FIELD_CLASS}
+                value={form.recordingFrameRateId}
+                disabled={routingLocked}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    recordingFrameRateId: event.target.value,
+                  }))
+                }
+              >
+                {RECORDING_FRAME_RATE_OPTIONS.map((rate) => (
+                  <option key={rate.id} value={rate.id}>
+                    {rate.label}
+                  </option>
+                ))}
+                {!RECORDING_FRAME_RATE_OPTIONS.some(
+                  (rate) => rate.id === form.recordingFrameRateId,
+                ) ? (
+                  <option value={form.recordingFrameRateId}>
+                    Custom ({form.recordingFrameRateId} fps)
+                  </option>
+                ) : null}
+              </select>
+            </label>
+            {recordingSupportsAlpha ? (
+              <label className="grid gap-1 text-sm">
+                Alpha
+                <select
+                  className={FIELD_CLASS}
+                  value={form.recordingAlphaMode}
+                  disabled={routingLocked}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      recordingAlphaMode:
+                        event.target.value === "flatten" ? "flatten" : "preserve",
+                    }))
+                  }
+                >
+                  <option value="preserve">Preserve transparency</option>
+                  <option value="flatten">Flatten against background</option>
+                </select>
+              </label>
+            ) : (
+              <p className="text-xs text-muted">
+                This format does not support alpha. Transparency is flattened against the
+                background color.
+              </p>
+            )}
+            {(!recordingSupportsAlpha || form.recordingAlphaMode === "flatten") && (
+              <label className="grid gap-1 text-sm">
+                Flatten background
+                <input
+                  type="color"
+                  className="h-9 w-16 cursor-pointer rounded border border-border bg-background"
+                  value={form.recordingBackgroundColor}
+                  disabled={routingLocked}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      recordingBackgroundColor: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            )}
+          </div>
+        ) : null}
+        {form.outputType === "display" ? (
+          <>
+            <label className="grid gap-1 text-sm">
+              Computer display
+              <select
+                className={FIELD_CLASS}
+                value={form.deviceId}
+                disabled={routingLocked}
+                onChange={(event) => setForm((current) => ({ ...current, deviceId: event.target.value }))}
+              >
+                <option value="">{monitorMessage ?? "Select a monitor"}</option>
+                {displayDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.name}
+                    {device.primary ? " (primary)" : ""}
+                    {device.capabilities ? ` · ${device.capabilities.width}×${device.capabilities.height}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid gap-2 text-sm">
+              <p className="font-medium text-foreground">Presentation</p>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.alwaysOnTop}
+                  onChange={(event) => setForm((current) => ({ ...current, alwaysOnTop: event.target.checked }))}
+                />
+                Always on Top
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.hideCursor}
+                  onChange={(event) => setForm((current) => ({ ...current, hideCursor: event.target.checked }))}
+                />
+                Hide Cursor
+              </label>
+            </div>
+          </>
+        ) : form.outputType === "decklink" ? (
+          <>
+            <label className="grid gap-1 text-sm">
+              {form.presentationMode === "keyFill" && needsPairedKeyPort ? "Fill Port" : "Port"}
+              <select
+                className={FIELD_CLASS}
+                value={form.deviceId}
+                disabled={routingLocked}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    deviceId: event.target.value,
+                    displayModeId: "",
+                    presentationMode: "fill",
+                    keyDeviceId:
+                      current.keyDeviceId === event.target.value ? "" : current.keyDeviceId,
+                  }))
+                }
+              >
+                <option value="">
+                  {decklinkDevices.length ? "Select a port" : EXTERNAL_NO_DEVICES}
+                </option>
+                {decklinkDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {decklinkStatus && !decklinkStatus.sdkAvailable ? (
+              <p className="text-sm text-muted">
+                {operatorFacingExternalDeviceUnavailable(decklinkStatus.reason)}
+              </p>
+            ) : null}
+            <label className="grid gap-1 text-sm">
+              Video Mode
+              <select
+                className={FIELD_CLASS}
+                value={form.displayModeId}
+                disabled={routingLocked}
+                onChange={(event) => setForm((current) => ({ ...current, displayModeId: event.target.value }))}
+              >
+                <option value="">Select a video mode</option>
+                {deckLinkModes.map((mode) => {
+                  const supportsBgra = !mode.pixelFormats || mode.pixelFormats.includes("bgra8");
+                  return (
+                    <option key={mode.id} value={mode.id}>
+                      {mode.name} · {mode.width}×{mode.height}
+                      {supportsBgra ? "" : " · BGRA unsupported"}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm">
+              Mode
+              <select
+                className={FIELD_CLASS}
+                value={form.presentationMode}
+                disabled={routingLocked || !keyFillCapable}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    presentationMode: event.target.value === "keyFill" ? "keyFill" : "fill",
+                    keyDeviceId: event.target.value === "keyFill" ? current.keyDeviceId : "",
+                  }))
+                }
+              >
+                <option value="fill">Fill</option>
+                {keyFillCapable ? <option value="keyFill">Key + Fill</option> : null}
+              </select>
+            </label>
+            {form.presentationMode === "keyFill" && keyFillCapable && needsPairedKeyPort ? (
+              <label className="grid gap-1 text-sm">
+                Key Port
+                <select
+                  className={FIELD_CLASS}
+                  value={form.keyDeviceId}
+                  disabled={routingLocked}
+                  onChange={(event) => setForm((current) => ({ ...current, keyDeviceId: event.target.value }))}
+                >
+                  <option value="">Select a key port</option>
+                  {decklinkDevices
+                    .filter((device) => device.id !== form.deviceId)
+                    .map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (!desktop) {
+    return (
+      <p className="text-sm text-muted">Monitor discovery unavailable outside the NEUD desktop app</p>
+    );
+  }
+
+  const modalOpen = formMode != null;
+
+  return (
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-semibold text-foreground">Outputs</h1>
+          <p className="mt-1 text-sm text-muted">
+            Route a published display to an extended monitor or external output on this computer. Hardware
+            assignments stay on this machine.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button type="button" variant="secondary" className="whitespace-nowrap" onClick={() => void loadMonitors()}>
+            Refresh Devices
+          </Button>
+          <Button type="button" className="whitespace-nowrap" onClick={() => void openAddModal()}>
+            Add Output
+          </Button>
+        </div>
+      </div>
+      {error && !modalOpen ? <p className="text-sm text-danger">{error}</p> : null}
+      <div className="grid gap-3">
+        {routes.length === 0 ? <p className="text-sm text-muted">No outputs configured.</p> : null}
+        {routes.map((route) => {
+          const isDisk = route.adapterType === "disk";
+          const live = route.session.status === "live";
+          const recording = route.session.status === "recording";
+          const starting = route.session.status === "starting";
+          const finalizing = route.session.status === "finalizing";
+          const active = live || recording || starting || finalizing;
+          const warning = timingWarning(route);
+          const startedLabel = formatStartedAt(route.session.startedAt ?? route.decklink?.playbackStartedAt);
+          const modeName = route.configuration?.decklink?.modeName;
+          const recordingConfig = route.configuration?.recording;
+          return (
+            <article key={route.id} className="rounded-lg border border-border bg-surface-raised p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-medium text-foreground">{route.name}</h2>
+                  </div>
+                  <p className="mt-1 text-sm text-foreground">
+                    {route.displayName ??
+                      (route.sourceType === "stack" ? "Stack unavailable" : "Display unavailable")}
+                  </p>
+                  <p className="mt-0.5 text-sm text-muted">
+                    {isDisk
+                      ? adapterTypeToOperatorLabel("disk")
+                      : (route.deviceName ?? "Device unavailable")}
+                  </p>
+                  {route.adapterType === "decklink" && modeName ? (
+                    <p className="mt-2 text-sm text-muted">
+                      {route.configuration?.decklink?.presentationMode === "keyFill"
+                        ? "Key + Fill"
+                        : "Fill"}{" "}
+                      · {modeName}
+                    </p>
+                  ) : null}
+                  {isDisk && recordingConfig ? (
+                    <p className="mt-2 text-sm text-muted">
+                      {recordingConfig.format ?? "format"} · {recordingConfig.width}×
+                      {recordingConfig.height} · {recordingConfig.frameRateId} fps
+                      {recordingConfig.alphaMode === "preserve" ? " · alpha" : " · flattened"}
+                    </p>
+                  ) : null}
+                  {isDisk && recordingConfig?.destinationFolder ? (
+                    <p className="mt-1 truncate text-xs text-muted" title={recordingConfig.destinationFolder}>
+                      {recordingConfig.destinationFolder}
+                    </p>
+                  ) : null}
+                  {isDisk && route.recording?.lifecycle === "recording" ? (
+                    <p className="mt-2 text-sm text-muted">
+                      {Math.floor(route.recording.durationSeconds ?? 0)}s ·{" "}
+                      {Math.round((route.recording.byteSize ?? 0) / 1024)} KB · dropped{" "}
+                      {route.recording.droppedFrames ?? 0}
+                    </p>
+                  ) : null}
+                  {live && startedLabel ? <p className="mt-2 text-sm text-muted">{startedLabel}</p> : null}
+                  {warning ? <p className="mt-1 text-sm text-warning">{warning}</p> : null}
+                  {route.session.lastError ? (
+                    <p className="mt-1 text-sm text-danger">{route.session.lastError}</p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-sm ${
+                        recording
+                          ? "text-red-300"
+                          : live
+                            ? "text-success"
+                            : finalizing || starting
+                              ? "text-amber-300"
+                              : "text-muted"
+                      }`}
+                      data-testid="output-live-status"
+                    >
+                      {STATUS_LABEL[route.session.status] ?? route.session.status}
+                    </span>
+                    <Switch
+                      aria-label={isDisk ? `Record ${route.name}` : `Live ${route.name}`}
+                      checked={active}
+                      disabled={
+                        togglingId === route.id ||
+                        starting ||
+                        finalizing ||
+                        route.session.status === "stopping"
+                      }
+                      onCheckedChange={(checked) => void toggleLive(route, checked)}
+                    />
+                  </div>
+                  {isDisk && recordingConfig?.destinationFolder ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        void getDesktopAPI()?.output.openRecordingFolder?.(
+                          recordingConfig.destinationFolder!,
+                        )
+                      }
+                    >
+                      Open Folder
+                    </Button>
+                  ) : null}
+                  <div className="flex flex-col gap-2">
+                    <Button type="button" variant="secondary" onClick={() => beginEdit(route)}>
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() =>
+                        void getDesktopAPI()
+                          ?.output.delete(route.id)
+                          .then(() => refreshRoutes())
+                      }
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {modalOpen ? (
+        <NeudModal
+          title={formMode === "edit" ? "Edit Output" : "Add Output"}
+          onClose={closeRouteModal}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={closeRouteModal} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void saveRoute()} disabled={!canSave || saving}>
+                Save
+              </Button>
+            </div>
+          }
+        >
+          {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
+          {renderOutputRouteForm()}
+        </NeudModal>
+      ) : null}
+    </div>
+  );
+}

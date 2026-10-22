@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { PageSection } from "@/components/portal/PageSection";
 import {
+  cloudConnectionLabel,
   dashboardConnectionLabel,
   profileIndicatorLabel,
 } from "@/lib/auth/account-connection-state";
@@ -75,9 +76,10 @@ export function DashboardAuthenticationStatus() {
     void refresh();
     void localVerifyOnlineSession().then(refresh).catch(() => undefined);
 
+    // Short interval so a recovered connection is not shown as reconnecting for a minute.
     const interval = window.setInterval(() => {
       void refresh();
-    }, 60_000);
+    }, 15_000);
 
     return () => {
       cancelled = true;
@@ -106,10 +108,12 @@ export function DashboardAuthenticationStatus() {
       },
       {
         label: "Cloud Connection",
-        value: dashboardConnectionLabel(
-          status.dashboardConnectionState ??
-            (status.connectionStatus === "connected" ? "connected" : "offline"),
-        ),
+        value: status.cloudConnectionState
+          ? cloudConnectionLabel(status.cloudConnectionState)
+          : dashboardConnectionLabel(
+              status.dashboardConnectionState ??
+                (status.connectionStatus === "connected" ? "connected" : "offline"),
+            ),
       },
       {
         label: "Profile Indicator",

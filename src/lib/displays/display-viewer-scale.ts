@@ -37,3 +37,27 @@ export function computeDisplayViewerContainScale(
     viewportHeight / displayHeight,
   );
 }
+
+/**
+ * Non-uniform stretch so authored canvas fills the output viewport edge-to-edge
+ * (Computer Display / DeckLink program surfaces — no letterbox inset).
+ */
+export function computeDisplayViewerStretchScale(
+  viewportWidth: number,
+  viewportHeight: number,
+  displayWidth: number,
+  displayHeight: number,
+): { scaleX: number; scaleY: number } {
+  if (
+    viewportWidth <= 0 ||
+    viewportHeight <= 0 ||
+    displayWidth <= 0 ||
+    displayHeight <= 0
+  ) {
+    return { scaleX: 1, scaleY: 1 };
+  }
+  return {
+    scaleX: viewportWidth / displayWidth,
+    scaleY: viewportHeight / displayHeight,
+  };
+}

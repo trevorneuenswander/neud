@@ -23,7 +23,7 @@ export function MarketingHomePage() {
             href="/download"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
-            Download Desktop
+            Get NEUD
           </Link>
           <Link
             href="/login"
@@ -38,7 +38,7 @@ export function MarketingHomePage() {
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-foreground">Desktop engine</h2>
           <p className="mt-2 text-sm text-muted">
-            Run scrapers, Local Controller, displays, and publishing from the authoritative desktop app.
+            Run scrapers, Manual Controller, displays, and publishing from the authoritative desktop app.
           </p>
         </Card>
         <Card className="p-5">
@@ -50,7 +50,7 @@ export function MarketingHomePage() {
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-foreground">Cross-platform Alpha</h2>
           <p className="mt-2 text-sm text-muted">
-            NEUD v0.2.4 is available for Windows x64 and Apple Silicon Macs. Download the
+            NEUD Alpha 0.3.0 is available for Windows x64 and Apple Silicon Macs. Download the
             installer for your platform from the download page.
           </p>
         </Card>

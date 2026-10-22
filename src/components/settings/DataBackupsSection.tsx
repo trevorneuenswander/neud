@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { SupabaseImportWizard } from "@/components/settings/SupabaseImportWizard";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -11,7 +9,6 @@ import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { isDesktopEnvironment } from "@/lib/desktop/client";
 
 export function DataBackupsSection() {
-  const router = useRouter();
   const [backupPath, setBackupPath] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backingUp, setBackingUp] = useState(false);
@@ -45,40 +42,29 @@ export function DataBackupsSection() {
       <Card>
         <h2 className="text-lg font-semibold text-foreground">Data &amp; Backups</h2>
         <p className="mt-2 text-sm text-muted">
-          Manage local project data stored on this computer.
+          Manage and back up data stored locally on this computer.
         </p>
 
-        <div className="mt-6 space-y-6">
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-foreground">Import from Supabase</h3>
-            <SupabaseImportWizard
-              onComplete={() => {
-                router.refresh();
-              }}
-            />
-          </div>
-
-          <div className="space-y-3 border-t border-border pt-6">
-            <h3 className="text-sm font-semibold text-foreground">Back Up Projects</h3>
-            <p className="text-sm text-muted">
-              Create a snapshot of the local SQLite database before making major changes.
-            </p>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={backingUp}
-              onClick={() => {
-                void handleBackup();
-              }}
-            >
-              {backingUp ? "Creating backup..." : "Back Up Projects"}
-            </Button>
-            {backupPath ? (
-              <Alert variant="success">Backup saved to {backupPath}</Alert>
-            ) : null}
-            {backupError ? <Alert variant="error">{backupError}</Alert> : null}
-          </div>
+        <div className="mt-6 space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">Back Up Local Data</h3>
+          <p className="text-sm text-muted">
+            Create a snapshot of NEUD&apos;s local database before making major changes.
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={backingUp}
+            onClick={() => {
+              void handleBackup();
+            }}
+          >
+            {backingUp ? "Creating backup..." : "Back Up Local Data"}
+          </Button>
+          {backupPath ? (
+            <Alert variant="success">Backup saved to {backupPath}</Alert>
+          ) : null}
+          {backupError ? <Alert variant="error">{backupError}</Alert> : null}
         </div>
       </Card>
     </div>

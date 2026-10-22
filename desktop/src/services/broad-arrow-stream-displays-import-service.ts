@@ -15,6 +15,7 @@ import {
 } from "../displays/display-source-content-hash";
 import {
   transformLedDisplayQuailHtmlForServing,
+  transformLotPhotosHtmlForServing,
   transformStreamBidHtmlForServing,
   transformStreamTickerHtmlForServing,
 } from "../displays/stream-display-v2-transform";
@@ -50,6 +51,9 @@ function streamDisplayRevisionPrefix(spec: BroadArrowStreamDisplaySpec): string 
   }
   if (spec.graphicType === "stream-ticker") {
     return "stream-ticker-v1";
+  }
+  if (spec.graphicType === "lot-photos") {
+    return "lot-photos-v1";
   }
   return "led-display-quail-v1";
 }
@@ -425,6 +429,9 @@ export class BroadArrowStreamDisplaysImportService {
     }
     if (spec.graphicType === "led-display-quail") {
       return transformLedDisplayQuailHtmlForServing(html);
+    }
+    if (spec.graphicType === "lot-photos") {
+      return transformLotPhotosHtmlForServing(html);
     }
     return transformStreamTickerHtmlForServing(html);
   }

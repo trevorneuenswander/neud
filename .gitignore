@@ -45,6 +45,10 @@ next-env.d.ts
 desktop/dist/
 desktop/staging/
 desktop/release/
+desktop/native/mac-output/build/
+desktop/native/decklink/build/
+desktop/native/decklink/.sdk-include
+desktop/native/decklink/DeckLinkAPIDispatch.cpp
 *.exe
 *.blockmap
 *.msi
@@ -68,3 +72,13 @@ docs/validation-project-cleanup-audit.json
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+# Native addon build trees (sources remain tracked)
+desktop/native/**/build/
+desktop/node_modules/
+*.node
+NEUD/
+desktop/NEUD/
+desktop/neud-bootstrap.log
+NEUD_Brand_Style_Guide.pdf
+docs/brand/NEUD_Brand_Style_Guide.pdf
+supabase/.temp/

@@ -6,6 +6,7 @@ import {
   resolveProfileActorLabel,
 } from "@/lib/activity/actor-resolution";
 import { sortActivityEventsNewestFirst } from "@/lib/activity/sort";
+import { enrichAccessActivityDescription } from "@/lib/access-management/activity-subject";
 import { getHostedAccessibleProjects } from "@/lib/hosted/portal-queries";
 
 export type HostedActivityEvent = {
@@ -64,7 +65,9 @@ export async function getHostedActivityEvents(limit = HOSTED_ACTIVITY_LIMIT) {
 
   const { data, error } = await supabase
     .from("activity_events")
-    .select("id, project_id, user_id, actor_display_name, event_type, description, occurred_at")
+    .select(
+      "id, project_id, user_id, actor_display_name, event_type, description, metadata, occurred_at",
+    )
     .is("deleted_at", null)
     .in("project_id", projectIds)
     .order("occurred_at", { ascending: false })
@@ -124,10 +127,20 @@ export async function getHostedActivityEvents(limit = HOSTED_ACTIVITY_LIMIT) {
     const projectId = typeof row.project_id === "string" ? row.project_id : null;
     const project = projectId ? projectById.get(projectId) : null;
     const eventType = typeof row.event_type === "string" ? row.event_type : "event";
-    const description =
+    const metadata =
+      row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? (row.metadata as Record<string, unknown>)
+        : {};
+    const rawDescription =
       typeof row.description === "string" && row.description.trim()
         ? row.description.trim()
-        : formatEventTypeLabel(eventType);
+        : "";
+    const enriched = enrichAccessActivityDescription({
+      eventType,
+      description: rawDescription,
+      metadata,
+    });
+    const description = enriched || rawDescription || formatEventTypeLabel(eventType);
     const userId = typeof row.user_id === "string" ? row.user_id : null;
     const actorDisplayName =
       typeof row.actor_display_name === "string" ? row.actor_display_name : null;

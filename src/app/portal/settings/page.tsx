@@ -49,7 +49,7 @@ export default async function HostedSettingsPage() {
           locally.
         </p>
         <WindowsDownloadLink className="inline-flex text-sm font-medium text-primary hover:underline">
-          Download Desktop
+          Get NEUD
         </WindowsDownloadLink>
       </Card>
     </div>

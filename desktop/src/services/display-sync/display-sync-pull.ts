@@ -21,9 +21,11 @@ import {
 } from "./display-revision-cloud-import";
 import { reconcilePublishedDisplayContent } from "../../lib/reconcile-published-display-content";
 import { BROAD_ARROW_STREAM_DISPLAY_SPECS } from "../../displays/broad-arrow-stream-display-specs";
+import { shouldRetainNewerLocalPublishedRevision } from "./published-revision-precedence";
 import { readBundledDisplaySourceFromReference } from "../../lib/bundled-display-sources";
 import {
   transformLedDisplayQuailHtmlForServing,
+  transformLotPhotosHtmlForServing,
   transformStreamBidHtmlForServing,
   transformStreamTickerHtmlForServing,
 } from "../../displays/stream-display-v2-transform";
@@ -43,6 +45,33 @@ export type DisplaySyncPullResult = {
   conflicts: number;
 };
 
+type DisplaySourceType = "built-in" | "project-html" | "project-video";
+
+/**
+ * Resolve durable display source type from cloud + local evidence.
+ * Never downgrade an existing local project-video display to project-html when
+ * cloud history lacks or mislabels video types.
+ */
+export function resolvePulledDisplaySourceType(input: {
+  cloudDisplayType: string | null | undefined;
+  existingSourceType?: DisplaySourceType | null;
+  localSettingsSourceType?: unknown;
+}): DisplaySourceType {
+  const cloud = (input.cloudDisplayType ?? "").trim().toLowerCase();
+  if (cloud === "project-video") return "project-video";
+  if (cloud === "built-in") return "built-in";
+  if (cloud === "project-html") {
+    if (input.existingSourceType === "project-video") return "project-video";
+    if (input.localSettingsSourceType === "project-video") return "project-video";
+    return "project-html";
+  }
+  // Unknown / legacy cloud values — prefer durable local video identity.
+  if (input.existingSourceType === "project-video") return "project-video";
+  if (input.localSettingsSourceType === "project-video") return "project-video";
+  if (input.existingSourceType === "built-in" || cloud === "built-in") return "built-in";
+  return "project-html";
+}
+
 type PullContext = {
   cloud: AuthenticatedCloudCoordinator;
   cloudClient: CloudDisplayClient;
@@ -55,6 +84,14 @@ type PullContext = {
   queue: DisplaySyncQueueRepository;
   paths: AppPaths;
   onDisplaysChanged: () => void;
+  /** Local deletion tombstone — never resurrect these via cloud pull. */
+  isDeleted?: (displayId: string) => boolean;
+  /**
+   * When a project package is installed, return whether the slug exists in that
+   * package version. `null` means no package gate (legacy). `false` skips creating
+   * hollow future-version display rows.
+   */
+  isDisplayInInstalledPackage?: (projectId: string, slug: string) => boolean | null;
 };
 
 function logPull(paths: AppPaths, message: string): void {
@@ -169,12 +206,7 @@ function applyPublishedRevisionFromCloud(
   if (localPublished && ctx.revisions.getById(localPublished)) {
     const localVersion = ctx.revisions.getById(localPublished)?.versionNumber ?? null;
     const remoteVersion = ctx.revisions.getById(remotePublished)?.versionNumber ?? null;
-    if (
-      localVersion != null &&
-      remoteVersion != null &&
-      localVersion > remoteVersion &&
-      display?.syncStatus !== "synced"
-    ) {
+    if (shouldRetainNewerLocalPublishedRevision(localVersion, remoteVersion)) {
       logPull(
         ctx.paths,
         `pull.published.retain_local displayId=${displayId} localPublished=${localPublished} localVersion=${localVersion} remotePublished=${remotePublished} remoteVersion=${remoteVersion}`,
@@ -216,6 +248,37 @@ async function reconcileCloudDisplay(
   conflicts: number;
 }> {
   const displayId = cloudDisplay.id;
+  if (ctx.isDeleted?.(displayId)) {
+    const existing = ctx.displays.getById(displayId);
+    if (existing) {
+      logPull(
+        ctx.paths,
+        `pull.skip_tombstoned.purge displayId=${displayId} projectId=${projectId}`,
+      );
+      ctx.storage.deleteDisplayTree(projectId, displayId);
+      ctx.revisions.deleteByResource({
+        projectId,
+        resourceType: "display",
+        resourceId: displayId,
+      });
+      ctx.displayCode.deleteByDisplayId(displayId);
+      ctx.displays.deleteById(displayId);
+    } else {
+      logPull(
+        ctx.paths,
+        `pull.skip_tombstoned displayId=${displayId} projectId=${projectId}`,
+      );
+    }
+    return {
+      created: false,
+      revisionsDownloaded: 0,
+      revisionsReconciled: 0,
+      revisionsSkippedIdentical: 0,
+      revisionsConflictPreserved: 0,
+      publicationUpdated: false,
+      conflicts: 0,
+    };
+  }
   let created = false;
   const stats = {
     revisionsDownloaded: 0,
@@ -246,6 +309,22 @@ async function reconcileCloudDisplay(
   }
 
   if (!ctx.displays.getById(displayId)) {
+    const packageGate = ctx.isDisplayInInstalledPackage?.(projectId, cloudDisplay.slug);
+    if (packageGate === false) {
+      logPull(
+        ctx.paths,
+        `pull.skip_future_package_display projectId=${projectId} slug=${cloudDisplay.slug} displayId=${displayId}`,
+      );
+      return {
+        created: false,
+        revisionsDownloaded: 0,
+        revisionsReconciled: 0,
+        revisionsSkippedIdentical: 0,
+        revisionsConflictPreserved: 0,
+        publicationUpdated: false,
+        conflicts: 0,
+      };
+    }
     ctx.displays.insertFromCloud({
       id: displayId,
       projectId,
@@ -259,12 +338,20 @@ async function reconcileCloudDisplay(
       createdAt: cloudDisplay.created_at,
       updatedAt: cloudDisplay.updated_at,
     });
+    const inserted = ctx.displays.getById(displayId);
+    const insertedSettings =
+      inserted?.settings && typeof inserted.settings === "object"
+        ? (inserted.settings as Record<string, unknown>)
+        : {};
     ctx.displayCode.upsert({
       displayId,
       projectId,
       slug: cloudDisplay.slug,
       description: cloudDisplay.description,
-      sourceType: cloudDisplay.display_type === "built-in" ? "built-in" : "project-html",
+      sourceType: resolvePulledDisplaySourceType({
+        cloudDisplayType: cloudDisplay.display_type,
+        localSettingsSourceType: insertedSettings.sourceType,
+      }),
       publishedRevisionId: cloudDisplay.active_revision_id,
       onlinePublishedRevisionId: cloudDisplay.online_published_revision_id,
       onlinePublishedAt: cloudDisplay.online_published_at,
@@ -283,12 +370,22 @@ async function reconcileCloudDisplay(
         sortOrder: cloudDisplay.sort_order ?? null,
       });
     }
+    const existingCode = ctx.displayCode.getByDisplayId(displayId);
+    const existingDisplay = ctx.displays.getById(displayId);
+    const existingSettings =
+      existingDisplay?.settings && typeof existingDisplay.settings === "object"
+        ? (existingDisplay.settings as Record<string, unknown>)
+        : {};
     ctx.displayCode.upsert({
       displayId,
       projectId,
       slug: cloudDisplay.slug,
       description: cloudDisplay.description,
-      sourceType: cloudDisplay.display_type === "built-in" ? "built-in" : "project-html",
+      sourceType: resolvePulledDisplaySourceType({
+        cloudDisplayType: cloudDisplay.display_type,
+        existingSourceType: existingCode?.sourceType ?? null,
+        localSettingsSourceType: existingSettings.sourceType,
+      }),
       onlineViewerEnabled: cloudDisplay.online_viewer_enabled,
       onlineVisibility: cloudDisplay.online_visibility ?? "private",
       updatedBy: ctx.auth.getAuthenticatedUser()?.userId ?? null,
@@ -472,7 +569,9 @@ function restoreProvenBundledRevision(
       ? transformStreamBidHtmlForServing(bundledHtml)
       : spec.graphicType === "led-display-quail"
         ? transformLedDisplayQuailHtmlForServing(bundledHtml)
-        : transformStreamTickerHtmlForServing(bundledHtml);
+        : spec.graphicType === "lot-photos"
+          ? transformLotPhotosHtmlForServing(bundledHtml)
+          : transformStreamTickerHtmlForServing(bundledHtml);
   return buildProvenBundledRevisionBundle({
     slug,
     revisionId,

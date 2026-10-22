@@ -207,6 +207,17 @@ export function registerDisplaysIpc(input: {
       });
       return input.data.getPinnedViewerState(projectId);
     }
+    if (
+      action === "reorderStack" &&
+      typeof record.stackId === "string" &&
+      Array.isArray(record.orderedDisplayIds)
+    ) {
+      input.data.reorderPinnedViewerStack(projectId, {
+        stackId: record.stackId.trim(),
+        orderedDisplayIds: record.orderedDisplayIds.map((value) => String(value)),
+      });
+      return input.data.getPinnedViewerState(projectId);
+    }
     if (action === "unpinStack" && typeof record.stackId === "string") {
       input.data.unpinPinnedViewerStack(projectId, record.stackId.trim());
       return input.data.getPinnedViewerState(projectId);

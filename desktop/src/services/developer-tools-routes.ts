@@ -137,6 +137,62 @@ export async function handleDeveloperToolsRoute(
         return true;
       }
 
+      if (action === "editable-schema" && ctx.request.method === "GET") {
+        ctx.sendJson(ctx.response, 200, {
+          result: ctx.developerTools.getEditableGraphicSchema(slug, displayId),
+        });
+        return true;
+      }
+
+      if (action === "editable-schema" && ctx.request.method === "PUT") {
+        const body = await ctx.readJsonBody(ctx.request);
+        const schema =
+          body.editableGraphicSchema ?? body.schema ?? body;
+        ctx.sendJson(ctx.response, 200, {
+          result: ctx.developerTools.saveEditableGraphicSchema(slug, displayId, schema),
+        });
+        return true;
+      }
+
+      if (action === "assets" && ctx.request.method === "POST") {
+        const body = await ctx.readJsonBody(ctx.request);
+        ctx.sendJson(ctx.response, 200, {
+          result: ctx.developerTools.importDisplayAsset(slug, displayId, {
+            fileName: String(body.fileName ?? "asset.bin"),
+            mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined,
+            dataBase64: String(body.dataBase64 ?? ""),
+          }),
+        });
+        return true;
+      }
+
+      const assetGetMatch = action.match(/^assets\/(.+)$/);
+      if (assetGetMatch && ctx.request.method === "GET") {
+        const fileName = decodeURIComponent(assetGetMatch[1]!);
+        const asset = ctx.developerTools.readDisplayAssetFile(slug, displayId, fileName);
+        const fs = await import("fs");
+        const path = await import("path");
+        const ext = path.extname(asset.fileName).toLowerCase();
+        const contentType =
+          ext === ".png"
+            ? "image/png"
+            : ext === ".jpg" || ext === ".jpeg"
+              ? "image/jpeg"
+              : ext === ".gif"
+                ? "image/gif"
+                : ext === ".webp"
+                  ? "image/webp"
+                  : ext === ".svg"
+                    ? "image/svg+xml"
+                    : "application/octet-stream";
+        ctx.response.writeHead(200, {
+          "Content-Type": contentType,
+          "Cache-Control": "private, max-age=60",
+        });
+        fs.createReadStream(asset.absolutePath).pipe(ctx.response);
+        return true;
+      }
+
       if (action === "draft" && ctx.request.method === "PUT") {
         const body = await ctx.readJsonBody(ctx.request);
         ctx.sendJson(ctx.response, 200, {

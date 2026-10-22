@@ -24,15 +24,15 @@ test("sidebar uses download section wrapper instead of always rendering CTA", ()
   assert.doesNotMatch(sidebar, /import \{ SidebarDownloadLink \}/);
 });
 
-test("public marketing page keeps Download Desktop CTA", () => {
+test("public marketing page keeps Get NEUD CTA", () => {
   const marketing = read("src/components/marketing/MarketingHomePage.tsx");
-  assert.match(marketing, /Download Desktop/);
+  assert.match(marketing, /Get NEUD/);
   assert.match(marketing, /href="\/download"/);
 });
 
-test("hosted portal settings page keeps Download Desktop link", () => {
+test("hosted portal settings page keeps Get NEUD link", () => {
   const settings = read("src/app/portal/settings/page.tsx");
-  assert.match(settings, /Download Desktop/);
+  assert.match(settings, /Get NEUD/);
   assert.match(settings, /WindowsDownloadLink/);
 });
 
@@ -52,6 +52,6 @@ test("desktop runtime detection uses typed preload bridge", () => {
 
 test("desktop settings page does not include public download CTA card", () => {
   const settings = read("src/app/(portal)/settings/page.tsx");
-  assert.doesNotMatch(settings, /Download Desktop/);
+  assert.doesNotMatch(settings, /Get NEUD/);
   assert.match(settings, /ApplicationUpdatesSection/);
 });

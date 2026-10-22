@@ -17,12 +17,14 @@ import { shouldUseLocalData } from "@/lib/local/mode";
 import { localGetEngineDetail } from "@/lib/local/api";
 import type { DisplayListItem } from "@/lib/displays/displays-list-types";
 import { resolveRendererKey } from "@/lib/displays/broad-arrow/resolve-renderer-key";
+import { projectSupportsSemaWorkflow } from "@/lib/projects/constants";
 
 type ProjectDisplaysPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-function buildBroadArrowDisplayItems(input: {
+/** Package-gated project displays (Broad Arrow + SEMA) → generic DisplaysPageClient cards. */
+function buildInstalledPackageDisplayItems(input: {
   displays: Awaited<ReturnType<typeof localGetProjectDisplays>>["displays"];
   developerDisplays: Awaited<ReturnType<typeof localListDeveloperDisplays>>["displays"];
   versionSummaries: Awaited<ReturnType<typeof localListDisplayVersionSummaries>>["summaries"];
@@ -106,7 +108,7 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
         );
       }
 
-      const displayItems = buildBroadArrowDisplayItems({
+      const displayItems = buildInstalledPackageDisplayItems({
         displays,
         developerDisplays,
         versionSummaries,
@@ -168,9 +170,10 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
         developerDisplays.map((display) => [display.displayKey, display]),
       );
       const registryIds = new Set(registry.map((display) => display.id));
-      const customHtmlDisplays = developerDisplays.filter(
+      const customProjectDisplays = developerDisplays.filter(
         (display) =>
-          display.sourceType === "project-html" &&
+          (display.sourceType === "project-html" ||
+            display.sourceType === "project-video") &&
           !display.archived &&
           !registryIds.has(display.displayKey),
       );
@@ -181,7 +184,7 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
 
       const registryById = new Map(registry.map((display) => [display.id, display]));
       const customByKey = new Map(
-        customHtmlDisplays.map((display) => [display.displayKey, display]),
+        customProjectDisplays.map((display) => [display.displayKey, display]),
       );
 
       const displayRowByKey = new Map(
@@ -320,10 +323,46 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
     );
   }
 
+  // SEMA package projects: same generic DisplaysPageClient as Broad Arrow.
+  // First failing UI boundary (Pass 6): SEMA previously fell through to ProjectPlaceholderPage
+  // ("vMix-ready…"), so Schedule Ticker never appeared even when installed/hydrated.
+  if (projectSupportsSemaWorkflow(access.project.project_type) && shouldUseLocalData()) {
+    const versionSummaries = (
+      await localListDisplayVersionSummaries(slug).catch(() => ({ summaries: [] }))
+    ).summaries;
+    const { displays } = await localGetProjectDisplays(slug).catch(() => ({ displays: [] }));
+    // Developer display rows are required to build package cards (name, published HTML).
+    // Always load them for SEMA; canManageSettings only gates Archived/Add controls.
+    const developerDisplays = (
+      await localListDeveloperDisplays(slug).catch(() => ({ displays: [] }))
+    ).displays;
+    const archivedDisplays = access.canManageSettings
+      ? (await localListArchivedDisplays(slug).catch(() => ({ displays: [] }))).displays
+      : [];
+
+    const displayItems = buildInstalledPackageDisplayItems({
+      displays,
+      developerDisplays,
+      versionSummaries,
+    });
+
+    return (
+      <DisplaysPageClient
+        projectSlug={slug}
+        projectId={access.project.id}
+        initialItems={displayItems}
+        archivedCount={archivedDisplays.length}
+        hasLiveSnapshot={false}
+        canManageSettings={access.canManageSettings}
+        canReorder={access.canOperateDisplays}
+      />
+    );
+  }
+
   return (
     <ProjectPlaceholderPage
       title="Displays"
-      description="vMix-ready display URLs will be configured in a future phase."
+      description="Local display URLs for this project's on-air graphics."
     />
   );
 }

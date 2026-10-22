@@ -366,3 +366,96 @@ test("direct viewer plus team admin resolves to Manager", () => {
     "Manager",
   );
 });
+
+function listEffectiveProjectAccessForUser(userId, directory) {
+  const entries = [];
+  for (const project of directory.projects) {
+    const sources = resolveProjectAccessSources(userId, project.id, directory);
+    const role = resolveHighestProjectRole(sources);
+    if (!role) continue;
+    entries.push({
+      projectId: project.id,
+      projectName: project.name,
+      role,
+    });
+  }
+  return entries.sort((left, right) => left.projectName.localeCompare(right.projectName));
+}
+
+const semaProjectId = "project-sema";
+
+test("Users effective access: Team Admin inherited project appears without direct row", () => {
+  const directory = createDirectory({
+    ...baseDirectory,
+    projectTeams: [{ projectId, teamId: hmgTeamId }],
+  });
+  const entries = listEffectiveProjectAccessForUser(adminUserId, directory);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].projectName, "Broad Arrow Auctions");
+  assert.equal(entries[0].role, "Manager");
+  assert.equal(directory.projectMembers.length, 0);
+});
+
+test("Users effective access: direct project access appears", () => {
+  const directory = createDirectory({
+    ...baseDirectory,
+    projects: [
+      ...baseDirectory.projects,
+      { id: semaProjectId, name: "SEMA", slug: "sema" },
+    ],
+    projectMembers: [{ projectId: semaProjectId, userId: adminUserId, role: "viewer" }],
+  });
+  const entries = listEffectiveProjectAccessForUser(adminUserId, directory);
+  assert.ok(entries.some((entry) => entry.projectName === "SEMA" && entry.role === "Viewer"));
+});
+
+test("Users effective access: non-Admin team member does not inherit Manager", () => {
+  const directory = createDirectory({
+    ...baseDirectory,
+    projectTeams: [{ projectId, teamId: hmgTeamId }],
+  });
+  const entries = listEffectiveProjectAccessForUser(memberUserId, directory);
+  assert.equal(entries.length, 0);
+  assert.equal(hasTeamAssignedManagerAccess(memberUserId, projectId, directory), false);
+});
+
+test("Users effective access: direct + inherited same project deduplicated as Manager", () => {
+  const directory = createDirectory({
+    ...baseDirectory,
+    projectTeams: [{ projectId, teamId: hmgTeamId }],
+    projectMembers: [{ projectId, userId: adminUserId, role: "viewer" }],
+  });
+  const entries = listEffectiveProjectAccessForUser(adminUserId, directory);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].projectId, projectId);
+  assert.equal(entries[0].role, "Manager");
+});
+
+test("Users effective access: multiple team projects and inaccessible excluded", () => {
+  const otherProjectId = "project-other";
+  const directory = createDirectory({
+    ...baseDirectory,
+    projects: [
+      ...baseDirectory.projects,
+      { id: semaProjectId, name: "SEMA", slug: "sema" },
+      { id: otherProjectId, name: "Other Project", slug: "other-project" },
+    ],
+    projectTeams: [
+      { projectId, teamId: hmgTeamId },
+      { projectId: semaProjectId, teamId: hmgTeamId },
+    ],
+  });
+  const entries = listEffectiveProjectAccessForUser(adminUserId, directory);
+  const names = entries.map((entry) => entry.projectName);
+  assert.deepEqual(names, ["Broad Arrow Auctions", "SEMA"]);
+  assert.ok(!names.includes("Other Project"));
+  assert.ok(entries.every((entry) => entry.role === "Manager"));
+});
+
+test("Users panel wiring uses effective access helpers (authoritative sources)", () => {
+  const panel = read("src/components/access-management/UsersPanel.tsx");
+  const roleModel = read("src/lib/access-management/role-model.ts");
+  assert.match(panel, /formatEffectiveProjectAccessLabel/);
+  assert.match(roleModel, /listEffectiveProjectAccessForUser/);
+  assert.match(roleModel, /resolveProjectAccessSources\(userId, project\.id/);
+});

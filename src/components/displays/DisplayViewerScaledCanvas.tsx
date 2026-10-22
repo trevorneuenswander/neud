@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DISPLAY_GRAPHIC_OUTPUT_BACKGROUND } from "@/lib/displays/display-graphic-output-shell";
-import { buildDisplayViewerMeasurements } from "@/lib/displays/display-viewer-measurements";
+import {
+  buildDisplayViewerMeasurements,
+  type DisplayViewerFillMode,
+} from "@/lib/displays/display-viewer-measurements";
 
 type DisplayViewerScaledCanvasProps = {
   displayWidth: number;
@@ -14,6 +17,15 @@ type DisplayViewerScaledCanvasProps = {
   showViewportDiagnostics?: boolean;
   /** Scale up to fill viewport (fullscreen window-fit). Default caps at native 1:1. */
   allowUpscale?: boolean;
+  /**
+   * When true, scale with Chromium CSS `zoom` so fonts rasterize at the final
+   * output size. Default `transform: scale` is used for Preview / computer-display
+   * (geometry-only compositor scale) and must stay unchanged for those surfaces.
+   * Ignored when fillMode is "stretch" (non-uniform scale requires transform).
+   */
+  paintScaleWithZoom?: boolean;
+  /** contain = letterbox; stretch = edge-to-edge program fill. */
+  fillMode?: DisplayViewerFillMode;
 };
 
 export function DisplayViewerScaledCanvas({
@@ -24,9 +36,12 @@ export function DisplayViewerScaledCanvas({
   className,
   showViewportDiagnostics,
   allowUpscale = false,
+  paintScaleWithZoom = false,
+  fillMode = "contain",
 }: DisplayViewerScaledCanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const [scaleX, setScaleX] = useState(1);
+  const [scaleY, setScaleY] = useState(1);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -36,22 +51,28 @@ export function DisplayViewerScaledCanvas({
     const updateScale = () => {
       const viewportWidth = node.clientWidth;
       const viewportHeight = node.clientHeight;
-      setViewportSize({ width: viewportWidth, height: viewportHeight });
       const measurements = buildDisplayViewerMeasurements({
         viewportWidth,
         viewportHeight,
         displayWidth,
         displayHeight,
         allowUpscale,
+        fillMode,
       });
-      setScale(measurements.scale);
+      setViewportSize((prev) =>
+        prev.width === viewportWidth && prev.height === viewportHeight
+          ? prev
+          : { width: viewportWidth, height: viewportHeight },
+      );
+      setScaleX((prev) => (prev === measurements.scaleX ? prev : measurements.scaleX));
+      setScaleY((prev) => (prev === measurements.scaleY ? prev : measurements.scaleY));
     };
 
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [allowUpscale, displayHeight, displayWidth]);
+  }, [allowUpscale, displayHeight, displayWidth, fillMode]);
 
   const measurements = buildDisplayViewerMeasurements({
     viewportWidth: viewportSize.width,
@@ -59,6 +80,7 @@ export function DisplayViewerScaledCanvas({
     displayWidth,
     displayHeight,
     allowUpscale,
+    fillMode,
   });
   const { scaledWidth, scaledHeight } = measurements;
   const showDiagnostics =
@@ -67,17 +89,26 @@ export function DisplayViewerScaledCanvas({
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("displayViewerDebug") === "1");
 
+  const useZoom = paintScaleWithZoom && fillMode !== "stretch" && scaleX === scaleY;
+  const canvasTransform = useZoom
+    ? { zoom: scaleX }
+    : {
+        transform: `scale(${scaleX}, ${scaleY})`,
+        transformOrigin: "top left" as const,
+      };
+
   return (
     <div
       ref={viewportRef}
       className={className ?? "display-viewer-viewport"}
+      data-display-viewer-fill={fillMode}
       style={{
         width: "100%",
         height: "100%",
         overflow: "hidden",
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: fillMode === "stretch" ? "stretch" : "center",
+        justifyContent: fillMode === "stretch" ? "stretch" : "center",
         background: backgroundColor,
         position: "relative",
       }}
@@ -91,22 +122,20 @@ export function DisplayViewerScaledCanvas({
           <br />
           Display Size: {measurements.displayWidth}×{measurements.displayHeight}
           <br />
-          Scale: {measurements.scale.toFixed(4)}
+          Scale: {measurements.scaleX.toFixed(4)}×{measurements.scaleY.toFixed(4)}
           <br />
-          Rendered Display Bounds: {measurements.displayWidth}×{measurements.displayHeight}
-          <br />
-          On-Screen Bounds: {measurements.scaledWidth.toFixed(1)}×
-          {measurements.scaledHeight.toFixed(1)}
+          Fill: {fillMode}
         </div>
       ) : null}
       <div
         className="display-viewer-scaled-bounds"
         style={{
-          width: scaledWidth,
-          height: scaledHeight,
+          width: scaledWidth || "100%",
+          height: scaledHeight || "100%",
           position: "relative",
-          flex: "0 0 auto",
-          background: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND,
+          flex: fillMode === "stretch" ? "1 1 auto" : "0 0 auto",
+          background: backgroundColor,
+          overflow: "hidden",
         }}
       >
         <div
@@ -114,11 +143,10 @@ export function DisplayViewerScaledCanvas({
           style={{
             width: displayWidth,
             height: displayHeight,
-            transform: `scale(${scale})`,
-            transformOrigin: "top left",
+            ...canvasTransform,
             position: "absolute",
             inset: "0 auto auto 0",
-            background: DISPLAY_GRAPHIC_OUTPUT_BACKGROUND,
+            background: backgroundColor,
           }}
         >
           {children}

@@ -245,6 +245,7 @@ export function createBagAuctionAdapter() {
 
       await activeRuntime.startEventDrivenLiveFeed({
         initialSettings: bundle.settings ?? {},
+        initialHydration: context.initialHydration !== false,
         shouldContinue,
         loadSettings: () => context.loadBundle().then((next) => next.settings ?? {}),
         onExecutionLog: async (message) => {

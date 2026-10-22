@@ -296,7 +296,7 @@ export function ProjectAccessPanel({
         ) : (
           <AccessManagementTable
             columnWidths={PROJECT_ACCESS_COLUMN_WIDTHS}
-            headers={["User", "Team", "Access Source", "Project Role", "Status", "Actions"]}
+            headers={["User", "Team", "Access Source", "Project Role", "Actions"]}
           >
             {accessRows.map((row) => (
               <DataTableRow key={row.key}>
@@ -309,7 +309,6 @@ export function ProjectAccessPanel({
                 <DataTableCell className="whitespace-normal text-sm">{row.teamLabel}</DataTableCell>
                 <DataTableCell className="whitespace-normal text-sm">{row.accessSource}</DataTableCell>
                 <DataTableCell>{row.projectRole}</DataTableCell>
-                <DataTableCell>{row.status}</DataTableCell>
                 <DataTableCell>
                   {canManage && row.isMutable ? (
                     <div className="flex flex-nowrap items-center justify-end gap-2">

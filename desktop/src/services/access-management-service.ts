@@ -213,6 +213,97 @@ export class AccessManagementService {
     return updated;
   }
 
+  /**
+   * Team assignment during New Project creation.
+   * Owner: any teams. Team Admin: only teams they administrate.
+   */
+  assignTeamsOnProjectCreate(
+    actorUserId: string,
+    input: { projectId: string; teamIds: string[] },
+  ) {
+    const context = this.authorization.getAuthorizationContext(actorUserId);
+    if (!context) {
+      throw new Error("You do not have permission to assign project teams.");
+    }
+
+    const nextTeamIds = [...new Set(input.teamIds.filter(Boolean))];
+    const adminTeamIds = new Set(
+      context.teamMemberships
+        .filter(
+          (membership) =>
+            membership.role === "admin" &&
+            membership.isActive &&
+            membership.teamIsActive,
+        )
+        .map((membership) => membership.teamId),
+    );
+
+    for (const teamId of nextTeamIds) {
+      if (!this.teams.getById(teamId)) {
+        throw new Error("Team not found.");
+      }
+      if (!context.isPlatformOwner && !adminTeamIds.has(teamId)) {
+        throw new Error("You may only assign teams you administrate.");
+      }
+    }
+
+    const project = this.projects.getById(input.projectId);
+    if (!project) {
+      throw new Error("Project not found.");
+    }
+
+    for (const teamId of nextTeamIds) {
+      const team = this.teams.getById(teamId)!;
+      this.projectTeams.assign({
+        projectId: project.id,
+        teamId,
+        createdByUserId: actorUserId,
+      });
+      this.recordActivity({
+        type: "access.project-team-assigned",
+        message: `Assigned ${team.name} to project`,
+        userAction: `Assigned ${team.name} to project`,
+        metadata: {
+          projectId: project.id,
+          projectName: project.name,
+          teamId: team.id,
+          teamName: team.name,
+          actorUserId,
+        },
+      });
+    }
+
+    return {
+      projectId: project.id,
+      teamIds: this.projectTeams.getTeamIdsForProject(project.id),
+    };
+  }
+
+  listAssignableTeamsForProjectCreate(actorUserId: string) {
+    const context = this.authorization.getAuthorizationContext(actorUserId);
+    if (!context) {
+      return [];
+    }
+    if (context.isPlatformOwner) {
+      return this.teams
+        .listAll()
+        .filter((team) => team.isActive)
+        .map((team) => ({ id: team.id, name: team.name }));
+    }
+    return context.teamMemberships
+      .filter(
+        (membership) =>
+          membership.role === "admin" &&
+          membership.isActive &&
+          membership.teamIsActive,
+      )
+      .map((membership) => ({
+        id: membership.teamId,
+        name: membership.teamName,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
   setProjectTeams(
     actorUserId: string,
     input: { projectId: string; teamIds: string[] },
@@ -247,13 +338,14 @@ export class AccessManagementService {
       });
       this.recordActivity({
         type: "access.project-team-assigned",
-        message: `${context.displayName} assigned ${project.name} to team ${team.name}.`,
-        userAction: `Assigned ${project.name} to team ${team.name}`,
+        message: `Assigned ${team.name} to project`,
+        userAction: `Assigned ${team.name} to project`,
         metadata: {
           projectId: project.id,
           projectName: project.name,
           teamId: team.id,
           teamName: team.name,
+          actorUserId: actorUserId,
         },
       });
     }
@@ -264,13 +356,14 @@ export class AccessManagementService {
       this.projectMemberships.removeAllForProjectTeam(project.id, teamId);
       this.recordActivity({
         type: "access.project-team-removed",
-        message: `${context.displayName} removed ${project.name} from team ${team.name}.`,
-        userAction: `Removed ${project.name} from team ${team.name}`,
+        message: `Removed ${team.name} from project`,
+        userAction: `Removed ${team.name} from project`,
         metadata: {
           projectId: project.id,
           projectName: project.name,
           teamId: team.id,
           teamName: team.name,
+          actorUserId: actorUserId,
         },
       });
     }
@@ -717,14 +810,16 @@ export class AccessManagementService {
 
       this.recordActivity({
         type: "access.project-team-removed",
-        message: `Removed project access from ${target.fullName}.`,
-        userAction: `Removed project access from ${target.fullName}.`,
+        message: `Removed ${team.name} from project`,
+        userAction: `Removed ${team.name} from project`,
         metadata: {
           projectId: project.id,
+          projectName: project.name,
           teamId: input.teamId,
-          userId: input.userId,
-          pathType: input.pathType,
           teamName: team.name,
+          userId: input.userId,
+          actorUserId: actorUserId,
+          pathType: input.pathType,
         },
       });
 
@@ -739,12 +834,17 @@ export class AccessManagementService {
 
     this.recordActivity({
       type: "access.project-unassigned",
-      message: `Removed project access from ${target.fullName}.`,
-      userAction: `Removed project access from ${target.fullName}.`,
+      message: `Removed ${target.fullName} from project`,
+      userAction: `Removed ${target.fullName} from project`,
       metadata: {
         projectId: project.id,
         teamId: input.teamId,
         userId: input.userId,
+        subjectUserId: input.userId,
+        subjectFullName: target.fullName,
+        subjectEmail: target.email,
+        subjectLabel: target.fullName || target.email || input.userId,
+        actorUserId: actorUserId,
         pathType: input.pathType,
       },
     });

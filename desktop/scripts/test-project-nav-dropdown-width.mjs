@@ -32,11 +32,11 @@ test("longest menu labels fit the fixed width choice", () => {
   const labels = [
     "Overview",
     "Webpage Scraper",
-    "Local Controller",
+    "Manual Controller",
     "Displays",
     "Settings",
   ];
   const longest = labels.reduce((a, b) => (a.length >= b.length ? a : b));
-  assert.equal(longest, "Local Controller");
+  assert.equal(longest, "Manual Controller");
   assert.ok(longest.length <= 18);
 });

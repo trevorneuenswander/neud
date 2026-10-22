@@ -11,6 +11,7 @@ export function buildSinglePinnedDisplayMenuItems(input: {
   visibleSlots: VisiblePinnedSlot[];
   displaysById: Map<string, PinnedViewerDisplaySummary>;
   onUnpin: () => void;
+  onCopyLocalUrl: () => void;
   onAddToStack: (
     target:
       | { kind: "display"; displayId: string }
@@ -23,6 +24,12 @@ export function buildSinglePinnedDisplayMenuItems(input: {
       id: "unpin",
       label: "Un-Pin",
       onSelect: input.onUnpin,
+    },
+    {
+      kind: "action",
+      id: "copy-local-url",
+      label: "Copy Local URL",
+      onSelect: input.onCopyLocalUrl,
     },
   ];
 
@@ -87,6 +94,7 @@ export function buildStackPinnedDisplayMenuItems(input: {
   slot: Extract<VisiblePinnedSlot, { kind: "stack" }>;
   displaysById: Map<string, PinnedViewerDisplaySummary>;
   onUnpinStack: () => void;
+  onReorderStack: () => void;
   onRemoveFromStack: (displayId: string) => void;
 }): PinnedViewerMenuItem[] {
   const orderedNames = input.slot.orderedMemberDisplayIds.map((id, index, all) => {
@@ -102,6 +110,12 @@ export function buildStackPinnedDisplayMenuItems(input: {
       id: "unpin-stack",
       label: "Un-Pin",
       onSelect: input.onUnpinStack,
+    },
+    {
+      kind: "action",
+      id: "reorder-stack",
+      label: "Reorder Stack…",
+      onSelect: input.onReorderStack,
     },
     {
       kind: "submenu",

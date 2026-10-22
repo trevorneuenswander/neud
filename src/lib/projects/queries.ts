@@ -20,9 +20,49 @@ import type {
   ProfileWithEmail,
 } from "@/types/database";
 import { createClient } from "@/lib/supabase/server";
+import { defaultCapabilitiesForProjectType } from "@/lib/projects/capabilities";
 
 const PROJECT_COLUMNS =
   "id, project_number, owner_id, name, slug, description, project_type, status, is_active, display_token, theme, logo_url, primary_color, secondary_color, icon, settings, metadata, archived_at, created_at, updated_at";
+
+async function attachProjectCapabilities(
+  projects: ProjectListItem[],
+): Promise<ProjectListItem[]> {
+  if (projects.length === 0) {
+    return projects;
+  }
+
+  const supabase = await createClient();
+  const projectIds = projects.map((project) => project.id);
+  const { data, error } = await supabase
+    .from("project_capabilities")
+    .select("project_id, capability")
+    .in("project_id", projectIds);
+
+  if (error || !data?.length) {
+    return projects.map((project) => ({
+      ...project,
+      capabilities:
+        project.capabilities ??
+        defaultCapabilitiesForProjectType(project.project_type),
+    }));
+  }
+
+  const byProject = new Map<string, string[]>();
+  for (const row of data) {
+    const list = byProject.get(row.project_id) ?? [];
+    list.push(row.capability);
+    byProject.set(row.project_id, list);
+  }
+
+  return projects.map((project) => ({
+    ...project,
+    capabilities:
+      byProject.get(project.id) ??
+      project.capabilities ??
+      defaultCapabilitiesForProjectType(project.project_type),
+  }));
+}
 
 async function attachProjectTeamNames(
   projects: ProjectListItem[],
@@ -39,7 +79,9 @@ async function attachProjectTeamNames(
     .in("project_id", projectIds);
 
   if (assignmentError || !assignments?.length) {
-    return projects.map((project) => ({ ...project, teams: project.teams ?? [] }));
+    return attachProjectCapabilities(
+      projects.map((project) => ({ ...project, teams: project.teams ?? [] })),
+    );
   }
 
   const teamIds = [...new Set(assignments.map((row) => row.team_id))];
@@ -65,12 +107,14 @@ async function attachProjectTeamNames(
     teamsByProjectId.set(assignment.project_id, current);
   }
 
-  return projects.map((project) => ({
-    ...project,
-    teams: (teamsByProjectId.get(project.id) ?? []).sort((left, right) =>
-      left.name.localeCompare(right.name),
-    ),
-  }));
+  return attachProjectCapabilities(
+    projects.map((project) => ({
+      ...project,
+      teams: (teamsByProjectId.get(project.id) ?? []).sort((left, right) =>
+        left.name.localeCompare(right.name),
+      ),
+    })),
+  );
 }
 
 export async function getProjectBySlug(slug: string): Promise<Project | null> {

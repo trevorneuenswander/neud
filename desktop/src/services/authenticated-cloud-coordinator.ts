@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CloudRuntimeConfigSource } from "./cloud-runtime-config";
 import type { SupabasePublicConfig } from "./supabase-public-config";
 import { SupabaseUserSessionService } from "./supabase-user-session";
+import { isTransientRefreshCode } from "./supabase-session-refresh";
 import {
   logCloudAccessLifecycle,
   recordCloudAccessSessionRefreshAttempt,
@@ -377,6 +378,51 @@ export class AuthenticatedCloudCoordinator implements AuthenticatedClientProvide
       sessionRefreshAttempted,
       sessionRefreshResult,
     });
+  }
+
+  /**
+   * Keeps the cloud session healthy without waiting for another service to need it:
+   * refreshes the token when it is within `refreshWithinMs` of expiry (or already expired)
+   * and rebuilds the authenticated client when it is missing.
+   * `transient` failures (network, rate limit, 5xx) should be retried with backoff;
+   * `reauthenticationRequired` means the user must sign in again.
+   */
+  async maintainSession(options: { refreshWithinMs: number }): Promise<{
+    ok: boolean;
+    transient: boolean;
+    reauthenticationRequired: boolean;
+    refreshed: boolean;
+  }> {
+    if (!this.publicConfig || !this.session.hasCloudSession()) {
+      return {
+        ok: false,
+        transient: false,
+        reauthenticationRequired: this.session.requiresReauthentication(),
+        refreshed: false,
+      };
+    }
+
+    const refresh = await this.session.refreshCloudSessionIfNeeded(this.publicConfig, {
+      configSource: this.publicConfigSource,
+      freshMarginMs: options.refreshWithinMs,
+    });
+    if (!refresh.ok) {
+      return {
+        ok: false,
+        transient: isTransientRefreshCode(refresh.code),
+        reauthenticationRequired: this.session.requiresReauthentication(),
+        refreshed: false,
+      };
+    }
+
+    const client = await this.session.getAuthenticatedClient(this.publicConfig);
+    return {
+      ok: Boolean(client),
+      // No client after a good token means setSession could not reach Supabase yet.
+      transient: !client,
+      reauthenticationRequired: this.session.requiresReauthentication(),
+      refreshed: refresh.code === "refreshed",
+    };
   }
 
   async restorePersistedSession(): Promise<{

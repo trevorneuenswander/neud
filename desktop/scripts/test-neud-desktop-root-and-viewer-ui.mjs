@@ -16,7 +16,7 @@ test("hosted root renders marketing homepage", () => {
   const marketing = read("src/components/marketing/MarketingHomePage.tsx");
   assert.match(rootPage, /shouldUseLocalData\(\)/);
   assert.match(rootPage, /MarketingHomePage/);
-  assert.match(marketing, /Download Desktop/);
+  assert.match(marketing, /Get NEUD/);
   assert.doesNotMatch(marketing, /DesktopLoginPage/);
 });
 

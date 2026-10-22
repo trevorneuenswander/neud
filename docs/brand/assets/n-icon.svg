@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="neudSpectrum" x1="20" y1="20" x2="180" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#35D9F5"/>
+      <stop offset="25%" stop-color="#1769FF"/>
+      <stop offset="50%" stop-color="#9A8CFF"/>
+      <stop offset="75%" stop-color="#7839F5"/>
+      <stop offset="100%" stop-color="#E57AF5"/>
+    </linearGradient>
+  </defs>
+  <!-- Stylized ribbon N: left stem, diagonal, right stem -->
+  <path fill="url(#neudSpectrum)" d="
+    M42 28
+    C42 20 48 14 56 14
+    L68 14
+    C76 14 82 20 82 28
+    L82 78
+    L128 28
+    C132 24 136 22 142 22
+    L144 22
+    C152 22 158 28 158 36
+    L158 172
+    C158 180 152 186 144 186
+    L132 186
+    C124 186 118 180 118 172
+    L118 122
+    L72 172
+    C68 176 64 178 58 178
+    L56 178
+    C48 178 42 172 42 164
+    Z
+  "/>
+</svg>

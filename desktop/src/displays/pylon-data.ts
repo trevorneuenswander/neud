@@ -1,3 +1,4 @@
+import { getStreamBidReserveText } from "../bag/reserve-status";
 import { isUsablePhotoUrl } from "./display-utils";
 import { resolvePhotoUrlsForLocalDisplay } from "./canonical-photo";
 import {
@@ -91,7 +92,8 @@ export function mapSnapshotToPylonFeed(
       lot: asString(raw.lot, "Lot —"),
       title: asString(raw.title),
       year: asString(raw.year),
-      reserveStatus: asString(raw.reserveStatus),
+      // Stream Bid / pylon visible reserve copy: only Offered Without Reserve.
+      reserveStatus: getStreamBidReserveText(raw.reserveStatus),
       biddingPrice,
       currencies,
       photos,

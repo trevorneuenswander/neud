@@ -36,7 +36,7 @@ test("hosted activity filters include project, user, event, search, and order", 
 test("hosted activity maps internal events to readable labels", () => {
   const view = read("src/components/hosted/HostedActivityFullView.tsx");
   assert.match(view, /Online Viewer enabled/);
-  assert.match(view, /Local Controller updated/);
+  assert.match(view, /Manual Controller updated/);
   assert.match(view, /display\.published/);
   assert.doesNotMatch(view, /JSON\.stringify\(event\.metadata/);
 });

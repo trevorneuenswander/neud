@@ -6,6 +6,7 @@ export const PROTECTED_TEAM_NAMES = new Set([
 export const PROTECTED_PROJECT_SLUGS = new Set([
   "broad-arrow-auctions",
   "broad-arrow-auction",
+  "sema",
 ]);
 
 export const PROTECTED_USER_NAME_PATTERN = /^trevor\s+neuenswander$/i;
@@ -39,7 +40,8 @@ export function isProtectedProject(record) {
   if (PROTECTED_PROJECT_SLUGS.has(slug) || slug.startsWith("broad-arrow")) {
     return true;
   }
-  return /broad arrow/i.test(String(record.name ?? ""));
+  const name = String(record.name ?? "");
+  return /broad arrow/i.test(name) || /^sema$/i.test(name.trim());
 }
 
 export function isProtectedUser(record) {

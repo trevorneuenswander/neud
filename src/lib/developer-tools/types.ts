@@ -20,7 +20,7 @@ export type ProjectDisplaySource = {
   slug: string;
   displayKey: string;
   description: string | null;
-  sourceType: "built-in" | "project-html";
+  sourceType: "built-in" | "project-html" | "project-video";
   enabled: boolean;
   archived: boolean;
   draftHtml: string | null;
@@ -31,6 +31,8 @@ export type ProjectDisplaySource = {
   updatedAt: string;
   updatedBy: string | null;
   draftSavedAt: string | null;
+  settings?: Record<string, unknown>;
+  supportsGraphicEditor?: boolean;
 };
 
 export type ProjectCodeRevision = {

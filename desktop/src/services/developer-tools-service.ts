@@ -20,12 +20,18 @@ import {
   DEFAULT_SCRAPER_TEMPLATE,
   buildDisplayDocument,
   buildTransparentOutputShellHtml,
+  isStandaloneHtmlDocument,
   wrapStandaloneDisplayHtml,
 } from "../developer-tools/templates";
 import {
   applyHtmlDisplayRuntimeAdapters,
   resolveDisplayRuntimeAdapterKey,
 } from "../displays/html-display-runtime-adapters";
+import { injectEditableGraphicSchema } from "../displays/inject-editable-graphic-schema";
+import {
+  displaySupportsGraphicEditor,
+  normalizeEditableGraphicSchema,
+} from "../packages/sema/editable-graphic-schema";
 import { sanitizeDisplaySlug, assertSafeResourceId } from "../developer-tools/path-utils";
 import { generateDisplaySlugFromName } from "../displays/display-utils";
 import {
@@ -57,6 +63,30 @@ import {
   normalizeRevisionName,
   resolveRunningRuntimeFilePaths,
 } from "../developer-tools/revision-labels";
+import type { VideoMediaStore } from "../media/video-media-store";
+import { buildVideoPlayerHtml } from "../media/video/video-player-html";
+
+const VIDEO_DISPLAY_PLACEHOLDER_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NEUD Video Display</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: transparent; }
+    .msg {
+      box-sizing: border-box; width: 100%; height: 100%;
+      display: grid; place-items: center; padding: 48px;
+      color: rgba(243,246,250,0.92); font: 600 28px/1.4 system-ui, sans-serif;
+      text-align: center; text-shadow: 0 1px 2px rgba(0,0,0,0.55);
+    }
+  </style>
+</head>
+<body>
+  <div class="msg">ProRes video display</div>
+</body>
+</html>
+`;
 
 const MIGRATION_SETTING_PREFIX = "developerTools.migrated.";
 const PROTECTED_DISPLAY_KEYS = new Set([
@@ -66,6 +96,7 @@ const PROTECTED_DISPLAY_KEYS = new Set([
   "new-ticker-v1",
 ]);
 const MAX_DISPLAY_DESCRIPTION_LENGTH = 500;
+const DEFAULT_VIDEO_DISPLAY_DESCRIPTION = "ProRes 4444 Video Display";
 
 type ActivityRecorder = (input: {
   type: string;
@@ -262,6 +293,12 @@ export class DeveloperToolsService {
     }) => void,
     private readonly displaySyncHooks: DisplaySyncHooks = {},
   ) {}
+
+  private videoMedia: VideoMediaStore | null = null;
+
+  setVideoMediaStore(store: VideoMediaStore) {
+    this.videoMedia = store;
+  }
 
   assertDeveloperToolsAccess(projectId: string) {
     const user = this.auth.getAuthenticatedUser();
@@ -621,28 +658,220 @@ export class DeveloperToolsService {
     const project = this.requireProject(projectSlug);
     const actor = this.assertDeveloperToolsAccess(project.id);
     this.migration.ensureProjectMigrated(project.id, actor.userId);
+    this.purgeTombstonedDisplays(project.id);
+    this.repairVideoDisplaySourceTypes(project.id, actor.userId);
+    this.repairEmptyVideoDisplayDescriptions(project.id, actor.userId);
 
     return this.displays
       .listByProject(project.id)
+      .filter((display) => !this.displaySyncHooks.isDeleted?.(display.id))
       .map((display) => {
         const code = this.displayCode.getByDisplayId(display.id);
+        const settings =
+          display.settings && typeof display.settings === "object"
+            ? (display.settings as Record<string, unknown>)
+            : {};
+        const settingsSource =
+          settings.sourceType === "project-video"
+            ? "project-video"
+            : settings.sourceType === "project-html"
+              ? "project-html"
+              : settings.sourceType === "built-in"
+                ? "built-in"
+                : null;
+        const sourceType = code?.sourceType ?? settingsSource ?? "built-in";
         return {
           id: display.id,
           projectId: project.id,
           name: display.name,
           slug: code?.slug ?? display.displayKey,
           displayKey: display.displayKey,
-          description: code?.description ?? null,
-          sourceType: code?.sourceType ?? "built-in",
+          description:
+            code?.description ??
+            (sourceType === "project-video" ? DEFAULT_VIDEO_DISPLAY_DESCRIPTION : null),
+          sourceType,
           enabled: display.enabled,
           archived: code?.archived ?? false,
           refreshRateMs: display.refreshRateMs,
           publishedRevisionId: code?.publishedRevisionId ?? null,
           updatedAt: code?.updatedAt ?? display.updatedAt,
           updatedBy: code?.updatedBy ?? null,
+          settings,
         };
       })
       .filter((display) => !display.archived);
+  }
+
+  /**
+   * Remove local display rows that already have a deletion tombstone
+   * (e.g. cloud pull resurrected them before the tombstone gate existed).
+   */
+  purgeTombstonedDisplays(projectId: string) {
+    for (const display of this.displays.listByProject(projectId)) {
+      if (!this.displaySyncHooks.isDeleted?.(display.id)) continue;
+      const media = this.videoMedia?.getByDisplayId(display.id) ?? null;
+      if (media) {
+        this.videoMedia?.suppressOrphanRecovery(media.id);
+      }
+      this.revisions.deleteByResource({
+        projectId,
+        resourceType: "display",
+        resourceId: display.id,
+      });
+      this.storage.deleteDisplayTree(projectId, display.id);
+      this.displayCode.deleteByDisplayId(display.id);
+      this.displays.deleteById(display.id);
+      this.onDisplayDeleted?.({ projectId, displayId: display.id });
+    }
+  }
+
+  /** One-time fill for video displays that never received a description. */
+  repairEmptyVideoDisplayDescriptions(projectId: string, actorUserId?: string | null) {
+    for (const display of this.displays.listByProject(projectId)) {
+      if (this.displaySyncHooks.isDeleted?.(display.id)) continue;
+      const code = this.displayCode.getByDisplayId(display.id);
+      if (!code || code.sourceType !== "project-video") continue;
+      if (code.description != null && code.description.trim().length > 0) continue;
+      this.displayCode.upsert({
+        displayId: display.id,
+        projectId,
+        slug: code.slug,
+        description: DEFAULT_VIDEO_DISPLAY_DESCRIPTION,
+        sourceType: code.sourceType,
+        draftHtml: code.draftHtml,
+        draftCss: code.draftCss,
+        draftJavascript: code.draftJavascript,
+        publishedRevisionId: code.publishedRevisionId,
+        archived: code.archived,
+        archivedAt: code.archivedAt,
+        archivedByUserId: code.archivedByUserId,
+        updatedBy: actorUserId ?? code.updatedBy,
+      });
+    }
+  }
+
+  /**
+   * Restore project-video identity when display sync or older builds coerced
+   * display_code.source_type to project-html while media/settings still prove video.
+   */
+  repairVideoDisplaySourceTypes(projectId: string, actorUserId?: string | null) {
+    let repaired = 0;
+    for (const display of this.displays.listByProject(projectId)) {
+      const settings =
+        display.settings && typeof display.settings === "object"
+          ? (display.settings as Record<string, unknown>)
+          : {};
+      const mediaAsset = this.videoMedia?.getByDisplayId(display.id) ?? null;
+      const looksLikeVideo =
+        settings.sourceType === "project-video" ||
+        Boolean(mediaAsset) ||
+        typeof settings.mediaAssetId === "string";
+      if (!looksLikeVideo) continue;
+
+      const code = this.displayCode.getByDisplayId(display.id);
+      if (!code) continue;
+      if (code.sourceType === "project-video") {
+        if (settings.sourceType !== "project-video" || settings.loopEnabled == null) {
+          this.displays.upsert({
+            projectId: display.projectId,
+            name: display.name,
+            displayKey: display.displayKey,
+            enabled: display.enabled,
+            refreshRateMs: display.refreshRateMs,
+            displayWidth: display.displayWidth,
+            displayHeight: display.displayHeight,
+            settings: {
+              ...settings,
+              sourceType: "project-video",
+              mediaAssetId: settings.mediaAssetId ?? mediaAsset?.id,
+              loopEnabled:
+                typeof settings.loopEnabled === "boolean"
+                  ? settings.loopEnabled
+                  : mediaAsset
+                    ? mediaAsset.loopEnabled
+                    : false,
+            },
+          });
+        }
+        continue;
+      }
+
+      this.displayCode.upsert({
+        displayId: display.id,
+        projectId,
+        slug: code.slug,
+        description: code.description,
+        sourceType: "project-video",
+        draftHtml: code.draftHtml,
+        draftCss: code.draftCss,
+        draftJavascript: code.draftJavascript,
+        publishedRevisionId: code.publishedRevisionId,
+        archived: code.archived,
+        archivedAt: code.archivedAt,
+        archivedByUserId: code.archivedByUserId,
+        updatedBy: actorUserId ?? code.updatedBy,
+      });
+      this.displays.upsert({
+        projectId: display.projectId,
+        name: display.name,
+        displayKey: display.displayKey,
+        enabled: display.enabled,
+        refreshRateMs: display.refreshRateMs,
+        displayWidth: display.displayWidth,
+        displayHeight: display.displayHeight,
+        settings: {
+          ...settings,
+          sourceType: "project-video",
+          mediaAssetId: settings.mediaAssetId ?? mediaAsset?.id,
+          loopEnabled:
+            typeof settings.loopEnabled === "boolean"
+              ? settings.loopEnabled
+              : mediaAsset
+                ? mediaAsset.loopEnabled
+                : false,
+        },
+      });
+      repaired += 1;
+    }
+    return { repaired };
+  }
+
+  /** Persist Loop preference on both managed media and display settings. */
+  setVideoDisplayLoop(displayId: string, enabled: boolean) {
+    const display = this.displays.getById(displayId);
+    if (!display) {
+      throw new Error("Display not found.");
+    }
+    const settings =
+      display.settings && typeof display.settings === "object"
+        ? (display.settings as Record<string, unknown>)
+        : {};
+    const code = this.displayCode.getByDisplayId(displayId);
+    const isVideo =
+      code?.sourceType === "project-video" || settings.sourceType === "project-video";
+    if (!isVideo) {
+      throw new Error("Loop is only available for ProRes video displays.");
+    }
+    const media = this.videoMedia?.getByDisplayId(displayId) ?? null;
+    if (media) {
+      this.videoMedia?.setLoopEnabled(media.id, enabled);
+    }
+    this.displays.upsert({
+      projectId: display.projectId,
+      name: display.name,
+      displayKey: display.displayKey,
+      enabled: display.enabled,
+      refreshRateMs: display.refreshRateMs,
+      displayWidth: display.displayWidth,
+      displayHeight: display.displayHeight,
+      settings: {
+        ...settings,
+        sourceType: "project-video",
+        loopEnabled: enabled,
+        mediaAssetId: settings.mediaAssetId ?? media?.id,
+      },
+    });
+    return { ok: true as const, loopEnabled: enabled };
   }
 
   listArchivedDisplays(projectSlug: string) {
@@ -704,6 +933,15 @@ export class DeveloperToolsService {
     }
 
     const published = this.storage.readDisplayPublished(project.id, display.id);
+    const rawSettings =
+      display.settings && typeof display.settings === "object"
+        ? (display.settings as Record<string, unknown>)
+        : {};
+    const settings = {
+      ...rawSettings,
+      width: display.displayWidth,
+      height: display.displayHeight,
+    };
     return {
       id: display.id,
       projectId: project.id,
@@ -726,7 +964,153 @@ export class DeveloperToolsService {
       updatedAt: code.updatedAt,
       updatedBy: code.updatedBy,
       draftSavedAt: code.draftSavedAt,
+      settings,
+      supportsGraphicEditor: displaySupportsGraphicEditor(settings),
     };
+  }
+
+  /**
+   * Saves the editable graphic schema into display settings (draft).
+   * Does not publish a new HTML revision.
+   */
+  saveEditableGraphicSchema(
+    projectSlug: string,
+    displayIdOrKey: string,
+    schemaInput: unknown,
+  ) {
+    const project = this.requireProject(projectSlug);
+    this.assertDeveloperToolsAccess(project.id);
+    const display = this.resolveDisplayRecord(project.id, displayIdOrKey);
+    if (!display) {
+      throw new Error("Display not found.");
+    }
+    const settings =
+      display.settings && typeof display.settings === "object" ? display.settings : {};
+    if (!displaySupportsGraphicEditor(settings) && display.displayKey !== "schedule-ticker-editable") {
+      throw new Error("This display does not support the graphic editor.");
+    }
+    console.info("[neud-editor-save] service saveEditableGraphicSchema start", {
+      projectSlug,
+      displayId: display.id,
+    });
+    const schema = normalizeEditableGraphicSchema(schemaInput);
+    const nextSettings = {
+      ...settings,
+      editorSchemaVersion: schema.schemaVersion,
+      graphicType: schema.graphicType,
+      editableGraphicSchema: schema,
+    };
+    const updated = this.displays.upsert({
+      projectId: project.id,
+      name: display.name,
+      displayKey: display.displayKey,
+      htmlPath: display.htmlPath,
+      enabled: display.enabled,
+      refreshRateMs: display.refreshRateMs,
+      displayWidth: display.displayWidth,
+      displayHeight: display.displayHeight,
+      settings: nextSettings,
+    });
+    console.info("[neud-editor-save] service saveEditableGraphicSchema ok", {
+      projectSlug,
+      displayId: updated.id,
+      layerCount: schema.layers.length,
+    });
+    return {
+      displayId: updated.id,
+      settings: updated.settings,
+      editableGraphicSchema: schema,
+      published: false,
+    };
+  }
+
+  getEditableGraphicSchema(projectSlug: string, displayIdOrKey: string) {
+    const project = this.requireProject(projectSlug);
+    this.assertDeveloperToolsAccess(project.id);
+    const display = this.resolveDisplayRecord(project.id, displayIdOrKey);
+    if (!display) {
+      throw new Error("Display not found.");
+    }
+    const settings =
+      display.settings && typeof display.settings === "object" ? display.settings : {};
+    const schema = normalizeEditableGraphicSchema(settings.editableGraphicSchema);
+    return {
+      displayId: display.id,
+      projectId: project.id,
+      projectSlug: project.slug,
+      name: display.name,
+      slug: display.displayKey,
+      settings,
+      editableGraphicSchema: schema,
+      supportsGraphicEditor:
+        displaySupportsGraphicEditor(settings) ||
+        display.displayKey === "schedule-ticker-editable",
+    };
+  }
+
+  /**
+   * Stores an image (or other binary) under the display assets folder.
+   * Returns a relative path (assets/...) — never an absolute filesystem path.
+   */
+  importDisplayAsset(
+    projectSlug: string,
+    displayIdOrKey: string,
+    input: { fileName: string; mimeType?: string; dataBase64: string },
+  ) {
+    const project = this.requireProject(projectSlug);
+    this.assertDeveloperToolsAccess(project.id);
+    const display = this.resolveDisplayRecord(project.id, displayIdOrKey);
+    if (!display) {
+      throw new Error("Display not found.");
+    }
+    const mime = String(input.mimeType || "").toLowerCase();
+    const allowed =
+      mime.startsWith("image/") ||
+      mime === "application/octet-stream" ||
+      mime === "";
+    if (!allowed) {
+      throw new Error("Only image assets are supported.");
+    }
+    const raw = String(input.dataBase64 || "");
+    const base64 = raw.includes(",") ? raw.slice(raw.indexOf(",") + 1) : raw;
+    if (!base64) {
+      throw new Error("Asset data is required.");
+    }
+    const buffer = Buffer.from(base64, "base64");
+    if (!buffer.length) {
+      throw new Error("Asset data is empty.");
+    }
+    if (buffer.length > 12 * 1024 * 1024) {
+      throw new Error("Asset exceeds 12MB limit.");
+    }
+    const safeBuffer = sanitizeImportedDisplayAssetBuffer(buffer, input.fileName, mime);
+    const written = this.storage.writeDisplayAsset(
+      project.id,
+      display.id,
+      input.fileName,
+      safeBuffer,
+    );
+    const url = `/api/projects/${encodeURIComponent(project.slug)}/developer-tools/displays/${encodeURIComponent(display.id)}/assets/${encodeURIComponent(written.fileName)}`;
+    return {
+      assetId: written.relativePath,
+      relativePath: written.relativePath,
+      fileName: written.fileName,
+      url,
+    };
+  }
+
+  readDisplayAssetFile(projectSlug: string, displayIdOrKey: string, fileName: string) {
+    const project = this.requireProject(projectSlug);
+    this.assertDeveloperToolsAccess(project.id);
+    const display = this.resolveDisplayRecord(project.id, displayIdOrKey);
+    if (!display) {
+      throw new Error("Display not found.");
+    }
+    const asset = this.storage.readDisplayAsset(project.id, display.id, fileName);
+    if (!asset) {
+      throw new Error("Asset not found.");
+    }
+    return asset;
   }
 
   saveDisplayDraft(
@@ -1110,6 +1494,285 @@ export class DeveloperToolsService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Import a validated ProRes 4444 .mov into managed storage and create a project-video display.
+   * Playback uses the native decoder → canvas layer → existing Chromium composite / Output Engine.
+   */
+  async createProResVideoDisplay(
+    projectSlug: string,
+    input: {
+      name: string;
+      description?: string;
+      sourceFilePath: string;
+      originalFileName: string;
+      loopEnabled?: boolean;
+    },
+  ) {
+    if (!this.videoMedia) {
+      throw new Error("Video media storage is unavailable.");
+    }
+    const project = this.requireProject(projectSlug);
+    const actor = this.assertDeveloperToolsAccess(project.id);
+    const trimmedName = input.name.trim();
+    if (!trimmedName) {
+      throw new Error("Display name is required.");
+    }
+    if (trimmedName.length > 120) {
+      throw new Error("Display name is too long.");
+    }
+    const normalizedDescription =
+      input.description?.trim() || DEFAULT_VIDEO_DISPLAY_DESCRIPTION;
+    if (normalizedDescription.length > MAX_DISPLAY_DESCRIPTION_LENGTH) {
+      throw new Error(
+        `Display description must be ${MAX_DISPLAY_DESCRIPTION_LENGTH} characters or fewer.`,
+      );
+    }
+
+    const { asset, probe } = await this.videoMedia.importProResMov({
+      projectId: project.id,
+      sourceFilePath: input.sourceFilePath,
+      originalFileName: input.originalFileName,
+    });
+
+    // New video displays default to Loop OFF; card controls are authoritative after create.
+    const loopEnabled = input.loopEnabled === true;
+    this.videoMedia.setLoopEnabled(asset.id, loopEnabled);
+
+    const baseSlug = sanitizeDisplaySlug(generateDisplaySlugFromName(trimmedName));
+    const slug = this.resolveUniqueDisplaySlug(project.id, baseSlug);
+    const slugIssues = validateDisplaySlug(slug);
+    if (slugIssues.some((issue) => issue.severity === "error")) {
+      this.videoMedia.deleteAsset(asset.id);
+      throw new Error(slugIssues[0]?.message ?? "Invalid display slug.");
+    }
+
+    let createdDisplayId: string | null = null;
+    try {
+      const display = this.displays.upsert({
+        projectId: project.id,
+        name: trimmedName,
+        displayKey: slug,
+        enabled: false,
+        refreshRateMs: normalizeDisplayRefreshRateMs(5000),
+        displayWidth: probe.width,
+        displayHeight: probe.height,
+        settings: {
+          sourceType: "project-video",
+          mediaAssetId: asset.id,
+          codecFourCc: probe.codecFourCc,
+          codecLabel: probe.profileLabel,
+          container: probe.container,
+          hasAlpha: probe.hasAlphaHint,
+          loopEnabled,
+          playbackPipeline: "native-decoder",
+          description: normalizedDescription,
+          uploadedFilename: input.originalFileName,
+        },
+      });
+      createdDisplayId = display.id;
+      this.videoMedia.attachToDisplay(asset.id, display.id);
+
+      const revisionId = createRevisionId();
+      const createdAt = new Date().toISOString();
+      const bundle = {
+        html: VIDEO_DISPLAY_PLACEHOLDER_HTML,
+        css: "",
+        javascript: "",
+        metadata: {
+          template: "prores-video",
+          revisionId,
+          sourceType: "project-video",
+          mediaAssetId: asset.id,
+          standaloneDocument: true,
+        },
+      };
+      this.storage.writeDisplayPublished(project.id, display.id, bundle);
+      this.storage.writeDisplayRevision(project.id, display.id, revisionId, bundle);
+      const createdRevision = this.revisions.create({
+        id: revisionId,
+        projectId: project.id,
+        resourceType: "display",
+        resourceId: display.id,
+        sourceHash: hashSource(`${bundle.html}\n${bundle.css}\n${bundle.javascript}`),
+        validationStatus: "valid",
+        createdBy: actor.userId,
+        message: "Imported ProRes 4444 video display",
+        metadata: { storageRevisionId: revisionId, mediaAssetId: asset.id },
+      });
+      this.displayCode.upsert({
+        displayId: display.id,
+        projectId: project.id,
+        slug,
+        description: normalizedDescription,
+        sourceType: "project-video",
+        draftHtml: bundle.html,
+        draftCss: bundle.css,
+        draftJavascript: bundle.javascript,
+        publishedRevisionId: revisionId,
+        archived: false,
+        archivedAt: null,
+        archivedByUserId: null,
+        updatedBy: actor.userId,
+      });
+
+      this.onDisplayCreated?.({ projectId: project.id, displayId: display.id });
+      this.recordProjectActivity(
+        project,
+        {
+          type: "developer-tools.display-created",
+          message: "ProRes video display created",
+          metadata: {
+            displayId: display.id,
+            mediaAssetId: asset.id,
+            codec: probe.codecFourCc,
+            width: probe.width,
+            height: probe.height,
+          },
+        },
+        actor,
+      );
+
+      return {
+        display: {
+          id: display.id,
+          projectId: project.id,
+          name: display.name,
+          slug,
+          displayKey: display.displayKey,
+          description: normalizedDescription,
+          enabled: display.enabled,
+          archived: false,
+          refreshRateMs: display.refreshRateMs,
+          displayWidth: display.displayWidth,
+          displayHeight: display.displayHeight,
+          publishedRevisionId: revisionId,
+          activeVersion: {
+            id: revisionId,
+            versionNumber: createdRevision.versionNumber ?? 1,
+            createdAt,
+          },
+          sourceType: "project-video" as const,
+          mediaAssetId: asset.id,
+        },
+      };
+    } catch (error) {
+      if (createdDisplayId) {
+        this.displays.deleteById(createdDisplayId);
+      }
+      this.videoMedia.deleteAsset(asset.id);
+      throw error;
+    }
+  }
+
+  /**
+   * Create display records for managed ProRes assets that were imported but never
+   * attached (or were detached). Preserves existing media files. Idempotent per asset.
+   */
+  recoverOrphanVideoDisplays(projectSlug: string) {
+    if (!this.videoMedia) {
+      return { recovered: [] as Array<{ displayId: string; mediaAssetId: string; name: string }> };
+    }
+    const project = this.requireProject(projectSlug);
+    const actor = this.assertDeveloperToolsAccess(project.id);
+    const orphans = this.videoMedia.listOrphanAssets(project.id);
+    const recovered: Array<{ displayId: string; mediaAssetId: string; name: string }> = [];
+
+    for (const asset of orphans) {
+      const baseName =
+        asset.originalFileName.replace(/\.mov$/i, "").trim() || "ProRes Video";
+      const trimmedName = `${baseName} (recovered)`.slice(0, 120);
+      const baseSlug = sanitizeDisplaySlug(generateDisplaySlugFromName(trimmedName));
+      const slug = this.resolveUniqueDisplaySlug(project.id, baseSlug);
+
+      let createdDisplayId: string | null = null;
+      try {
+        const display = this.displays.upsert({
+          projectId: project.id,
+          name: trimmedName,
+          displayKey: slug,
+          enabled: false,
+          refreshRateMs: normalizeDisplayRefreshRateMs(5000),
+          displayWidth: asset.width,
+          displayHeight: asset.height,
+          settings: {
+            sourceType: "project-video",
+            mediaAssetId: asset.id,
+            codecFourCc: asset.codecFourCc,
+            codecLabel: asset.codecLabel,
+            container: asset.container,
+            hasAlpha: asset.hasAlpha,
+            loopEnabled: asset.loopEnabled,
+            playbackPipeline: "native-decoder",
+            uploadedFilename: asset.originalFileName,
+            recoveredFromOrphan: true,
+          },
+        });
+        createdDisplayId = display.id;
+        this.videoMedia.attachToDisplay(asset.id, display.id);
+
+        const revisionId = createRevisionId();
+        const createdAt = new Date().toISOString();
+        const bundle = {
+          html: VIDEO_DISPLAY_PLACEHOLDER_HTML,
+          css: "",
+          javascript: "",
+          metadata: {
+            template: "prores-video",
+            revisionId,
+            sourceType: "project-video",
+            mediaAssetId: asset.id,
+            standaloneDocument: true,
+          },
+        };
+        this.storage.writeDisplayPublished(project.id, display.id, bundle);
+        this.storage.writeDisplayRevision(project.id, display.id, revisionId, bundle);
+        this.revisions.create({
+          id: revisionId,
+          projectId: project.id,
+          resourceType: "display",
+          resourceId: display.id,
+          sourceHash: hashSource(`${bundle.html}\n${bundle.css}\n${bundle.javascript}`),
+          validationStatus: "valid",
+          createdBy: actor.userId,
+          message: "Recovered orphan ProRes video display",
+          metadata: { storageRevisionId: revisionId, mediaAssetId: asset.id },
+        });
+        this.displayCode.upsert({
+          displayId: display.id,
+          projectId: project.id,
+          slug,
+          description: DEFAULT_VIDEO_DISPLAY_DESCRIPTION,
+          sourceType: "project-video",
+          draftHtml: bundle.html,
+          draftCss: bundle.css,
+          draftJavascript: bundle.javascript,
+          publishedRevisionId: revisionId,
+          archived: false,
+          archivedAt: null,
+          archivedByUserId: null,
+          updatedBy: actor.userId,
+        });
+        this.onDisplayCreated?.({ projectId: project.id, displayId: display.id });
+        recovered.push({
+          displayId: display.id,
+          mediaAssetId: asset.id,
+          name: display.name,
+        });
+        void createdAt;
+      } catch (error) {
+        if (createdDisplayId) {
+          this.displays.deleteById(createdDisplayId);
+        }
+        console.warn(
+          "[video] orphan recovery failed",
+          asset.id,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+    return { recovered };
   }
 
   reorderDisplays(projectSlug: string, displayKeys: string[]) {
@@ -1828,28 +2491,37 @@ export class DeveloperToolsService {
   deleteDisplay(projectSlug: string, displayId: string) {
     const project = this.requireProject(projectSlug);
     const actor = this.assertDeveloperToolsAccess(project.id);
-    if (this.displaySyncHooks.isDeleted?.(displayId)) {
-      throw new Error("Display has already been deleted.");
-    }
+    const alreadyTombstoned = this.displaySyncHooks.isDeleted?.(displayId) === true;
     const display = this.displays.getById(displayId);
+
+    // Idempotent repair: tombstone exists but local row was resurrected or delete
+    // was interrupted — finish cleanup without erroring the UI.
+    if (alreadyTombstoned && (!display || display.projectId !== project.id)) {
+      return { deleted: true, displayId, alreadyDeleted: true };
+    }
     if (!display || display.projectId !== project.id) {
       throw new Error("Display not found.");
     }
 
     const code = this.displayCode.getByDisplayId(displayId);
-    if (
-      PROTECTED_DISPLAY_KEYS.has(display.displayKey)
-    ) {
+    if (PROTECTED_DISPLAY_KEYS.has(display.displayKey)) {
       throw new Error(
         "Built-in displays cannot be permanently deleted. Archive or disable the display instead.",
       );
     }
 
-    this.displaySyncHooks.recordDeletion?.({
-      displayId,
-      projectId: project.id,
-      deletedByUserId: actor.userId,
-    });
+    const media = this.videoMedia?.getByDisplayId(displayId) ?? null;
+    if (media) {
+      this.videoMedia?.suppressOrphanRecovery(media.id);
+    }
+
+    if (!alreadyTombstoned) {
+      this.displaySyncHooks.recordDeletion?.({
+        displayId,
+        projectId: project.id,
+        deletedByUserId: actor.userId,
+      });
+    }
 
     this.revisions.deleteByResource({
       projectId: project.id,
@@ -1861,20 +2533,22 @@ export class DeveloperToolsService {
     this.displays.deleteById(displayId);
     this.onDisplayDeleted?.({ projectId: project.id, displayId });
 
-    const activityMessage = code?.archived
-      ? `Deleted archived display "${display.name}."`
-      : `Deleted display "${display.name}."`;
-    this.recordProjectActivity(
-      project,
-      {
-        type: "developer-tools.display-deleted",
-        message: activityMessage,
-        metadata: { displayId, slug: code?.slug ?? display.displayKey },
-      },
-      actor,
-    );
+    if (!alreadyTombstoned) {
+      const activityMessage = code?.archived
+        ? `Deleted archived display "${display.name}."`
+        : `Deleted display "${display.name}."`;
+      this.recordProjectActivity(
+        project,
+        {
+          type: "developer-tools.display-deleted",
+          message: activityMessage,
+          metadata: { displayId, slug: code?.slug ?? display.displayKey },
+        },
+        actor,
+      );
+    }
 
-    return { deleted: true, displayId };
+    return { deleted: true, displayId, alreadyDeleted: alreadyTombstoned };
   }
 
   restoreScraperRevision(
@@ -2329,7 +3003,7 @@ export class DeveloperToolsService {
   resolveDisplayViewer(
     projectId: string,
     slug: string,
-    options?: { preview?: boolean; output?: boolean },
+    options?: { preview?: boolean; output?: boolean; hideCursor?: boolean },
   ) {
     assertSafeResourceId(projectId, "project ID");
     const project = this.resolveProjectForDisplayRoute(projectId, slug);
@@ -2403,18 +3077,50 @@ export class DeveloperToolsService {
         settings,
       }),
     };
-    const servedHtml = applyHtmlDisplayRuntimeAdapters(published.html, adapterContext);
+    const isVideoDisplay =
+      code.sourceType === "project-video" ||
+      settings.sourceType === "project-video";
+
+    let servedHtml = isVideoDisplay
+      ? buildVideoPlayerHtml({
+          displayId: code.displayId,
+          projectId: resolvedProjectId,
+          width: display.displayWidth || 1920,
+          height: display.displayHeight || 1080,
+          localApiBase: this.resolveLocalApiBase(),
+          loopEnabled: settings.loopEnabled === true,
+        })
+      : applyHtmlDisplayRuntimeAdapters(published.html, adapterContext);
+    if (
+      !isVideoDisplay &&
+      (displaySupportsGraphicEditor(settings) ||
+        display.displayKey === "schedule-ticker-editable" ||
+        slug === "schedule-ticker-editable")
+    ) {
+      const schema = normalizeEditableGraphicSchema(
+        (settings as { editableGraphicSchema?: unknown }).editableGraphicSchema,
+      );
+      const assetBaseUrl = `/api/projects/${encodeURIComponent(project.slug)}/developer-tools/displays/${encodeURIComponent(code.displayId)}/assets/`;
+      servedHtml = injectEditableGraphicSchema(servedHtml, schema, { assetBaseUrl });
+    }
+
+    if (isVideoDisplay) {
+      return {
+        status: "ok" as const,
+        html: servedHtml,
+        displayId: code.displayId,
+        projectId: resolvedProjectId,
+        slug,
+        name: display.name,
+      };
+    }
 
     const standalone =
       published.metadata &&
       typeof published.metadata === "object" &&
       (published.metadata as Record<string, unknown>).standaloneDocument === true;
 
-    if (
-      standalone ||
-      /^<!doctype html/i.test(servedHtml) ||
-      /^<html[\s>]/i.test(servedHtml)
-    ) {
+    if (standalone || isStandaloneHtmlDocument(servedHtml)) {
       const dataUrl = this.buildDisplayDataUrl(resolvedProjectId, slug, previewMode);
       const localApiBase = this.resolveLocalApiBase();
       const pollIntervalMs = normalizeDisplayRefreshRateMs(display.refreshRateMs);
@@ -2436,6 +3142,7 @@ export class DeveloperToolsService {
           pollIntervalMs,
           outputMode,
           previewMode,
+          hideCursor: options?.hideCursor === true,
         }),
         displayId: code.displayId,
         projectId: resolvedProjectId,
@@ -2693,4 +3400,23 @@ export class DeveloperToolsService {
       await this.engineManager.restart(engine.id);
     }
   }
+}
+
+function sanitizeImportedDisplayAssetBuffer(
+  buffer: Buffer,
+  fileName: string,
+  mimeType: string,
+): Buffer {
+  const lowerName = fileName.toLowerCase();
+  const sniff = buffer.subarray(0, Math.min(buffer.length, 256)).toString("utf8").trimStart();
+  const isSvg =
+    mimeType.includes("svg") || lowerName.endsWith(".svg") || sniff.startsWith("<svg");
+  if (!isSvg) {
+    return buffer;
+  }
+  let text = buffer.toString("utf8");
+  text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  text = text.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+  text = text.replace(/javascript:/gi, "");
+  return Buffer.from(text, "utf8");
 }

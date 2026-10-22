@@ -3,8 +3,15 @@
 import { useEffect } from "react";
 import { MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE } from "@/lib/displays/display-preview-checkerboard-style";
 
-/** Window-fit management viewer — checkerboard behind scaled output iframe only. */
-export function useDisplayWindowFitViewerStyles(): void {
+type WindowFitSurface = "preview" | "computer" | "decklink";
+
+/** Window-fit viewer. Preview keeps the checkerboard. Computer-display output composites on black. */
+export function useDisplayWindowFitViewerStyles(options?: {
+  surface?: WindowFitSurface;
+  hideCursor?: boolean;
+}): void {
+  const surface = options?.surface ?? "preview";
+  const hideCursor = options?.hideCursor === true;
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
@@ -40,34 +47,75 @@ export function useDisplayWindowFitViewerStyles(): void {
     body.classList.add("neud-window-fit-viewer");
     html.style.margin = "0";
     html.style.padding = "0";
-    html.style.width = "100%";
-    html.style.height = "100%";
+    html.style.border = "0";
+    html.style.borderRadius = "0";
+    html.style.width = "100vw";
+    html.style.height = "100vh";
     html.style.overflow = "hidden";
-    html.style.background = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundImage;
-    html.style.backgroundColor = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundColor;
-    html.style.backgroundSize = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundSize;
-    html.style.backgroundPosition = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundPosition;
+    const outputBlack = surface === "computer";
+    const preserveAlpha = surface === "decklink";
+    html.style.background = outputBlack
+      ? "#000000"
+      : preserveAlpha
+        ? "transparent"
+        : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundImage;
+    html.style.backgroundColor = outputBlack
+      ? "#000000"
+      : preserveAlpha
+        ? "transparent"
+        : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundColor;
+    html.style.backgroundSize =
+      outputBlack || preserveAlpha ? "auto" : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundSize;
+    html.style.backgroundPosition =
+      outputBlack || preserveAlpha ? "0 0" : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundPosition;
+    html.style.cursor = hideCursor ? "none" : "";
 
     body.style.margin = "0";
     body.style.padding = "0";
-    body.style.width = "100%";
-    body.style.height = "100%";
+    body.style.border = "0";
+    body.style.borderRadius = "0";
+    body.style.width = "100vw";
+    body.style.height = "100vh";
     body.style.overflow = "hidden";
-    body.style.background = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundImage;
-    body.style.backgroundColor = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundColor;
-    body.style.backgroundSize = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundSize;
-    body.style.backgroundPosition = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundPosition;
+    body.style.background = outputBlack
+      ? "#000000"
+      : preserveAlpha
+        ? "transparent"
+        : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundImage;
+    body.style.backgroundColor = outputBlack
+      ? "#000000"
+      : preserveAlpha
+        ? "transparent"
+        : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundColor;
+    body.style.backgroundSize =
+      outputBlack || preserveAlpha ? "auto" : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundSize;
+    body.style.backgroundPosition =
+      outputBlack || preserveAlpha ? "0 0" : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundPosition;
+    body.style.cursor = hideCursor ? "none" : "";
 
     if (root) {
-      root.style.background = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundImage;
-      root.style.backgroundColor = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundColor;
-      root.style.backgroundSize = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundSize;
-      root.style.backgroundPosition = MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundPosition;
+      root.style.background = outputBlack
+        ? "#000000"
+        : preserveAlpha
+          ? "transparent"
+          : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundImage;
+      root.style.backgroundColor = outputBlack
+        ? "#000000"
+        : preserveAlpha
+          ? "transparent"
+          : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundColor;
+      root.style.backgroundSize =
+        outputBlack || preserveAlpha ? "auto" : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundSize;
+      root.style.backgroundPosition =
+        outputBlack || preserveAlpha ? "0 0" : MANAGEMENT_PREVIEW_CHECKERBOARD_STYLE.backgroundPosition;
+      root.style.cursor = hideCursor ? "none" : "";
       root.style.padding = "0";
       root.style.margin = "0";
+      root.style.border = "0";
+      root.style.borderRadius = "0";
       root.style.overflow = "hidden";
-      root.style.width = "100%";
-      root.style.height = "100%";
+      root.style.width = "100vw";
+      root.style.height = "100vh";
     }
 
     return () => {
@@ -97,5 +145,5 @@ export function useDisplayWindowFitViewerStyles(): void {
         root.style.height = previous.rootHeight;
       }
     };
-  }, []);
+  }, [surface, hideCursor]);
 }

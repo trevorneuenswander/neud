@@ -1,6 +1,12 @@
 "use client";
 
 import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
+import {
+  confirmOutputInterruption,
+  fetchActiveOutputSessions,
+  stopActiveOutputRoutes,
+} from "@/lib/output/confirm-output-interruption";
+import { uniqueActiveOutputRouteIds } from "@/lib/output/output-interruption-guard";
 import { createClient } from "@/lib/supabase/client";
 import { withTimeout } from "@/lib/utils/with-timeout";
 
@@ -49,8 +55,21 @@ export async function requestDesktopSignOut(reason = "sign-out"): Promise<void> 
   const api = getDesktopAPI();
   if (isDesktopEnvironment() && typeof api?.engines?.isSessionActive === "function") {
     try {
-      const active = await api.engines.isSessionActive();
-      if (active && typeof window !== "undefined") {
+      const engineActive = await api.engines.isSessionActive();
+      const activeOutputs = await fetchActiveOutputSessions();
+      if (activeOutputs.length > 0) {
+        const continued = await confirmOutputInterruption("logout", {
+          activeOutputs,
+          scraperActive: engineActive,
+        });
+        if (!continued) {
+          return;
+        }
+        await stopActiveOutputRoutes(uniqueActiveOutputRouteIds(activeOutputs));
+        await forceLocalSignOut(reason);
+        return;
+      }
+      if (engineActive && typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("neud-sign-out-confirm", { detail: { reason } }),
         );

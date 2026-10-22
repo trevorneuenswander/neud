@@ -1,10 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PinnedDisplayLiveSlot } from "@/components/displays/PinnedDisplayLiveSlot";
 import { PinnedDisplayStackSlot } from "@/components/displays/PinnedDisplayStackSlot";
 import { PinnedViewerContextMenu } from "@/components/displays/PinnedViewerContextMenu";
+import { ReorderPinnedStackModal } from "@/components/displays/ReorderPinnedStackModal";
 import { Alert } from "@/components/ui/Alert";
+import { recordDesktopActivity } from "@/lib/desktop/activity-session-client";
+import { resolvePinnedDisplayLocalUrl } from "@/lib/displays/resolve-pinned-viewer-url";
+import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { usePinnedViewer } from "@/lib/displays/pinned-viewer-context";
 import {
   buildSinglePinnedDisplayMenuItems,
@@ -14,11 +18,12 @@ import {
   evaluatePinnedBandFailureStage,
   logPinnedBandLayoutSnapshot,
 } from "@/lib/displays/pinned-viewer-band-diagnostics";
+import { normalizePinnedViewerHeight } from "@/lib/displays/pinned-viewer-preference";
 import {
-  clampPinnedViewerHeight,
-  MIN_PINNED_VIEWER_HEIGHT_PX,
-  normalizePinnedViewerHeight,
-} from "@/lib/displays/pinned-viewer-preference";
+  computePinnedContentFitHeight,
+  resolvePinnedEffectiveHeightPx,
+  resolvePinnedMaxHeightPx,
+} from "@/lib/displays/pinned-viewer-content-height";
 import type { PinnedViewerMenuItem } from "@/components/displays/PinnedViewerContextMenu";
 
 const COLUMN_CLASS: Record<number, string> = {
@@ -30,19 +35,46 @@ const COLUMN_CLASS: Record<number, string> = {
 
 const RESIZE_HANDLE_HEIGHT_PX = 12;
 
+/** Deterministic pre-mount content width — matches prior SSR/default path. */
+const SSR_CONTENT_WIDTH_PX = 800;
+
 type MenuState = {
   x: number;
   y: number;
   items: PinnedViewerMenuItem[];
 };
 
+function measurePinnedLayoutAnchor(contentNode: HTMLElement | null): {
+  anchorHeightPx: number | null;
+  viewportHeightPx: number | null;
+} {
+  if (typeof window === "undefined" || !contentNode) {
+    return { anchorHeightPx: null, viewportHeightPx: null };
+  }
+  const projectRoot = contentNode.closest(".project-layout-root");
+  const shellMain = contentNode.closest(".main-content");
+  const anchor = projectRoot ?? shellMain;
+  const anchorHeightPx = anchor
+    ? Math.floor(anchor.getBoundingClientRect().height)
+    : Math.floor(window.innerHeight);
+  return {
+    anchorHeightPx: anchorHeightPx > 0 ? anchorHeightPx : null,
+    viewportHeightPx: Math.floor(window.innerHeight),
+  };
+}
+
 export function PinnedDisplayViewerArea() {
   const pinnedViewer = usePinnedViewer();
   const dragStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const [dragHeightPx, setDragHeightPx] = useState<number | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [reorderStackId, setReorderStackId] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const outerBandRef = useRef<HTMLDivElement>(null);
+  // SSR + first client render: identical deterministic defaults (no window/document).
+  const [contentWidthPx, setContentWidthPx] = useState(0);
+  const [anchorHeightPx, setAnchorHeightPx] = useState<number | null>(null);
+  const [viewportHeightPx, setViewportHeightPx] = useState<number | null>(null);
 
   const visibleSlots = pinnedViewer?.visibleSlots ?? [];
   const pinnedDisplays = pinnedViewer?.pinnedDisplays ?? [];
@@ -53,11 +85,117 @@ export function PinnedDisplayViewerArea() {
     [pinnedDisplays],
   );
 
-  const viewportHeight = typeof window !== "undefined" ? window.innerHeight : undefined;
-  const rawHeightPx = dragHeightPx ?? pinnedViewer?.viewerHeightPx;
-  const effectiveViewerHeightPx = normalizePinnedViewerHeight(rawHeightPx, viewportHeight);
+  const aspectDisplay = useMemo(() => {
+    let widestRatio = 0;
+    let selected: { width: number; height: number } | null = null;
+    for (const slot of visibleSlots) {
+      const displayIds =
+        slot.kind === "stack" ? slot.orderedMemberDisplayIds : [slot.displayId];
+      for (const displayId of displayIds) {
+        const display = displaysById.get(displayId);
+        if (!display || display.width <= 0 || display.height <= 0) continue;
+        const ratio = display.height / display.width;
+        if (ratio >= widestRatio) {
+          widestRatio = ratio;
+          selected = { width: display.width, height: display.height };
+        }
+      }
+    }
+    return selected ?? { width: 16, height: 9 };
+  }, [displaysById, visibleSlots]);
+
+  useLayoutEffect(() => {
+    const node = contentRef.current;
+    if (!node || count === 0) {
+      return;
+    }
+
+    const updateMeasurements = () => {
+      setContentWidthPx(node.clientWidth);
+      const measured = measurePinnedLayoutAnchor(node);
+      setAnchorHeightPx(measured.anchorHeightPx);
+      setViewportHeightPx(measured.viewportHeightPx);
+    };
+
+    updateMeasurements();
+
+    const observer = new ResizeObserver(() => updateMeasurements());
+    observer.observe(node);
+    const projectRoot = node.closest(".project-layout-root");
+    const shellMain = node.closest(".main-content");
+    const anchor = projectRoot ?? shellMain;
+    if (anchor instanceof Element) {
+      observer.observe(anchor);
+    }
+    window.addEventListener("resize", updateMeasurements);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateMeasurements);
+    };
+  }, [count]);
+
+  const contentFitHeightPx = useMemo(() => {
+    return computePinnedContentFitHeight({
+      contentWidthPx: contentWidthPx > 0 ? contentWidthPx : SSR_CONTENT_WIDTH_PX,
+      pinCount: Math.max(1, count),
+      displayWidth: aspectDisplay.width,
+      displayHeight: aspectDisplay.height,
+      // contentRef clientWidth is already inside horizontal padding.
+      horizontalPaddingPx: 0,
+    });
+  }, [aspectDisplay.height, aspectDisplay.width, contentWidthPx, count]);
+
+  // Content-fit height is the MAXIMUM for the current pin count — not a fixed height.
+  // Operator may shrink below it; persisted preference is preserved when under the max.
+  // Schema default 220 means "unset" → follow content-fit max until the operator resizes.
+  const maxPinnedHeightPx = resolvePinnedMaxHeightPx({
+    contentFitHeightPx,
+    anchorHeightPx,
+  });
+  const effectiveViewerHeightPx = resolvePinnedEffectiveHeightPx({
+    storedHeightPx: pinnedViewer?.viewerHeightPx,
+    maxPinnedHeightPx,
+    dragHeightPx,
+    viewportHeightPx,
+  });
 
   const closeMenu = useCallback(() => setMenu(null), []);
+
+  const copyLocalUrl = useCallback(
+    async (displayId: string) => {
+      if (!pinnedViewer) return;
+      const display = displaysById.get(displayId);
+      if (!display) return;
+      const localUrl = resolvePinnedDisplayLocalUrl({
+        projectId: pinnedViewer.projectId,
+        displayKey: display.displayKey,
+        url: display.url,
+        slug: display.slug,
+      });
+      try {
+        await navigator.clipboard.writeText(localUrl);
+        pinnedViewer.showNotice("Local URL copied");
+        if (shouldUseLocalDataClient()) {
+          void recordDesktopActivity({
+            type: "display.url-copied",
+            message: `Copied ${display.name} local URL`,
+            userAction: `copied ${display.name} local URL`,
+            source: "displays",
+            metadata: {
+              displayId: display.id,
+              displayKey: display.displayKey,
+              displayName: display.name,
+              projectId: pinnedViewer.projectId,
+              projectSlug: pinnedViewer.projectSlug,
+            },
+          });
+        }
+      } catch {
+        pinnedViewer.showNotice("Unable to copy Local URL.");
+      }
+    },
+    [displaysById, pinnedViewer],
+  );
 
   const openSingleDisplayMenu = useCallback(
     (event: React.MouseEvent, displayId: string) => {
@@ -70,13 +208,16 @@ export function PinnedDisplayViewerArea() {
         onUnpin: () => {
           void pinnedViewer.unpinDisplay(displayId);
         },
+        onCopyLocalUrl: () => {
+          void copyLocalUrl(displayId);
+        },
         onAddToStack: (target) => {
           void pinnedViewer.addDisplayToStack(displayId, target);
         },
       });
       setMenu({ x: event.clientX, y: event.clientY, items });
     },
-    [displaysById, pinnedViewer],
+    [copyLocalUrl, displaysById, pinnedViewer],
   );
 
   const openStackMenu = useCallback(
@@ -89,6 +230,9 @@ export function PinnedDisplayViewerArea() {
         onUnpinStack: () => {
           void pinnedViewer.unpinStack(slot.stackId);
         },
+        onReorderStack: () => {
+          setReorderStackId(slot.stackId);
+        },
         onRemoveFromStack: (memberDisplayId) => {
           void pinnedViewer.removeDisplayFromStack(slot.stackId, memberDisplayId);
         },
@@ -97,14 +241,6 @@ export function PinnedDisplayViewerArea() {
     },
     [displaysById, pinnedViewer, visibleSlots],
   );
-
-  const maxContentHeightPx = () => {
-    const projectRoot = contentRef.current?.closest(".project-layout-root");
-    const shellMain = contentRef.current?.closest(".main-content");
-    const anchor = projectRoot ?? shellMain;
-    const anchorHeight = anchor?.getBoundingClientRect().height ?? window.innerHeight;
-    return clampPinnedViewerHeight(Math.floor(anchorHeight * 0.5), anchorHeight);
-  };
 
   const endDrag = useCallback(() => {
     if (!pinnedViewer) return;
@@ -123,9 +259,9 @@ export function PinnedDisplayViewerArea() {
       const delta = event.clientY - drag.startY;
       const next = normalizePinnedViewerHeight(
         drag.startHeight + delta,
-        window.innerHeight,
+        typeof window !== "undefined" ? window.innerHeight : undefined,
       );
-      const capped = Math.min(next, maxContentHeightPx());
+      const capped = Math.min(next, maxPinnedHeightPx);
       setDragHeightPx(capped);
     };
     const onUp = () => endDrag();
@@ -135,13 +271,13 @@ export function PinnedDisplayViewerArea() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragHeightPx, endDrag, pinnedViewer]);
+  }, [dragHeightPx, endDrag, maxPinnedHeightPx, pinnedViewer]);
 
   useEffect(() => {
     if (count === 0) return;
     const content = contentRef.current;
     const outer = outerBandRef.current;
-    if (!content || !outer) return;
+    if (!content || !outer || typeof window === "undefined") return;
 
     const contentRect = content.getBoundingClientRect();
     const outerRect = outer.getBoundingClientRect();
@@ -174,6 +310,14 @@ export function PinnedDisplayViewerArea() {
     ) : null;
   }
 
+  const reorderStack =
+    reorderStackId == null
+      ? null
+      : (visibleSlots.find(
+          (slot): slot is Extract<(typeof visibleSlots)[number], { kind: "stack" }> =>
+            slot.kind === "stack" && slot.stackId === reorderStackId,
+        ) ?? null);
+
   const gridClass = COLUMN_CLASS[Math.min(4, Math.max(1, count))] ?? "grid-cols-4";
   const contentHeightStyle = `${effectiveViewerHeightPx}px`;
 
@@ -182,6 +326,8 @@ export function PinnedDisplayViewerArea() {
       ref={outerBandRef}
       className="relative isolate flex w-full max-w-full shrink-0 flex-col overflow-hidden border-b border-border bg-surface"
       data-pinned-viewer-band=""
+      data-pinned-content-fit-height={contentFitHeightPx}
+      data-pinned-max-height={maxPinnedHeightPx}
       style={{
         flex: "0 0 auto",
         minHeight: `${effectiveViewerHeightPx + RESIZE_HANDLE_HEIGHT_PX}px`,
@@ -200,7 +346,7 @@ export function PinnedDisplayViewerArea() {
         data-pinned-viewer-height={effectiveViewerHeightPx}
         style={{
           height: contentHeightStyle,
-          minHeight: `${MIN_PINNED_VIEWER_HEIGHT_PX}px`,
+          minHeight: contentHeightStyle,
           maxHeight: contentHeightStyle,
           flex: "0 0 auto",
           width: "100%",
@@ -237,6 +383,17 @@ export function PinnedDisplayViewerArea() {
           })}
         </div>
       </div>
+      {reorderStack ? (
+        <ReorderPinnedStackModal
+          key={reorderStack.stackId}
+          initialDisplayIds={reorderStack.orderedMemberDisplayIds}
+          displayNamesById={
+            new Map(pinnedDisplays.map((display) => [display.id, display.name]))
+          }
+          onSave={(orderedIds) => pinnedViewer.reorderStack(reorderStack.stackId, orderedIds)}
+          onClose={() => setReorderStackId(null)}
+        />
+      ) : null}
       <PinnedViewerContextMenu
         open={menu != null}
         x={menu?.x ?? 0}

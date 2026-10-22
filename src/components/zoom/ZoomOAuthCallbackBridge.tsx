@@ -1,87 +1,161 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { NeudLogo } from "@/components/branding/NeudLogo";
 import { Button } from "@/components/ui/Button";
+import { ZoomOAuthStatusCard } from "@/components/zoom/ZoomOAuthStatusCard";
 import {
-  buildNeudZoomDeepLink,
   extractZoomBridgeParams,
+  zoomBridgeLaunchLink,
   zoomBridgeOutcome,
 } from "@/lib/zoom/oauth-bridge";
 
+type ReceivedPhase = "connecting" | "opening" | "return";
+
+function launchNeudDeepLink(url: string) {
+  const frame = document.createElement("iframe");
+  frame.hidden = true;
+  frame.setAttribute("aria-hidden", "true");
+  frame.tabIndex = -1;
+  frame.src = url;
+  document.body.appendChild(frame);
+  window.setTimeout(() => frame.remove(), 2000);
+}
+
+function ArrowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5 12h14M13 6l6 6-6 6"
+      />
+    </svg>
+  );
+}
+
+function MinusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        d="M6 12h12"
+      />
+    </svg>
+  );
+}
+
+function CrossIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        d="M7 7l10 10M17 7 7 17"
+      />
+    </svg>
+  );
+}
+
 export function ZoomOAuthCallbackBridge() {
   const searchParams = useSearchParams();
-  const params = useMemo(
-    () => extractZoomBridgeParams(searchParams),
-    [searchParams],
-  );
+  const [params] = useState(() => extractZoomBridgeParams(searchParams));
   const outcome = zoomBridgeOutcome(params);
-  const deepLink = useMemo(() => buildNeudZoomDeepLink(params), [params]);
-  const [launchAttempted, setLaunchAttempted] = useState(false);
+  const deepLink = zoomBridgeLaunchLink(params);
+  const [phase, setPhase] = useState<ReceivedPhase>("connecting");
 
   useEffect(() => {
-    // Strip sensitive OAuth query values from the address bar.
     try {
       window.history.replaceState({}, "", "/oauth/zoom/callback");
     } catch {
-      // ignore
+      // The address bar can keep the query if the browser blocks replacement.
     }
   }, []);
 
   useEffect(() => {
-    if (outcome === "empty") return;
-    setLaunchAttempted(true);
-    try {
-      window.location.href = deepLink;
-    } catch {
-      // User can retry via button.
-    }
+    if (!deepLink) return;
+    launchNeudDeepLink(deepLink);
+    if (outcome !== "received") return;
+    const openingTimer = window.setTimeout(() => setPhase("opening"), 700);
+    const returnTimer = window.setTimeout(() => setPhase("return"), 2400);
+    return () => {
+      window.clearTimeout(openingTimer);
+      window.clearTimeout(returnTimer);
+    };
   }, [deepLink, outcome]);
 
   function openNeud() {
-    setLaunchAttempted(true);
-    window.location.href = deepLink;
+    if (!deepLink) return;
+    launchNeudDeepLink(deepLink);
   }
 
-  const isError = outcome === "error" || outcome === "empty";
+  if (outcome === "denied") {
+    return (
+      <ZoomOAuthStatusCard
+        tone="warning"
+        icon={<MinusIcon />}
+        heading="Zoom Authorization Cancelled"
+        description="Your Zoom account was not connected."
+        footnote="You can safely close this window and return to NEUD."
+      />
+    );
+  }
+
+  if (outcome !== "received" || !deepLink) {
+    return (
+      <ZoomOAuthStatusCard
+        tone="danger"
+        icon={<CrossIcon />}
+        heading="Unable to Complete Authorization"
+        description="The Zoom authorization response was incomplete or invalid. Return to NEUD and try again."
+        footnote="You can safely close this window and return to NEUD."
+      />
+    );
+  }
+
+  if (phase === "opening") {
+    return (
+      <ZoomOAuthStatusCard
+        tone="primary"
+        icon={<ArrowIcon />}
+        progress
+        heading="Opening NEUD"
+        description="We're returning you to the NEUD desktop application."
+      />
+    );
+  }
+
+  if (phase === "return") {
+    return (
+      <ZoomOAuthStatusCard
+        tone="primary"
+        icon={<ArrowIcon />}
+        heading="Return to NEUD"
+        description="If NEUD did not open automatically, use the button below to return to the application."
+        action={
+          <Button type="button" variant="primary" onClick={openNeud}>
+            Open NEUD
+          </Button>
+        }
+        footnote="You can safely close this window and return to NEUD."
+      />
+    );
+  }
 
   return (
-    <div className="flex min-h-[70vh] flex-col items-center justify-center px-6 py-16 text-center">
-      <NeudLogo size="lg" href={null} showTagline={false} />
-      <div className="mt-10 max-w-md space-y-4">
-        {isError ? (
-          <>
-            <h1 className="text-2xl font-semibold text-foreground">
-              Zoom connection was not completed
-            </h1>
-            <p className="text-sm text-muted">
-              You can return to the NEUD desktop application and try Connect
-              Zoom again.
-            </p>
-            <Button type="button" variant="primary" onClick={openNeud}>
-              Return to NEUD
-            </Button>
-          </>
-        ) : (
-          <>
-            <h1 className="text-2xl font-semibold text-foreground">
-              Zoom connected successfully
-            </h1>
-            <p className="text-sm text-muted">
-              You can return to the NEUD desktop application.
-            </p>
-            <Button type="button" variant="primary" onClick={openNeud}>
-              Open NEUD
-            </Button>
-            {launchAttempted ? (
-              <p className="text-xs text-muted">
-                If NEUD did not open automatically, click Open NEUD.
-              </p>
-            ) : null}
-          </>
-        )}
-      </div>
-    </div>
+    <ZoomOAuthStatusCard
+      tone="primary"
+      icon={<ArrowIcon />}
+      heading="Connecting Zoom to NEUD"
+      description="Your authorization has been received. Returning to NEUD to finish connecting your account."
+    />
   );
 }

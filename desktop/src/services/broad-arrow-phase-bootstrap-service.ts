@@ -73,36 +73,35 @@ export class BroadArrowPhaseBootstrapService {
       };
     }
 
-    const existingProjects = this.projects.list();
-    let deletedProjectCount = 0;
-
-    for (const project of existingProjects) {
-      const result = this.projectDeletion.deleteProjectInternal({
-        projectId: project.id,
-      });
-      if (result.ok) {
-        deletedProjectCount += 1;
-      }
+    // v0.3.0+: Broad Arrow is a downloadable project package. Fresh installs must
+    // NOT auto-create/download it. Existing local BA rows are repaired above and
+    // migrated to package v1 by ProjectPackageService.migrateLegacyInstalls().
+    if (canonical) {
+      const engine = this.dataSources.ensureWebpageScraper(
+        canonical.id,
+        BROAD_ARROW_CANONICAL_PROJECT.projectType,
+      );
+      this.bagSources.ensureBagScraperSources(engine.id);
+      const urlsApplied = this.applyEnvironmentUrls(engine.id);
+      const credentialsSeeded = this.credentials.seedFromEnvironment(engine.id);
+      this.ensureEngineSettings(engine.id);
+      this.ensureLoginConfig(engine.id);
+      this.settings.set(BROAD_ARROW_PHASE_SETTING_KEY, "complete");
+      this.settings.set(
+        BROAD_ARROW_DEFAULT_PROJECT_SLUG_SETTING,
+        BROAD_ARROW_CANONICAL_PROJECT.slug,
+      );
+      return {
+        bootstrapped: false,
+        repaired: true,
+        projectId: canonical.id,
+        projectSlug: BROAD_ARROW_CANONICAL_PROJECT.slug,
+        engineId: engine.id,
+        deletedProjectCount: 0,
+        credentialsSeeded,
+        urlsApplied,
+      };
     }
-
-    const project = this.projects.create({
-      name: BROAD_ARROW_CANONICAL_PROJECT.name,
-      slug: BROAD_ARROW_CANONICAL_PROJECT.slug,
-      projectType: BROAD_ARROW_CANONICAL_PROJECT.projectType,
-      description:
-        "Broad Arrow auction graphics powered by the BAG auction scraper.",
-      icon: "bag",
-    });
-
-    const engine = this.dataSources.ensureWebpageScraper(
-      project.id,
-      BROAD_ARROW_CANONICAL_PROJECT.projectType,
-    );
-    this.bagSources.ensureBagScraperSources(engine.id);
-    const urlsApplied = this.applyEnvironmentUrls(engine.id);
-    const credentialsSeeded = this.credentials.seedFromEnvironment(engine.id);
-    this.ensureEngineSettings(engine.id);
-    this.ensureLoginConfig(engine.id);
 
     this.settings.set(BROAD_ARROW_PHASE_SETTING_KEY, "complete");
     this.settings.set(
@@ -111,14 +110,12 @@ export class BroadArrowPhaseBootstrapService {
     );
 
     return {
-      bootstrapped: true,
+      bootstrapped: false,
       repaired: false,
-      projectId: project.id,
       projectSlug: BROAD_ARROW_CANONICAL_PROJECT.slug,
-      engineId: engine.id,
-      deletedProjectCount,
-      credentialsSeeded,
-      urlsApplied,
+      deletedProjectCount: 0,
+      credentialsSeeded: false,
+      urlsApplied: [],
     };
   }
 

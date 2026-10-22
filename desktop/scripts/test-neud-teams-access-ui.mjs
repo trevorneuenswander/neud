@@ -10,13 +10,23 @@ function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
 }
 
-test("teams actions row keeps Show members, Manage, then Delete with equal button sizing", () => {
+test("teams actions row keeps Manage then Delete with equal button sizing and left alignment", () => {
   const panel = read("src/components/access-management/TeamsPanel.tsx");
   const deleteBtn = read("src/components/access-management/AccessTeamDeleteButton.tsx");
-  assert.match(panel, /flex flex-nowrap items-center justify-end gap-2/);
+  assert.match(panel, /flex flex-nowrap items-center justify-start gap-2/);
   assert.match(panel, /ACCESS_TABLE_ACTION_BUTTON_CLASS/);
-  assert.match(panel, /Show members[\s\S]*Manage[\s\S]*AccessTeamDeleteButton/s);
+  assert.match(panel, /Manage[\s\S]*AccessTeamDeleteButton/s);
+  assert.doesNotMatch(panel, /Show members/);
   assert.match(deleteBtn, /ACCESS_TABLE_ACTION_BUTTON_CLASS/);
+});
+
+test("teams Create and Manage use NeudModal with members in Manage", () => {
+  const panel = read("src/components/access-management/TeamsPanel.tsx");
+  assert.match(panel, /NeudModal/);
+  assert.match(panel, /showCreateModal/);
+  assert.match(panel, /selectedTeamId/);
+  assert.match(panel, /Members/);
+  assert.doesNotMatch(panel, /expandedTeamId/);
 });
 
 test("NEUD team delete button is suppressed in teams panel wiring", () => {

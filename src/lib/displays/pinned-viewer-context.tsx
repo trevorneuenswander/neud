@@ -14,6 +14,7 @@ import {
   localAddPinnedDisplayToStack,
   localGetPinnedViewerState,
   localRemovePinnedDisplayFromStack,
+  localReorderPinnedViewerStack,
   localSetPinnedViewerHeight,
   localTogglePinnedDisplay,
   localUnpinPinnedViewerStack,
@@ -35,6 +36,8 @@ import {
   mergeOptimisticPinnedDisplays,
   type PinFailureStage,
 } from "@/lib/displays/pinned-viewer-pin-diagnostics";
+import { guardPinnedStackMutation } from "@/lib/output/guard-pinned-stack-mutation";
+import { OutputInterruptionCanceledError } from "@/lib/output/output-interruption-guard";
 
 type PinnedViewerContextValue = {
   projectId: string;
@@ -58,6 +61,10 @@ type PinnedViewerContextValue = {
       | { kind: "stack"; stackId: string },
   ) => Promise<void>;
   removeDisplayFromStack: (stackId: string, displayId: string) => Promise<void>;
+  /** Persist TOP…BOTTOM layer order for a stack. Resolves true when saved. */
+  reorderStack: (stackId: string, orderedDisplayIds: string[]) => Promise<boolean>;
+  /** Brief, non-blocking notice in the pinned viewer band. */
+  showNotice: (message: string) => void;
   unpinStack: (stackId: string) => Promise<void>;
   setViewerHeightPx: (height: number, options?: { persist?: boolean }) => void;
   refresh: () => Promise<void>;
@@ -295,6 +302,9 @@ export function PinnedViewerProvider({
           ),
         );
       } catch (error) {
+        if (error instanceof OutputInterruptionCanceledError) {
+          return;
+        }
         setState(previous ?? null);
         const message = error instanceof Error ? error.message : "Could not update pinned viewer.";
         showPinMessage(message);
@@ -321,32 +331,82 @@ export function PinnedViewerProvider({
         | { kind: "display"; displayId: string }
         | { kind: "stack"; stackId: string },
     ) => {
+      const pinnedStacks = state?.pinnedStacks ?? [];
       await applyPinnedMutation(() =>
-        localAddPinnedDisplayToStack(projectSlug, projectId, {
-          sourceDisplayId,
+        guardPinnedStackMutation({
+          action: "addToStack",
           target,
+          pinnedStacks,
+          mutate: () =>
+            localAddPinnedDisplayToStack(projectSlug, projectId, {
+              sourceDisplayId,
+              target,
+            }),
         }),
       );
     },
-    [applyPinnedMutation, projectId, projectSlug],
+    [applyPinnedMutation, projectId, projectSlug, state?.pinnedStacks],
   );
 
   const removeDisplayFromStack = useCallback(
     async (stackId: string, displayId: string) => {
+      const pinnedStacks = state?.pinnedStacks ?? [];
       await applyPinnedMutation(() =>
-        localRemovePinnedDisplayFromStack(projectSlug, projectId, { stackId, displayId }),
+        guardPinnedStackMutation({
+          action: "removeFromStack",
+          stackId,
+          pinnedStacks,
+          mutate: () =>
+            localRemovePinnedDisplayFromStack(projectSlug, projectId, { stackId, displayId }),
+        }),
       );
     },
-    [applyPinnedMutation, projectId, projectSlug],
+    [applyPinnedMutation, projectId, projectSlug, state?.pinnedStacks],
+  );
+
+  const reorderStack = useCallback(
+    async (stackId: string, orderedDisplayIds: string[]) => {
+      if (!enabled) return false;
+      const pinnedStacks = state?.pinnedStacks ?? [];
+      try {
+        const next = await guardPinnedStackMutation({
+          action: "reorderStack",
+          stackId,
+          pinnedStacks,
+          mutate: () =>
+            localReorderPinnedViewerStack(projectSlug, projectId, {
+              stackId,
+              orderedDisplayIds,
+            }),
+        });
+        setState(next);
+        return true;
+      } catch (error) {
+        if (error instanceof OutputInterruptionCanceledError) {
+          return false;
+        }
+        showPinMessage(
+          error instanceof Error ? error.message : "Could not reorder stack.",
+        );
+        return false;
+      }
+    },
+    [enabled, projectId, projectSlug, showPinMessage, state?.pinnedStacks],
   );
 
   const unpinStack = useCallback(
     async (stackId: string) => {
+      const pinnedStacks = state?.pinnedStacks ?? [];
       await applyPinnedMutation(() =>
-        localUnpinPinnedViewerStack(projectSlug, projectId, stackId),
+        guardPinnedStackMutation({
+          action: "unpinStack",
+          stackId,
+          pinnedStacks,
+          mutate: () => localUnpinPinnedViewerStack(projectSlug, projectId, stackId),
+        }),
       );
     },
-    [applyPinnedMutation, projectId, projectSlug],
+    [applyPinnedMutation, projectId, projectSlug, state?.pinnedStacks],
   );
 
   const setViewerHeightPx = useCallback(
@@ -398,6 +458,8 @@ export function PinnedViewerProvider({
       unpinDisplay,
       addDisplayToStack,
       removeDisplayFromStack,
+      reorderStack,
+      showNotice: showPinMessage,
       unpinStack,
       setViewerHeightPx,
       refresh,
@@ -408,6 +470,8 @@ export function PinnedViewerProvider({
       pinnedDisplayIds,
       pinnedDisplays,
       removeDisplayFromStack,
+      reorderStack,
+      showPinMessage,
       unpinDisplay,
       unpinStack,
       visibleSlots,

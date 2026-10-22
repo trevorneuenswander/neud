@@ -45,7 +45,7 @@ function formatEventTypeLabel(eventType: string): string {
     "user.access_changed": "User access changed",
     "scraper.started": "Scraper started",
     "scraper.stopped": "Scraper stopped",
-    "controller.data_updated": "Local Controller updated",
+    "controller.data_updated": "Manual Controller updated",
     "data-source.changed": "Data source changed",
     "team.created": "Team created",
     "team.updated": "Team updated",

@@ -5,19 +5,29 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { MobileNavTrigger } from "@/components/portal/MobileNav";
 import type { ProjectDataType } from "@/lib/projects/constants";
-import { projectSupportsBagController } from "@/lib/projects/constants";
+import {
+  projectSupportsBagController,
+  projectSupportsSemaWorkflow,
+} from "@/lib/projects/constants";
 import { projectSupportsDataEngines } from "@/lib/data-engines/constants";
 import type { ProjectRole } from "@/lib/projects/project-permissions";
 import {
   PROJECT_NAV_DROPDOWN_WIDTH,
   PROJECT_NAV_DROPDOWN_WIDTH_CLASS,
 } from "@/components/projects/project-nav-layout";
+import {
+  buildCapabilityNavItems,
+  defaultCapabilitiesForProjectType,
+  normalizeCapabilityIds,
+  type ProjectCapabilityId,
+} from "@/lib/projects/capabilities";
 
 export type ProjectNavLayoutMode = "horizontal" | "dropdown";
 
 type ProjectNavProps = {
   slug: string;
   projectType: ProjectDataType;
+  capabilities?: string[] | null;
   canManageSettings: boolean;
   projectRole?: ProjectRole;
   layoutMode?: ProjectNavLayoutMode;
@@ -28,14 +38,6 @@ type ProjectNavItem = {
   href: string;
   label: string;
 };
-
-const baseNavItems = [
-  { href: "", label: "Overview" },
-  { href: "/data-engines", label: "Webpage Scraper", engineOnly: true },
-  { href: "/controller", label: "Local Controller", bagOnly: true },
-  { href: "/displays", label: "Displays" },
-  { href: "/settings", label: "Settings", settingsOnly: true },
-] as const;
 
 function ProjectNavLinks({
   basePath,
@@ -200,9 +202,21 @@ function ProjectNavDropdown({
   );
 }
 
+function resolveNavCapabilities(
+  projectType: ProjectDataType,
+  capabilities?: string[] | null,
+): ProjectCapabilityId[] {
+  const normalized = normalizeCapabilityIds(capabilities);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return defaultCapabilitiesForProjectType(projectType);
+}
+
 export function ProjectNav({
   slug,
   projectType,
+  capabilities,
   canManageSettings,
   projectRole = "admin",
   layoutMode = "horizontal",
@@ -210,36 +224,51 @@ export function ProjectNav({
 }: ProjectNavProps) {
   const pathname = usePathname();
   const basePath = `/projects/${slug}`;
-  const supportsEngines = projectSupportsDataEngines(projectType);
-  const supportsBagController = projectSupportsBagController(projectType);
   const isViewer = projectRole === "viewer";
+  const capabilityIds = resolveNavCapabilities(projectType, capabilities);
 
-  const engineNavLabel = "Webpage Scraper";
+  // Preserve BA/SEMA behavior when capabilities match legacy types.
+  const supportsEngines =
+    capabilityIds.includes("webpage-scraper") ||
+    projectSupportsDataEngines(projectType);
+  const supportsBagController =
+    capabilityIds.includes("manual-controller") &&
+    projectSupportsBagController(projectType);
+  const supportsSema =
+    capabilityIds.includes("rundown-schedule") ||
+    capabilityIds.includes("data-source") ||
+    projectSupportsSemaWorkflow(projectType);
 
-  const navItems: ProjectNavItem[] = baseNavItems
-    .filter((item) => {
-      if (isViewer) {
-        return item.href === "/displays";
-      }
-      if ("settingsOnly" in item && item.settingsOnly) {
-        return canManageSettings;
-      }
-      if ("engineOnly" in item && item.engineOnly) {
-        return supportsEngines;
-      }
-      if ("bagOnly" in item && item.bagOnly) {
-        return supportsBagController;
-      }
-      if (item.href === "" && isViewer) {
-        return false;
-      }
-      return true;
-    })
-    .map((item) =>
-      item.href === "/data-engines"
-        ? { href: item.href, label: engineNavLabel }
-        : { href: item.href, label: item.label },
-    );
+  const capabilityItems = buildCapabilityNavItems(capabilityIds).filter((item) => {
+    // Prefer existing BA/SEMA routes over generic placeholders when available.
+    if (item.href === "/data-source" && supportsSema) {
+      return false;
+    }
+    if (item.href === "/data-engines" && !supportsEngines) {
+      return false;
+    }
+    if (item.href === "/controller" && !supportsBagController && !supportsSema) {
+      // Still show for modular manual-controller projects.
+      return capabilityIds.includes("manual-controller");
+    }
+    if (item.href === "/google-sheet" && !supportsSema) {
+      // Rundown on non-SEMA projects uses schedule placeholder later.
+      return capabilityIds.includes("rundown-schedule");
+    }
+    return true;
+  });
+
+  const navItems: ProjectNavItem[] = [];
+  if (!isViewer) {
+    navItems.push({ href: "", label: "Overview" });
+    for (const item of capabilityItems) {
+      navItems.push({ href: item.href, label: item.label });
+    }
+  }
+  navItems.push({ href: "/displays", label: "Displays" });
+  if (!isViewer && canManageSettings) {
+    navItems.push({ href: "/settings", label: "Settings" });
+  }
 
   const showDropdown = layoutMode === "dropdown";
 

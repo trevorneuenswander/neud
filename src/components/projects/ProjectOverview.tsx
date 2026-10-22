@@ -1,9 +1,14 @@
 import { OverviewEngineStatistics } from "@/components/projects/OverviewEngineStatistics";
 import { ProjectActivityPanel } from "@/components/projects/ProjectActivityPanel";
+import { ProjectCapabilityTags } from "@/components/projects/ProjectCapabilityTags";
 import { ProjectStatusBadge } from "@/components/projects/ProjectStatusBadge";
 import { DisclosureSection } from "@/components/ui/DisclosureSection";
 import { UsersWithAccessSection } from "@/components/projects/UsersWithAccessSection";
 import { formatProjectDate } from "@/lib/projects/format";
+import {
+  defaultCapabilitiesForProjectType,
+  normalizeCapabilityIds,
+} from "@/lib/projects/capabilities";
 import type { ProjectCreator } from "@/lib/displays/creator";
 import type { ProjectAccessContext } from "@/lib/projects/types";
 import type {
@@ -25,14 +30,22 @@ type ProjectOverviewProps = {
   access: ProjectAccessContext;
   creator: ProjectCreator;
   scraperStats?: OverviewScraperStats | null;
+  /** Canonical multi-capability model (Pass 23). Prefer over legacy project_type. */
+  capabilities?: string[] | null;
 };
 
 export function ProjectOverview({
   access,
   creator,
   scraperStats = null,
+  capabilities = null,
 }: ProjectOverviewProps) {
   const { project } = access;
+  const capabilityIds = normalizeCapabilityIds(
+    capabilities?.length
+      ? capabilities
+      : defaultCapabilitiesForProjectType(project.project_type),
+  );
 
   return (
     <div className="space-y-8">
@@ -80,8 +93,10 @@ export function ProjectOverview({
       <DisclosureSection title="Project metadata">
         <dl className="space-y-3 text-sm">
           <div className="flex justify-between gap-4">
-            <dt className="text-muted">Project type</dt>
-            <dd className="text-foreground">Webpage Scraper</dd>
+            <dt className="text-muted">Capabilities</dt>
+            <dd className="text-right">
+              <ProjectCapabilityTags capabilities={capabilityIds} />
+            </dd>
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-muted">Creator</dt>

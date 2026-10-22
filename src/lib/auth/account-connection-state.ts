@@ -6,6 +6,7 @@ export type SharedAuthSnapshotFields = {
   hasCloudSession: boolean;
   hasRestorableCloudSession: boolean;
   reauthenticationRequired: boolean;
+  tokenExpired?: boolean;
 };
 
 export type ProfileIndicatorState = "online" | "offline" | "sign_in";
@@ -59,5 +60,24 @@ export function dashboardConnectionLabel(state: DashboardConnectionState): strin
       return "Offline";
     case "sign_in":
       return "Sign In";
+  }
+}
+
+export type CloudConnectionState =
+  | "connected"
+  | "network_offline"
+  | "reconnecting"
+  | "authentication_required";
+
+export function cloudConnectionLabel(state: CloudConnectionState): string {
+  switch (state) {
+    case "connected":
+      return "Connected";
+    case "network_offline":
+      return "Network Offline";
+    case "reconnecting":
+      return "Cloud Temporarily Reconnecting";
+    case "authentication_required":
+      return "Authentication Required";
   }
 }

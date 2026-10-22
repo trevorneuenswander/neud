@@ -8,10 +8,11 @@ import {
   shell,
   session,
   nativeImage,
+  powerMonitor,
 } from "electron";
 import { registerAppIpc, type CloseRequestResponse } from "./ipc/app";
 import { registerUpdateIpc } from "./ipc/updates";
-import { sendToRenderer } from "./ipc/channels";
+import { broadcastToAllRenderers, sendToRenderer } from "./ipc/channels";
 import { registerAuthIpc } from "./ipc/auth";
 import { registerSupabasePublicConfigIpc } from "./ipc/supabase-public-config";
 import { AUTH_EXPLICITLY_SIGNED_OUT_KEY } from "./auth/session-recovery-keys";
@@ -36,15 +37,39 @@ import {
   setHelpMenuCheckForUpdatesHandler,
 } from "./services/auto-update-service";
 import { getCanonicalReleaseVersion } from "./app/release-version";
+import { closeStartupSplash, showStartupSplash } from "./app/splash-window";
 import { clearAuthenticationForInstalledUpdate } from "./services/clear-authentication-for-installed-update";
 import { evaluatePendingInstalledUpdateOnStartup } from "./services/update-session-handler";
 import { registerCredentialsIpc } from "./ipc/credentials";
 import { registerEnginesIpc } from "./ipc/engines";
+import { registerOutputIpc } from "./ipc/output";
+import { registerSystemIpc } from "./ipc/system";
+import { disposePerformanceGpuMetrics } from "./services/performance-metrics-service";
+import { OutputEngine, serializeOutputDevice } from "./output/output-engine-core";
+import type { ActiveOutputSession } from "./output/output-engine-core";
+import { OffscreenOutputRenderer } from "./output/offscreen-output-renderer";
+import { DiskRecordingService } from "./output/disk-recording-service";
+import { createDeckLinkPort } from "./output/native-decklink-port";
+import { SqliteOutputRouteStore } from "./output/sqlite-output-route-store";
+import { ElectronOutputWindowHost } from "./output/output-window-host";
+import {
+  discoverElectronDisplays,
+  watchElectronDisplays,
+} from "./output/electron-display-discovery";
+import { setOutputDiagnosticsProvider } from "./services/diagnostics-export-service";
 import { registerLocalDataIpc } from "./ipc/local-data";
 import { registerActivityIpc } from "./ipc/activity";
 import { registerDisplayDataSourceIpc } from "./ipc/display-data-source";
 import { registerDisplaysIpc, shutdownDisplayPreviewWindows } from "./ipc/displays";
+import { registerEditorIpc } from "./ipc/editor";
+import { closeAllDisplaySettingsWindows } from "./services/display-settings-window-manager";
+import { closeAllGraphicEditorWindows } from "./services/graphic-editor-window-manager";
 import { registerOfflineAuctionIpc } from "./ipc/offline-auction";
+import { registerMediaIpc } from "./ipc/media";
+import { registerVideoPlaybackIpc } from "./ipc/video-playback";
+import { VideoMediaStore } from "./media/video-media-store";
+import { VideoPlaybackService } from "./media/video/video-playback-service";
+import { VideoFrameHub } from "./media/video/video-frame-hub";
 import {
   closeLocalDatabase,
   openLocalDatabase,
@@ -58,6 +83,24 @@ import { UserDisplayOrderRepository } from "./repositories/user-display-order-re
 import { UserPinnedViewerRepository } from "./repositories/user-pinned-viewer-repository";
 import { PinnedViewerSyncService } from "./services/pinned-viewer/pinned-viewer-sync-service";
 import { ProjectsRepository } from "./repositories/projects-repository";
+import { ProjectCapabilitiesRepository } from "./repositories/project-capabilities-repository";
+import { ProjectPackagesRepository } from "./repositories/project-packages-repository";
+import { ProjectPackageService } from "./packages/project-package-service";
+import { CloudPackagePublisher } from "./packages/cloud-package-publisher";
+import { SemaScheduleService } from "./packages/sema/sema-schedule-service";
+import { SemaPackageDisplayHydration } from "./packages/sema/sema-package-display-hydration";
+import { LiveChatService } from "./live-chat/live-chat-service";
+import { LiveChatDisplayHydration } from "./live-chat/live-chat-display-hydration";
+import { ZoomIntegrationService } from "./integrations/zoom/zoom-integration-service";
+import { YouTubeIntegrationService } from "./integrations/youtube/youtube-integration-service";
+import {
+  captureStartupProtocolUrlFromArgv,
+  extractNeudProtocolUrl,
+  queueOrDeliverProtocolUrl,
+  registerNeudProtocolClient,
+  setNeudProtocolHandler,
+} from "./services/neud-protocol";
+import type { ProjectPackageManifest } from "./packages/types";
 import { getAppPaths } from "./services/app-paths";
 import { AuctionDatasetService } from "./services/auction-dataset-service";
 import { AuthLicenseManager } from "./services/auth-license-manager";
@@ -66,6 +109,7 @@ import { loadSupabasePublicConfigWithSource } from "./services/supabase-public-c
 import { writeCloudRuntimeConfigDiagnostic } from "./services/cloud-runtime-config";
 import { SupabaseUserSessionService } from "./services/supabase-user-session";
 import { AuthenticatedCloudCoordinator } from "./services/authenticated-cloud-coordinator";
+import { CloudSessionKeeper } from "./services/cloud-session-keeper";
 import { SHARED_CLOUD_AUTH_DIAGNOSTICS_KEY } from "./services/shared-cloud-auth-diagnostics";
 import { upsertDesktopHost } from "./services/desktop-cloud-client";
 import { DesktopAdminApiClient } from "./services/desktop-admin-api-client";
@@ -244,6 +288,7 @@ writePackagedBootstrapLog("main.module_loaded");
 
 let mainWindow: BrowserWindow | null = null;
 let localDataService: LocalDataService | null = null;
+let semaScheduleService: SemaScheduleService | null = null;
 let activitySyncService: import("./services/activity-sync/activity-sync-service").ActivitySyncService | null =
   null;
 let displaySyncService: DisplaySyncService | null = null;
@@ -254,8 +299,12 @@ let offlineAuctionExportService: OfflineAuctionExportService | null = null;
 let currencyRateService: CurrencyRateService | null = null;
 let auctionDatasetService: AuctionDatasetService | null = null;
 let engineManager: EngineManager | null = null;
+let outputEngine: OutputEngine | null = null;
+let outputRendererOrigin = "";
 let nextServer: NextServerService | null = null;
 let localApiServer: LocalApiServer | null = null;
+let videoPlaybackService: VideoPlaybackService | null = null;
+let youtubeIntegrationService: YouTubeIntegrationService | null = null;
 let localDatabase: LocalDatabase | null = null;
 let processManager: ProcessManager | null = null;
 let isQuitting = false;
@@ -278,11 +327,23 @@ if (process.env.NEUD_DISPLAY_RENDERING_DIAG === "1") {
   app.commandLine.appendSwitch("remote-debugging-port", "9333");
 }
 
+captureStartupProtocolUrlFromArgv();
+
+// macOS: deep link while app is launching or already running.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  queueOrDeliverProtocolUrl(url);
+});
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    const protocolUrl = extractNeudProtocolUrl(argv);
+    if (protocolUrl) {
+      queueOrDeliverProtocolUrl(protocolUrl);
+    }
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -326,22 +387,29 @@ app.on("window-all-closed", () => {
 
 async function startApplication() {
   writePackagedBootstrapLog("startup.startApplication");
+  showStartupSplash();
   logStartupEnvironment();
   logStartupCheckpoint("startup.begin");
-  validateDesktopRuntimeAssets();
-  validateBundledDisplaySources();
-  logStartupCheckpoint("startup.runtime_assets_validated");
-  const releaseVersion = syncElectronReleaseVersion();
-  console.info(`[desktop] Release version ${releaseVersion}`);
-  logStartupCheckpoint("startup.release_version", { releaseVersion });
-  await createMainWindow();
-  logStartupReady({
-    localApiUrl: localApiServer?.getInfo()?.baseUrl ?? null,
-    nextUrl: nextServer?.getUrl() ?? null,
-  });
+  try {
+    validateDesktopRuntimeAssets();
+    validateBundledDisplaySources();
+    logStartupCheckpoint("startup.runtime_assets_validated");
+    const releaseVersion = syncElectronReleaseVersion();
+    console.info(`[desktop] Release version ${releaseVersion}`);
+    logStartupCheckpoint("startup.release_version", { releaseVersion });
+    await createMainWindow();
+    logStartupReady({
+      localApiUrl: localApiServer?.getInfo()?.baseUrl ?? null,
+      nextUrl: nextServer?.getUrl() ?? null,
+    });
+  } catch (error) {
+    closeStartupSplash();
+    throw error;
+  }
 }
 
 async function handleStartupFailure(error: unknown) {
+  closeStartupSplash();
   const message = formatStartupError(error);
   console.error("[desktop] Failed to start:", error);
   logStartupFailure(error);
@@ -372,9 +440,16 @@ async function cleanupStartupResources() {
   offlineAuctionExportService = null;
 }
 
+function readLiveOutputSessions(): ActiveOutputSession[] {
+  return outputEngine?.getActiveOutputs() ?? [];
+}
+
 function shouldBlockAppClose(): boolean {
   if (forceCloseConfirmed || shutdownInProgress) {
     return false;
+  }
+  if (outputEngine?.hasActiveSession()) {
+    return true;
   }
   return engineManager?.isScraperSessionActive() ?? false;
 }
@@ -394,6 +469,8 @@ async function promptExitConfirmation(
     closePromptResolver = resolve;
     sendToRenderer(mainWindow!, "neud:app:closeRequested", {
       shutdownFailed: options.shutdownFailed === true,
+      scraperActive: engineManager?.isScraperSessionActive() ?? false,
+      activeOutputs: readLiveOutputSessions(),
     });
   });
   closePromptPending = false;
@@ -424,10 +501,25 @@ function handleCloseRequestResponse(action: CloseRequestResponse) {
 async function performGracefulShutdown(): Promise<boolean> {
   if (shutdownInProgress) return true;
   shutdownInProgress = true;
+  // Notify renderers before tearing down local API / IPC so UI can freeze
+  // last-known account state instead of flashing teardown errors.
+  broadcastToAllRenderers("neud:app:lifecycle", { phase: "shutting-down" });
   logWorkerLifecycleTimeline("application-graceful-shutdown-started", {
     includeStack: true,
   });
+  youtubeIntegrationService?.dispose();
+  try {
+    disposePerformanceGpuMetrics();
+  } catch {
+    // Best-effort — GPU collector must not block shutdown.
+  }
+  outputEngine?.stopAll();
+  videoPlaybackService?.closeAll();
+  videoPlaybackService = null;
+  semaScheduleService?.stopAllPolling();
   shutdownDisplayPreviewWindows();
+  closeAllGraphicEditorWindows();
+  closeAllDisplaySettingsWindows();
 
   try {
     await cancelActiveExportsForShutdown();
@@ -559,6 +651,10 @@ async function createMainWindow() {
   migrateLegacyAppSettings(localDatabase);
 
   const projectsRepository = new ProjectsRepository(localDatabase);
+  const projectCapabilitiesRepository = new ProjectCapabilitiesRepository(
+    localDatabase,
+  );
+  const projectPackagesRepository = new ProjectPackagesRepository(localDatabase);
   const dataSourcesRepository = new DataSourcesRepository(localDatabase);
   const appSettingsRepository = new AppSettingsRepository(localDatabase);
   runDefaultOwnerEmailMigration({
@@ -762,6 +858,7 @@ async function createMainWindow() {
     projectTeamAssignmentsRepository,
     projectsRepository,
     dataSourcesRepository,
+    localProjectMembershipsRepository,
   );
 
   const bagSourceService = new BagSourceService(
@@ -848,6 +945,33 @@ async function createMainWindow() {
     userDisplayOrderRepository,
     userPinnedViewerRepository,
   );
+  const projectPackageService = new ProjectPackageService(
+    paths,
+    projectPackagesRepository,
+    projectsRepository,
+  );
+  projectPackageService.setCloudPackagePublisher(
+    new CloudPackagePublisher(authenticatedCloud),
+  );
+  localDataService.setProjectPackages(projectPackageService);
+  localDataService.setProjectCapabilitiesRepository(projectCapabilitiesRepository);
+  const liveChatService = new LiveChatService(paths);
+  const zoomIntegrationService = new ZoomIntegrationService(paths);
+  youtubeIntegrationService = new YouTubeIntegrationService(paths);
+  registerNeudProtocolClient();
+  setNeudProtocolHandler(async (url) => {
+    await zoomIntegrationService.handleProtocolCallback(url);
+  });
+  liveChatService.setZoomIntegration(zoomIntegrationService);
+  liveChatService.setYouTubeIntegration(youtubeIntegrationService);
+  liveChatService.setActivityRecorder((input) => {
+    localDataService!.recordActivity(input);
+  });
+  localDataService.setLiveChatService(liveChatService);
+  semaScheduleService = new SemaScheduleService(localDatabase);
+  localDataService.setSemaSchedule(semaScheduleService);
+  // Keep each configured sheet cache fresh (public CSV; unchanged hash = no display update).
+  semaScheduleService.startPollingConfiguredProjects();
   localDataService.setAccessAuthorization(accessAuthorizationService);
 
   pinnedViewerSyncService = new PinnedViewerSyncService(
@@ -1020,6 +1144,7 @@ async function createMainWindow() {
   );
 
   localDataService.setDisplayBridgeEvents(displayBridgeEvents);
+  liveChatService.setDisplayBridgeEvents(displayBridgeEvents);
   localApiServer = new LocalApiServer(
     paths,
     localDataService,
@@ -1030,6 +1155,8 @@ async function createMainWindow() {
     bagLiveStateEvents,
     displayBridgeEvents,
   );
+  localApiServer.setZoomIntegration(zoomIntegrationService);
+  localApiServer.setYouTubeIntegration(youtubeIntegrationService);
   logStartupCheckpoint("startup.local_api_start");
   const localApiInfo = await localApiServer.start();
   logStartupCheckpoint("startup.local_api_ready", { baseUrl: localApiInfo.baseUrl });
@@ -1066,6 +1193,10 @@ async function createMainWindow() {
   const bootstrapResult = localDataService.ensureBroadArrowDevelopmentPhase();
   console.info(
     `[desktop] Broad Arrow phase bootstrap bootstrapped=${bootstrapResult.bootstrapped} repaired=${bootstrapResult.repaired} projectsDeleted=${bootstrapResult.deletedProjectCount} slug=${bootstrapResult.projectSlug}`,
+  );
+  const packageMigration = localDataService.migrateProjectPackages();
+  console.info(
+    `[desktop] Project packages migrated=${packageMigration.migrated.join(",") || "none"} catalogSeeded=${packageMigration.catalogSeeded}`,
   );
   registerLocalDataIpc({
     data: localDataService,
@@ -1109,6 +1240,8 @@ async function createMainWindow() {
     data: localDataService,
     auth: authLicenseManager,
   });
+  // developerToolsService is created later — registerEditorIpc is re-bound below after init.
+  // Placeholder registration happens after developerToolsService construction.
   registerOfflineAuctionIpc({
     data: localDataService,
     offlineAuction: offlineAuctionExportService,
@@ -1133,6 +1266,63 @@ async function createMainWindow() {
   const projectScraperCodeRepository = new ProjectScraperCodeRepository(localDatabase);
   const projectDisplayCodeRepository = new ProjectDisplayCodeRepository(localDatabase);
   localDataService.setProjectDisplayCodeRepository(projectDisplayCodeRepository);
+  if (localDatabase) {
+    const sharedOffscreenRenderer = new OffscreenOutputRenderer();
+    const diskRecordingService = new DiskRecordingService(sharedOffscreenRenderer);
+    outputEngine = new OutputEngine({
+      store: new SqliteOutputRouteStore(localDatabase),
+      windows: new ElectronOutputWindowHost(),
+      discoverDevices: discoverElectronDisplays,
+      resolveDisplay: (displayId) => localDataService!.resolvePublishedOutputDisplay(displayId),
+      resolveStack: (stackId, projectId) =>
+        localDataService!.resolvePublishedOutputStack(stackId, projectId),
+      origin: () => outputRendererOrigin,
+      decklink: createDeckLinkPort(sharedOffscreenRenderer),
+      diskRecording: diskRecordingService,
+      resolveProjectName: (projectId) => localDataService!.getProjectById(projectId)?.name ?? null,
+      getOutputSequence: () => appSettingsRepository.get<number>("output.nextSequence", 1),
+      setOutputSequence: (next) => appSettingsRepository.set("output.nextSequence", next),
+      onSessionChanged: () => {
+        if (!outputEngine) return;
+        broadcastToAllRenderers("neud:output:sessionChanged", outputEngine.getOutputTally());
+      },
+    });
+    const publishOutputDevices = () => {
+      outputEngine?.refreshDevices();
+      if (!outputEngine) return;
+      broadcastToAllRenderers(
+        "neud:output:devicesChanged",
+        outputEngine.discoverDevices().map(serializeOutputDevice),
+      );
+    };
+    watchElectronDisplays(publishOutputDevices);
+    let lastOutputDeviceKey = "";
+    setInterval(() => {
+      if (!outputEngine) return;
+      const key = outputEngine
+        .discoverDevices()
+        .map((device) => `${device.id}:${device.available}`)
+        .join("|");
+      if (key === lastOutputDeviceKey) return;
+      lastOutputDeviceKey = key;
+      publishOutputDevices();
+    }, 5000);
+    setOutputDiagnosticsProvider(() => outputEngine?.diagnostics() ?? []);
+    localDataService.setActiveOutputRouteChecker((projectId) => {
+      if (!outputEngine) {
+        return false;
+      }
+      return outputEngine.list().some((route) => {
+        if (route.projectId !== projectId) {
+          return false;
+        }
+        const status = route.session?.status;
+        return status === "live" || status === "starting";
+      });
+    });
+    registerOutputIpc({ engine: outputEngine, data: localDataService });
+  }
+  registerSystemIpc();
   activitySyncService?.setEnsureHostedProjectForSync((projectId) =>
     localDataService!.ensureHostedProjectRegisteredForSync(projectId),
   );
@@ -1197,6 +1387,13 @@ async function createMainWindow() {
       });
     },
   );
+  displaySyncService.setInstalledPackageDisplayGate((projectId, slug) => {
+    const keys = projectPackageService.getInstalledDisplayKeys(projectId);
+    if (!keys) {
+      return null;
+    }
+    return keys.has(slug);
+  });
   publishingManager = new PublishingManager(
     authenticatedCloud,
     supabasePublicConfig,
@@ -1304,6 +1501,30 @@ async function createMainWindow() {
     localDataService?.scheduleInternetReachabilityRefresh();
   }, 30_000);
 
+  // Keeps the cloud session fresh and retries transient failures, so "Cloud Connection"
+  // does not stay Offline while the network is up.
+  const cloudSessionKeeper = new CloudSessionKeeper({
+    isCloudConfigured: () => authenticatedCloud.isCloudConfigured(),
+    isSignedIn: () => authLicenseManager.isAccessAllowed(),
+    getSessionHealth: () => {
+      const snapshot = authenticatedCloud.getAuthSnapshot();
+      return {
+        available: snapshot.authenticatedCloudSessionAvailable,
+        tokenExpired: snapshot.tokenExpired,
+      };
+    },
+    refreshNetworkReachability: (force) =>
+      localDataService!.refreshInternetReachability(force),
+    maintainSession: (options) => authenticatedCloud.maintainSession(options),
+    onRecovered: async (reason) => {
+      await localDataService!.verifyOnlineSession({ reason: "reconnect" });
+      await localDataService!.runPostCloudAuthRecovery(reason);
+    },
+    log: (message) => console.debug(`[CloudSessionKeeper] ${message}`),
+  });
+  cloudSessionKeeper.start();
+  powerMonitor.on("resume", () => cloudSessionKeeper.kick());
+
   bagLiveStateEvents.on("update", (event) => {
     if (localDataService?.getDisplayDataSource() !== "webpage-scraper") {
       return;
@@ -1344,6 +1565,11 @@ async function createMainWindow() {
     ({ projectId, displayId }) => {
       localDataService!.removeUserDisplayOrderForDisplay(displayId);
       closeDisplayPreviewWindow({ projectId, displayId });
+      try {
+        videoPlaybackService?.close(displayId);
+      } catch {
+        // Best-effort decoder release when a display is deleted.
+      }
     },
     ({ projectId, sourceDisplayId, displayId }) => {
       localDataService!.insertDisplayAfterInUserOrder(
@@ -1375,6 +1601,18 @@ async function createMainWindow() {
     },
   );
   localApiServer.setDeveloperTools(developerToolsService);
+  const videoMediaStore = new VideoMediaStore(localDatabase!, paths);
+  developerToolsService.setVideoMediaStore(videoMediaStore);
+  registerMediaIpc(developerToolsService);
+  videoPlaybackService = new VideoPlaybackService(videoMediaStore);
+  const videoFrameHub = new VideoFrameHub(videoPlaybackService);
+  localApiServer.setVideoPlayback(videoPlaybackService, videoFrameHub);
+  registerVideoPlaybackIpc(videoPlaybackService, developerToolsService);
+  registerEditorIpc({
+    data: localDataService,
+    auth: authLicenseManager,
+    developerTools: developerToolsService,
+  });
 
   const broadArrowUploadedDisplaysImport = new BroadArrowUploadedDisplaysImportService(
     appSettingsRepository,
@@ -1432,6 +1670,131 @@ async function createMainWindow() {
     );
   }
 
+  projectPackageService.setFirstInstallHooks(async (projectId, manifest) => {
+    if (
+      manifest.projectSlug === "broad-arrow-auctions" &&
+      manifest.installHooks?.onFirstInstall?.includes("refresh-currency-rates")
+    ) {
+      try {
+        await currencyRateService!.refreshRatesNow();
+        console.info(
+          `[desktop] Broad Arrow first-install currency rates refreshed projectId=${projectId}`,
+        );
+      } catch (error) {
+        console.warn(
+          `[desktop] Broad Arrow first-install currency refresh failed (nonfatal): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  });
+  const semaDisplayHydration = new SemaPackageDisplayHydration(
+    projectPackagesRepository,
+    displaysRepository,
+    projectDisplayCodeRepository,
+    projectCodeRevisionsRepository,
+    projectCodeStorageService,
+  );
+  const liveChatDisplayHydration = new LiveChatDisplayHydration(
+    projectPackagesRepository,
+    displaysRepository,
+    projectDisplayCodeRepository,
+    projectCodeRevisionsRepository,
+    projectCodeStorageService,
+  );
+  const hydrateSemaDisplays = (projectId: string, manifest: ProjectPackageManifest) => {
+    try {
+      const results = semaDisplayHydration.ensureHydrated(projectId, manifest);
+      console.info(
+        `[desktop] SEMA displays hydrated created=${results.filter((r) => r.created).length} revisions=${results.filter((r) => r.revisionPublished).length} projectId=${projectId}`,
+      );
+    } catch (error) {
+      console.warn(
+        `[desktop] SEMA display hydration failed (nonfatal): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+  const hydrateLiveChatDisplays = (projectId: string, manifest: ProjectPackageManifest) => {
+    try {
+      liveChatDisplayHydration.ensureHydrated(projectId, manifest);
+      liveChatService.ensureProjectBootstrap(projectId);
+    } catch (error) {
+      console.warn(
+        `[desktop] Live Chat display hydration failed (nonfatal): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+  liveChatService.setHydrationHandler((projectId) => {
+    const install = projectPackagesRepository.getInstallByProjectId(projectId);
+    if (install?.manifest) {
+      hydrateLiveChatDisplays(projectId, install.manifest);
+    }
+  });
+  // SEMA: rebind install → canonical project id (builtin→cloud), then rebuild
+  // unpublished v1 content if bundled HTML drifted, then hydrate displays.
+  try {
+    const identity = projectPackageService.reconcileInstallProjectIdentity("sema");
+    if (identity.rebound) {
+      console.info(
+        `[desktop] SEMA package install identity rebound reason=${identity.reason} from=${identity.fromProjectId} to=${identity.toProjectId}`,
+      );
+    }
+    const reconcile = projectPackageService.reconcileDevelopmentBuiltinPackage("sema");
+    if (reconcile.rebuilt) {
+      console.info(
+        `[desktop] SEMA development package reconciled reason=${reconcile.reason} projectId=${reconcile.install?.projectId ?? "n/a"}`,
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `[desktop] SEMA development package reconcile failed (nonfatal): ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  const installedSemaProject = projectsRepository.getBySlug("sema");
+  const installedSemaPackage = installedSemaProject
+    ? projectPackagesRepository.getInstallByProjectId(installedSemaProject.id)
+    : null;
+  if (installedSemaProject && installedSemaPackage?.manifest) {
+    hydrateSemaDisplays(installedSemaProject.id, installedSemaPackage.manifest);
+  }
+  projectPackageService.setPackageActivatedHandler((projectId, manifest, meta) => {
+    if (manifest.projectSlug === "sema") {
+      hydrateSemaDisplays(projectId, manifest);
+      return;
+    }
+    if (
+      manifest.displays.some(
+        (display) =>
+          display.slug === "live-chat-overlay" ||
+          display.runtimeAdapterKey === "live-chat-overlay",
+      )
+    ) {
+      hydrateLiveChatDisplays(projectId, manifest);
+    }
+    if (manifest.projectSlug !== "broad-arrow-auctions" || meta.legacyMigration) {
+      return;
+    }
+    try {
+      const imported = broadArrowStreamDisplaysImport.ensureImported();
+      console.info(
+        `[desktop] Broad Arrow package activated hydrated displays created=${imported.createdCount} revisions=${imported.revisionCount} projectId=${projectId} update=${meta.isUpdate}`,
+      );
+    } catch (error) {
+      console.warn(
+        `[desktop] Broad Arrow display hydration failed (nonfatal): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  });
+
   for (const project of projectsRepository.list()) {
     const hydration = developerToolsService.reconcilePublishedDisplayContentForProject(project.id);
     if (hydration.repaired > 0) {
@@ -1470,6 +1833,7 @@ async function createMainWindow() {
         supabasePublicConfig,
       });
   logStartupCheckpoint("startup.next_server_ready", { appUrl });
+  outputRendererOrigin = appUrl;
 
   const trustedPortal = resolveTrustedPortalOrigin({
     allowLocalDevFallback: devMode,
@@ -1597,6 +1961,12 @@ async function createMainWindow() {
     mainWindow = null;
   });
 
+  mainWindow.on("focus", () => {
+    void import("./menu/application-menu").then(({ restoreMainApplicationMenu }) => {
+      restoreMainApplicationMenu();
+    });
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedExternalUrl(url)) {
       void shell.openExternal(url);
@@ -1618,6 +1988,7 @@ async function createMainWindow() {
 
   forceSignOutFromMain = async () => {
     console.info("[logout] Main process force sign-out started");
+    outputEngine?.stopAll();
     if (engineManager) {
       console.info("[logout] Stopping local engines before session teardown");
       await engineManager.stopAllForSignOut();
@@ -1698,6 +2069,7 @@ async function createMainWindow() {
   markStartupPhase("renderer.load.requested", { rendererUrl });
   await loadRendererUrl(mainWindow, rendererUrl);
   attachMainWindowCloseHandler();
+  closeStartupSplash();
   mainWindow.show();
   markStartupPhase("window.shown");
   printStartupPerformanceSummary();

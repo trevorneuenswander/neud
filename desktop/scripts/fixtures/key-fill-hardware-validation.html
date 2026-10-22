@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>NEUD Key + Fill Hardware Validation</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 1280px;
+        height: 720px;
+        background: transparent;
+        overflow: hidden;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #fff;
+      }
+      .box {
+        position: absolute;
+        width: 160px;
+        height: 120px;
+      }
+      #opaque-white {
+        left: 40px;
+        top: 40px;
+        background: #ffffff;
+      }
+      #opaque-red {
+        left: 220px;
+        top: 40px;
+        background: #ff0000;
+      }
+      #a75 {
+        left: 400px;
+        top: 40px;
+        background: rgba(255, 255, 255, 0.75);
+      }
+      #a50 {
+        left: 580px;
+        top: 40px;
+        background: rgba(255, 255, 255, 0.5);
+      }
+      #a25 {
+        left: 760px;
+        top: 40px;
+        background: rgba(255, 255, 255, 0.25);
+      }
+      #text-white {
+        position: absolute;
+        left: 40px;
+        top: 220px;
+        font-size: 72px;
+        font-weight: 700;
+        color: #ffffff;
+      }
+      #text-colored {
+        position: absolute;
+        left: 40px;
+        top: 320px;
+        font-size: 72px;
+        font-weight: 700;
+        color: #66ccff;
+        text-shadow: 0 6px 12px rgba(0, 0, 0, 0.55);
+      }
+      #shadow-box {
+        position: absolute;
+        left: 900px;
+        top: 220px;
+        width: 220px;
+        height: 140px;
+        background: rgba(0, 160, 255, 0.85);
+        box-shadow: 16px 16px 24px rgba(0, 0, 0, 0.55);
+      }
+      #mover {
+        position: absolute;
+        left: 40px;
+        top: 480px;
+        width: 80px;
+        height: 80px;
+        border-radius: 12px;
+        background: rgba(255, 220, 0, 0.9);
+        animation: slide 2.5s ease-in-out infinite alternate;
+      }
+      @keyframes slide {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(900px);
+        }
+      }
+      .label {
+        position: absolute;
+        left: 40px;
+        top: 600px;
+        font-size: 22px;
+        color: rgba(255, 255, 255, 0.85);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="opaque-white" class="box"></div>
+    <div id="opaque-red" class="box"></div>
+    <div id="a75" class="box"></div>
+    <div id="a50" class="box"></div>
+    <div id="a25" class="box"></div>
+    <div id="text-white">NEUD FILL</div>
+    <div id="text-colored">Key Matte</div>
+    <div id="shadow-box"></div>
+    <div id="mover"></div>
+    <div class="label">UltraStudio HD Mini · Key + Fill · 720p59.94 validation</div>
+  </body>
+</html>

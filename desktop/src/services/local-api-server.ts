@@ -20,6 +20,8 @@ import {
 import type { LocalSessionTokenService } from "../auth/local-session-token";
 import type { DeveloperToolsService } from "./developer-tools-service";
 import { handleDeveloperToolsRoute } from "./developer-tools-routes";
+import type { VideoFrameHub } from "../media/video/video-frame-hub";
+import type { VideoPlaybackService } from "../media/video/video-playback-service";
 import { getApplicationRole } from "../auth/application-roles";
 import { canOperateProject } from "../auth/platform-permissions";
 import {
@@ -39,6 +41,9 @@ import type {
   GenericLoginConfig,
 } from "../scraper/generic-scraper-types";
 import { normalizeLocalApiOrigin } from "../lib/normalize-local-api-origin";
+import type { ZoomIntegrationService } from "../integrations/zoom/zoom-integration-service";
+import type { YouTubeIntegrationService } from "../integrations/youtube/youtube-integration-service";
+import { assertLiveChatPost } from "../live-chat/live-chat-permissions";
 
 const DEFAULT_PORT = 8070;
 const PORT_RANGE_END = 8080;
@@ -53,6 +58,10 @@ export class LocalApiServer {
   private baseUrl: string | null = null;
   private activeRequest: IncomingMessage | null = null;
   private developerTools: DeveloperToolsService | null = null;
+  private zoomIntegration: ZoomIntegrationService | null = null;
+  private youtubeIntegration: YouTubeIntegrationService | null = null;
+  private videoPlayback: VideoPlaybackService | null = null;
+  private videoFrameHub: VideoFrameHub | null = null;
 
   constructor(
     private readonly paths: AppPaths,
@@ -67,6 +76,22 @@ export class LocalApiServer {
 
   setDeveloperTools(service: DeveloperToolsService) {
     this.developerTools = service;
+  }
+
+  setZoomIntegration(service: ZoomIntegrationService) {
+    this.zoomIntegration = service;
+  }
+
+  setYouTubeIntegration(service: YouTubeIntegrationService) {
+    this.youtubeIntegration = service;
+  }
+
+  setVideoPlayback(service: VideoPlaybackService, hub: VideoFrameHub) {
+    this.videoPlayback = service;
+    this.videoFrameHub = hub;
+    if (this.server) {
+      this.videoFrameHub.attach(this.server);
+    }
   }
 
   private rejectLegacyAccessWrite(response: ServerResponse): boolean {
@@ -108,11 +133,15 @@ export class LocalApiServer {
     this.server.headersTimeout = 125_000;
 
     this.baseUrl = `http://127.0.0.1:${port}`;
+    if (this.videoFrameHub) {
+      this.videoFrameHub.attach(this.server);
+    }
     return { baseUrl: this.baseUrl, port };
   }
 
   async stop(): Promise<void> {
     if (!this.server) return;
+    this.videoFrameHub?.dispose();
     await new Promise<void>((resolve, reject) => {
       this.server!.close((error) => {
         if (error) reject(error);
@@ -247,10 +276,216 @@ export class LocalApiServer {
       }
 
       if (url.pathname === "/api/projects" && request.method === "GET") {
+        const scopeParam = url.searchParams.get("scope");
+        const scope =
+          scopeParam === "installed" || scopeParam === "directory" || scopeParam === "all"
+            ? scopeParam
+            : "directory";
         return sendJson(response, 200, {
-          projects: this.data.listProjects(url.searchParams.get("q") ?? undefined),
+          projects: this.data.listProjects(url.searchParams.get("q") ?? undefined, { scope }),
           meta: this.data.getProjectsListMeta(),
         });
+      }
+
+      if (url.pathname === "/api/project-packages/download" && request.method === "POST") {
+        try {
+          this.requireAuth();
+          const body = await readJsonBody(request);
+          const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+          if (!slug) {
+            return sendJson(response, 400, { ok: false, error: "slug is required." });
+          }
+          const install = await this.data.downloadProjectPackage(slug);
+          return sendJson(response, 200, { ok: true, install });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to download project package.";
+          return sendJson(response, 400, { ok: false, error: message });
+        }
+      }
+
+      if (url.pathname === "/api/project-packages/update" && request.method === "POST") {
+        try {
+          this.requireAuth();
+          const body = await readJsonBody(request);
+          const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+          if (!slug) {
+            return sendJson(response, 400, { ok: false, error: "slug is required." });
+          }
+          const install = await this.data.updateProjectPackage(slug);
+          return sendJson(response, 200, { ok: true, install });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to update project package.";
+          return sendJson(response, 400, { ok: false, error: message });
+        }
+      }
+
+      {
+        const semaMatch = url.pathname.match(
+          /^\/api\/projects\/([^/]+)\/sema\/(schedule|sheet|refresh|advance|now|jump|source|manual)$/,
+        );
+        if (semaMatch) {
+          try {
+            this.requireAuth();
+            const projectSlug = decodeURIComponent(semaMatch[1] ?? "");
+            const action = semaMatch[2];
+            const isRead = request.method === "GET" && action === "schedule";
+            if (!isRead && request.method !== "POST") {
+              return sendJson(response, 405, { ok: false, error: "Method not allowed." });
+            }
+            const project = this.data.getProjectBySlug(projectSlug);
+            if (!project) {
+              return sendJson(response, 404, { ok: false, error: "Project not found." });
+            }
+            if (project.project_type !== "sema-schedule") {
+              return sendJson(response, 404, {
+                ok: false,
+                error: "This project does not use the SEMA schedule.",
+              });
+            }
+            const projectId = project.id;
+
+            if (isRead) {
+              return sendJson(response, 200, this.data.getSemaScheduleState(projectId));
+            }
+
+            // Everything below changes what can go on air: require an operator.
+            this.requireControlAccess();
+            if (action === "sheet") {
+              this.data.assertCanConfigureSemaProject(projectId);
+            } else {
+              this.data.assertCanControlSemaProject(projectId);
+            }
+
+            const body = await readJsonBody(request);
+            if (action === "sheet") {
+              const spreadsheetUrlOrId =
+                typeof body.spreadsheetUrlOrId === "string" ? body.spreadsheetUrlOrId : "";
+              return sendJson(
+                response,
+                200,
+                this.data.configureSemaSheet(projectId, {
+                  spreadsheetUrlOrId,
+                  worksheetGid:
+                    typeof body.worksheetGid === "string"
+                      ? body.worksheetGid
+                      : body.worksheetGid === null
+                        ? null
+                        : undefined,
+                  pollIntervalMs:
+                    typeof body.pollIntervalMs === "number" ? body.pollIntervalMs : undefined,
+                }),
+              );
+            }
+            if (action === "refresh") {
+              return sendJson(response, 200, await this.data.refreshSemaSheet(projectId));
+            }
+            if (action === "advance") {
+              const direction = body.direction === "previous" ? "previous" : "next";
+              return sendJson(
+                response,
+                200,
+                this.data.advanceSemaSchedule(projectId, direction),
+              );
+            }
+            if (action === "now") {
+              return sendJson(response, 200, this.data.takeSemaNow(projectId));
+            }
+            if (action === "jump") {
+              const target =
+                typeof body.rowId === "string"
+                  ? body.rowId
+                  : typeof body.rowIndex === "number"
+                    ? body.rowIndex
+                    : null;
+              if (target == null) {
+                return sendJson(response, 400, {
+                  ok: false,
+                  error: "rowId or rowIndex is required.",
+                });
+              }
+              return sendJson(response, 200, this.data.jumpSemaSchedule(projectId, target));
+            }
+            if (action === "source") {
+              if (body.mode !== "manual" && body.mode !== "google-sheets") {
+                return sendJson(response, 400, {
+                  ok: false,
+                  error: 'mode must be "google-sheets" or "manual".',
+                });
+              }
+              return sendJson(response, 200, this.data.setSemaSourceMode(projectId, body.mode));
+            }
+            if (action === "manual") {
+              return sendJson(
+                response,
+                200,
+                this.data.setSemaManualFields(
+                  projectId,
+                  {
+                    date: typeof body.date === "string" ? body.date : undefined,
+                    time: typeof body.time === "string" ? body.time : undefined,
+                    title: typeof body.title === "string" ? body.title : undefined,
+                    description:
+                      typeof body.description === "string" ? body.description : undefined,
+                    nextTitle: typeof body.nextTitle === "string" ? body.nextTitle : undefined,
+                    nextDescription:
+                      typeof body.nextDescription === "string" ? body.nextDescription : undefined,
+                    laterTitle: typeof body.laterTitle === "string" ? body.laterTitle : undefined,
+                    laterDescription:
+                      typeof body.laterDescription === "string"
+                        ? body.laterDescription
+                        : undefined,
+                  },
+                  { takeOnAir: body.takeOnAir !== false },
+                ),
+              );
+            }
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "SEMA schedule request failed.";
+            const code = (error as { code?: string }).code;
+            return sendJson(
+              response,
+              code === LOCAL_API_ERROR_CODES.AUTH_REQUIRED ? 401 : 400,
+              { ok: false, error: message, ...(code ? { code } : {}) },
+            );
+          }
+        }
+      }
+
+      if (url.pathname === "/api/project-packages/remove" && request.method === "POST") {
+        try {
+          this.requireAuth();
+          const body = await readJsonBody(request);
+          const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+          if (!slug) {
+            return sendJson(response, 400, { ok: false, error: "slug is required." });
+          }
+          const result = this.data.removeProjectPackageDownload(slug);
+          return sendJson(response, 200, {
+            ok: true,
+            retainedData: result.retainedData,
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to remove project package.";
+          return sendJson(response, 400, { ok: false, error: message });
+        }
+      }
+
+      if (url.pathname === "/api/project-packages/refresh-directory" && request.method === "POST") {
+        try {
+          this.requireAuth();
+          const result = await this.data.refreshProjectDirectory();
+          return sendJson(response, 200, result);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unable to refresh the project directory.";
+          return sendJson(response, 400, { ok: false, error: message });
+        }
       }
 
       if (url.pathname === "/api/auth/session" && request.method === "GET") {
@@ -958,15 +1193,58 @@ export class LocalApiServer {
           });
         }
         const body = await readJsonBody(request);
-        const project = this.data.createProject({
-          name: String(body.name ?? ""),
-          slug: String(body.slug ?? ""),
-          projectType: String(body.projectType ?? body.project_type ?? ""),
-          description: body.description ? String(body.description) : null,
-          theme: body.theme ? String(body.theme) : undefined,
-          icon: body.icon ? String(body.icon) : undefined,
+        const capabilities = Array.isArray(body.capabilities)
+          ? body.capabilities.map((value: unknown) => String(value))
+          : undefined;
+        const teamIds = Array.isArray(body.teamIds)
+          ? body.teamIds.map((value: unknown) => String(value))
+          : Array.isArray(body.team_ids)
+            ? body.team_ids.map((value: unknown) => String(value))
+            : [];
+        try {
+          const project = await this.data.createProject({
+            name: String(body.name ?? ""),
+            slug: String(body.slug ?? ""),
+            projectType: String(
+              body.projectType ?? body.project_type ?? "modular",
+            ),
+            description: body.description ? String(body.description) : null,
+            theme: body.theme ? String(body.theme) : undefined,
+            icon: body.icon ? String(body.icon) : undefined,
+            capabilities,
+            teamIds,
+          });
+          return sendJson(response, 201, { project });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to create project.";
+          const status =
+            message.includes("permission") || message.includes("Only the NEUD")
+              ? 403
+              : 400;
+          return sendJson(response, status, { error: message });
+        }
+      }
+
+      if (
+        url.pathname === "/api/projects/create-meta" &&
+        request.method === "GET"
+      ) {
+        try {
+          this.requireCanCreateProject();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to load create meta.";
+          const code = message.includes("Sign in") ? "unauthenticated" : "forbidden";
+          return sendJson(response, code === "unauthenticated" ? 401 : 403, {
+            ok: false,
+            code,
+            message,
+          });
+        }
+        return sendJson(response, 200, {
+          teams: this.data.listAssignableTeamsForProjectCreate(),
         });
-        return sendJson(response, 201, { project });
       }
 
       const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
@@ -1025,6 +1303,79 @@ export class LocalApiServer {
         }
       }
 
+      const projectCapabilitiesMatch = url.pathname.match(
+        /^\/api\/projects\/([^/]+)\/capabilities$/,
+      );
+      if (projectCapabilitiesMatch && request.method === "GET") {
+        try {
+          this.requireAuth();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to load capabilities.";
+          return sendJson(response, 401, { error: message });
+        }
+        const project = this.data.getProjectBySlug(
+          decodeURIComponent(projectCapabilitiesMatch[1]),
+        );
+        if (!project) {
+          return sendJson(response, 404, { error: "Project not found." });
+        }
+        const projectId =
+          typeof (project as { id?: string }).id === "string"
+            ? (project as { id: string }).id
+            : null;
+        if (!projectId) {
+          return sendJson(response, 404, { error: "Project not found." });
+        }
+        return sendJson(response, 200, {
+          capabilities: this.data.getProjectCapabilities(projectId),
+        });
+      }
+
+      if (projectCapabilitiesMatch && request.method === "PUT") {
+        try {
+          this.requireAuth();
+          this.requireProjectSettingsAccess();
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unable to update project capabilities.";
+          const status = message.includes("Sign in") ? 401 : 403;
+          return sendJson(response, status, { error: message });
+        }
+        const body = await readJsonBody(request);
+        const project = this.data.getProjectBySlug(
+          decodeURIComponent(projectCapabilitiesMatch[1]),
+        );
+        if (!project) {
+          return sendJson(response, 404, { error: "Project not found." });
+        }
+        const projectId =
+          typeof (project as { id?: string }).id === "string"
+            ? (project as { id: string }).id
+            : null;
+        if (!projectId) {
+          return sendJson(response, 404, { error: "Project not found." });
+        }
+        try {
+          const result = await this.data.setProjectCapabilities(
+            projectId,
+            Array.isArray(body.capabilities)
+              ? body.capabilities.map((value: unknown) => String(value))
+              : [],
+          );
+          return sendJson(response, 200, result);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unable to update project capabilities.";
+          const status = message.includes("permission") ? 403 : 400;
+          return sendJson(response, status, { error: message });
+        }
+      }
+
       if (projectMatch && request.method === "DELETE") {
         try {
           this.requireCanDeleteProject();
@@ -1047,6 +1398,308 @@ export class LocalApiServer {
           return sendJson(response, deleteStatusCode(result.code), result);
         }
         return sendJson(response, 200, result);
+      }
+
+      const zoomPath = url.pathname;
+      const zoomIntegrationMatch =
+        zoomPath === "/api/integrations/zoom" ||
+        zoomPath === "/api/integrations/zoom/validate" ||
+        zoomPath === "/api/integrations/zoom/oauth/start" ||
+        zoomPath === "/api/integrations/zoom/oauth/disconnect" ||
+        zoomPath === "/api/integrations/zoom/app-credentials";
+      if (zoomIntegrationMatch) {
+        try {
+          this.requireAuth();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to access Zoom settings.";
+          return sendJson(response, 401, { error: message });
+        }
+        const zoom = this.zoomIntegration;
+        if (!zoom) {
+          return sendJson(response, 503, {
+            error: "Zoom integration unavailable.",
+          });
+        }
+        try {
+          if (request.method === "GET" && zoomPath === "/api/integrations/zoom") {
+            return sendJson(response, 200, { status: zoom.getPublicStatus() });
+          }
+          if (
+            request.method === "POST" &&
+            zoomPath === "/api/integrations/zoom/validate"
+          ) {
+            const status = await zoom.validateCredentials();
+            return sendJson(response, 200, { status });
+          }
+          if (
+            request.method === "POST" &&
+            zoomPath === "/api/integrations/zoom/oauth/start"
+          ) {
+            const status = await zoom.startUserOAuth();
+            return sendJson(response, 200, { status });
+          }
+          if (
+            request.method === "POST" &&
+            zoomPath === "/api/integrations/zoom/oauth/disconnect"
+          ) {
+            const status = await zoom.disconnectUser();
+            return sendJson(response, 200, { status });
+          }
+          if (
+            (request.method === "PUT" &&
+              (zoomPath === "/api/integrations/zoom" ||
+                zoomPath === "/api/integrations/zoom/app-credentials"))
+          ) {
+            const body = await readJsonBody(request);
+            const oauthMode =
+              body.oauthMode === "production" ? "production" : 
+              body.oauthMode === "development" ? "development" : undefined;
+            const developmentPublicClientId = String(
+              body.developmentPublicClientId ?? body.publicClientId ?? body.clientId ?? "",
+            ).trim();
+            const productionPublicClientId = String(
+              body.productionPublicClientId ?? "",
+            ).trim();
+            console.info("[neud-zoom-cred] local-api save request", {
+              method: "PUT",
+              path: zoomPath,
+              oauthMode: oauthMode ?? null,
+              hasDevelopmentPublicClientId: Boolean(developmentPublicClientId),
+              hasProductionPublicClientId: Boolean(productionPublicClientId),
+              // Intentionally omit credential values. Client Secret is not used.
+            });
+            try {
+              const status = zoom.saveAppCredentials({
+                oauthMode,
+                developmentPublicClientId: developmentPublicClientId || undefined,
+                productionPublicClientId: productionPublicClientId || undefined,
+                publicClientId: developmentPublicClientId || undefined,
+              });
+              console.info("[neud-zoom-cred] local-api save ok", {
+                method: "PUT",
+                path: zoomPath,
+                status: 200,
+                appConfigured: status.appConfigured,
+                oauthMode: status.oauthMode,
+              });
+              return sendJson(response, 200, { status });
+            } catch (saveError) {
+              const mapped = mapZoomCredentialSaveError(saveError);
+              console.info("[neud-zoom-cred] local-api save failed", {
+                method: "PUT",
+                path: zoomPath,
+                status: mapped.httpStatus,
+                code: mapped.code,
+              });
+              return sendJson(response, mapped.httpStatus, {
+                error: mapped.message,
+                code: mapped.code,
+              });
+            }
+          }
+          if (
+            request.method === "DELETE" &&
+            zoomPath === "/api/integrations/zoom"
+          ) {
+            const status = zoom.clearCredentials();
+            return sendJson(response, 200, { status });
+          }
+          return sendJson(response, 405, {
+            error: "Method not allowed.",
+            code: "METHOD_NOT_ALLOWED",
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Zoom settings request failed.";
+          return sendJson(response, 400, {
+            error: message,
+            code: "ZOOM_REQUEST_FAILED",
+          });
+        }
+      }
+
+      const youtubePath = url.pathname;
+      const youtubeIntegrationMatch =
+        youtubePath === "/api/integrations/youtube" ||
+        youtubePath === "/api/integrations/youtube/oauth/start" ||
+        youtubePath === "/api/integrations/youtube/oauth/cancel" ||
+        youtubePath === "/api/integrations/youtube/oauth/disconnect" ||
+        youtubePath === "/api/integrations/youtube/client-id";
+      if (youtubeIntegrationMatch) {
+        try {
+          this.requireAuth();
+          const role = getApplicationRole({
+            role: this.auth.getAuthenticatedUser()?.role,
+          });
+          if (!canManageProjectSettings(role)) {
+            return sendJson(response, 403, {
+              error: "Only owners and admins can configure YouTube.",
+            });
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to access YouTube settings.";
+          return sendJson(response, 401, { error: message });
+        }
+        const youtube = this.youtubeIntegration;
+        if (!youtube) {
+          return sendJson(response, 503, { error: "YouTube integration unavailable." });
+        }
+        try {
+          if (request.method === "GET" && youtubePath === "/api/integrations/youtube") {
+            return sendJson(response, 200, { status: youtube.getPublicStatus() });
+          }
+          if (
+            request.method === "PUT" &&
+            youtubePath === "/api/integrations/youtube/client-id"
+          ) {
+            const body = await readJsonBody(request);
+            const clientSecret =
+              typeof body.clientSecret === "string" ? body.clientSecret : undefined;
+            const status = youtube.saveClientId(String(body.clientId ?? ""), clientSecret);
+            return sendJson(response, 200, { status });
+          }
+          if (
+            request.method === "POST" &&
+            youtubePath === "/api/integrations/youtube/oauth/start"
+          ) {
+            const status = await youtube.startUserOAuth();
+            return sendJson(response, 200, { status });
+          }
+          if (
+            request.method === "POST" &&
+            youtubePath === "/api/integrations/youtube/oauth/cancel"
+          ) {
+            const status = youtube.cancelUserOAuth();
+            return sendJson(response, 200, { status });
+          }
+          if (
+            request.method === "POST" &&
+            youtubePath === "/api/integrations/youtube/oauth/disconnect"
+          ) {
+            const status = await youtube.disconnectUser();
+            return sendJson(response, 200, { status });
+          }
+          return sendJson(response, 405, { error: "Method not allowed." });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "YouTube settings request failed.";
+          return sendJson(response, 400, { error: message });
+        }
+      }
+
+      const liveChatMatch = url.pathname.match(
+        /^\/api\/projects\/([^/]+)\/live-chat(?:\/([^/]+))?$/,
+      );
+      if (liveChatMatch) {
+        try {
+          this.requireAuth();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unable to access Live Chat.";
+          return sendJson(response, 401, { error: message });
+        }
+        const liveChat = this.data.getLiveChatService();
+        if (!liveChat) {
+          return sendJson(response, 503, { error: "Live Chat service unavailable." });
+        }
+        const project = this.data.getProjectBySlug(
+          decodeURIComponent(liveChatMatch[1]!),
+        );
+        if (!project || typeof (project as { id?: string }).id !== "string") {
+          return sendJson(response, 404, { error: "Project not found." });
+        }
+        const projectId = (project as { id: string }).id;
+        const action = liveChatMatch[2] ?? "state";
+        try {
+          if (request.method === "GET" && action === "state") {
+            return sendJson(response, 200, {
+              state: liveChat.getState(projectId),
+              providers: liveChat.listProviders(),
+              zoom: this.zoomIntegration?.getPublicStatus() ?? null,
+              youtube: this.youtubeIntegration?.getPublicStatus() ?? null,
+            });
+          }
+          if (request.method === "POST") {
+            const body = await readJsonBody(request);
+            const currentState = liveChat.getState(projectId);
+            assertLiveChatPost({
+              role: this.auth.getAuthenticatedUser()?.role,
+              action,
+              provider: currentState.provider,
+              currentStreamId: currentState.connection.meetingOrBroadcastId,
+              nextStreamId:
+                body.settings && typeof body.settings === "object"
+                  ? (body.settings as { videoOrBroadcastId?: unknown }).videoOrBroadcastId
+                  : undefined,
+            });
+            if (action === "select-provider") {
+              const state = await liveChat.selectProvider(
+                projectId,
+                String(body.provider ?? "manual") as never,
+              );
+              return sendJson(response, 200, { state });
+            }
+            if (action === "mode") {
+              const state = await liveChat.setMode(
+                projectId,
+                body.mode === "producer" ? "producer" : "automatic",
+              );
+              return sendJson(response, 200, { state });
+            }
+            if (action === "connect") {
+              const state = await liveChat.connect(
+                projectId,
+                body.settings && typeof body.settings === "object"
+                  ? (body.settings as Record<string, unknown>)
+                  : undefined,
+              );
+              return sendJson(response, 200, { state });
+            }
+            if (action === "disconnect") {
+              const state = await liveChat.disconnect(projectId);
+              return sendJson(response, 200, { state });
+            }
+            if (action === "manual-message") {
+              const state = liveChat.submitManualMessage(projectId, {
+                authorName: String(body.authorName ?? ""),
+                text: String(body.text ?? ""),
+              });
+              return sendJson(response, 200, { state });
+            }
+            if (action === "take") {
+              const state = liveChat.takeMessage(
+                projectId,
+                String(body.messageId ?? ""),
+              );
+              return sendJson(response, 200, { state });
+            }
+            if (action === "skip") {
+              const state = liveChat.skipMessage(
+                projectId,
+                String(body.messageId ?? ""),
+              );
+              return sendJson(response, 200, { state });
+            }
+            if (action === "clear-queue") {
+              const state = liveChat.clearQueue(projectId);
+              return sendJson(response, 200, { state });
+            }
+            if (action === "hide-current") {
+              const state = liveChat.hideCurrent(projectId);
+              return sendJson(response, 200, { state });
+            }
+          }
+          return sendJson(response, 404, { error: "Live Chat action not found." });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Live Chat request failed.";
+          const status = /read-only|Only owners|Only admins|permission/i.test(message)
+            ? 403
+            : 400;
+          return sendJson(response, status, { error: message });
+        }
       }
 
       const projectCanonicalMatch = url.pathname.match(
@@ -1371,6 +2024,17 @@ export class LocalApiServer {
             this.data.removePinnedDisplayFromStack(project.id, {
               stackId: body.stackId.trim(),
               displayId: body.displayId.trim(),
+            });
+            return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
+          }
+          if (
+            body.action === "reorderStack" &&
+            typeof body.stackId === "string" &&
+            Array.isArray(body.orderedDisplayIds)
+          ) {
+            this.data.reorderPinnedViewerStack(project.id, {
+              stackId: body.stackId.trim(),
+              orderedDisplayIds: body.orderedDisplayIds.map((value) => String(value)),
             });
             return sendJson(response, 200, this.data.getPinnedViewerState(project.id));
           }
@@ -2297,10 +2961,16 @@ export class LocalApiServer {
           }
 
           this.touchDisplayViewer(request, projectId, displaySlug);
-          const bridgeData =
-            displaySlug === "stream-ticker"
-              ? this.data.getStreamTickerDisplayBridgeData(projectId)
-              : this.data.getGenericDisplayBridgeData(projectId);
+          const isLiveChatOverlay =
+            displaySlug === "live-chat-overlay" ||
+            displaySlug === "live-chat-overlay-v1";
+          const bridgeData = isLiveChatOverlay
+            ? this.data.getLiveChatDisplayBridgeData(projectId) ??
+              this.data.getGenericDisplayBridgeData(projectId)
+            : this.data.getSemaDisplayBridgeData(projectId) ??
+              (displaySlug === "stream-ticker"
+                ? this.data.getStreamTickerDisplayBridgeData(projectId)
+                : this.data.getGenericDisplayBridgeData(projectId));
           const dataConnected = previewMode || viewerState.enabled;
           const traceEventId = traceEventIdEarly;
           if (traceEventId) {
@@ -2362,6 +3032,9 @@ export class LocalApiServer {
           const resolved = this.developerTools.resolveDisplayViewer(projectId, displaySlug, {
             preview: previewMode,
             output: outputMode,
+            hideCursor:
+              url.searchParams.get("surface") === "computer" &&
+              url.searchParams.get("hideCursor") === "1",
           });
           if (resolved.status === "not_found") {
             const diagnostic = this.developerTools.describeDisplayViewerLookup(
@@ -2915,9 +3588,62 @@ function normalizeImportAction(value: unknown): "create" | "skip" | "copy" {
   return "skip";
 }
 
+function mapZoomCredentialSaveError(error: unknown): {
+  httpStatus: number;
+  code: string;
+  message: string;
+} {
+  const message =
+    error instanceof Error ? error.message : "Zoom credential save failed.";
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("secure credential storage is unavailable") ||
+    lower.includes("encryption is unavailable")
+  ) {
+    return {
+      httpStatus: 503,
+      code: "SAFE_STORAGE_UNAVAILABLE",
+      message:
+        "Secure credential storage (safeStorage) is unavailable on this system.",
+    };
+  }
+  if (
+    lower.includes("failed to encrypt") ||
+    lower.includes("failed to write") ||
+    lower.includes("credential write")
+  ) {
+    return {
+      httpStatus: 500,
+      code: "SECURE_CREDENTIAL_WRITE_FAILED",
+      message: "Secure Zoom credential write failed.",
+    };
+  }
+  if (
+    lower.includes("public client id") ||
+    lower.includes("required")
+  ) {
+    return {
+      httpStatus: 400,
+      code: "ZOOM_CREDENTIAL_VALIDATION",
+      message,
+    };
+  }
+  return {
+    httpStatus: 400,
+    code: "ZOOM_CREDENTIAL_SAVE_FAILED",
+    message,
+  };
+}
+
 function setCors(response: http.ServerResponse) {
   response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  // PUT is required for Zoom Developer Setup app-credentials and other local writes.
+  // Omitting PUT causes browser CORS preflight failure → "Failed to fetch", which the
+  // renderer previously mislabeled as "Local API could not be reached".
+  response.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
   response.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, x-neud-local-session, x-neud-display-client, x-neud-trace-event-id, x-neud-display-client-id, x-neud-display-fetch-request-id",

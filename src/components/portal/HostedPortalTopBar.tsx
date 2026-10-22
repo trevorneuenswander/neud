@@ -14,7 +14,7 @@ export function HostedPortalTopBar() {
   return (
     <div className="mb-4 flex items-center justify-end gap-3 text-sm">
       <WindowsDownloadLink className="text-muted transition-colors hover:text-foreground">
-        Download Desktop
+        Get NEUD
       </WindowsDownloadLink>
     </div>
   );

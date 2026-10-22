@@ -7,7 +7,7 @@ export const DISPLAY_DATA_SOURCE_OPTIONS: Array<{
   label: string;
 }> = [
   { value: "webpage-scraper", label: "Webpage Scraper" },
-  { value: "local-controller", label: "Local Controller" },
+  { value: "local-controller", label: "Manual Controller" },
 ];
 
 export function isDisplayDataSource(value: unknown): value is DisplayDataSource {

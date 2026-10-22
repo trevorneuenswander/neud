@@ -7,6 +7,7 @@ import type { ProjectTeamAssignmentsRepository } from "../repositories/project-t
 import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { DataSourcesRepository } from "../repositories/data-sources-repository";
 import type { LocalProject } from "../repositories/projects-repository";
+import type { LocalProjectMembershipsRepository } from "../repositories/local-project-memberships-repository";
 import {
   EMPTY_CAPABILITIES,
   type AuthorizationContext,
@@ -15,7 +16,10 @@ import {
   type TeamRole,
 } from "./access-types";
 import { isProtectedNeudOwnerUser } from "../access/protect-project-owner";
-import { normalizeProjectIsActive } from "../projects/project-permissions";
+import {
+  canManageProjectSettings,
+  normalizeProjectIsActive,
+} from "../projects/project-permissions";
 import { normalizeEmail } from "../auth/normalize-email";
 import { abbreviateUserId } from "../auth/local-desktop-identity";
 import { mapSupabaseProfileRoleToPlatformRole } from "./user-identity-reconciliation-service";
@@ -40,6 +44,7 @@ export class AccessAuthorizationService {
     private readonly projectTeams: ProjectTeamAssignmentsRepository,
     private readonly projects: ProjectsRepository,
     private readonly dataSources: DataSourcesRepository,
+    private readonly legacyMemberships: LocalProjectMembershipsRepository | null = null,
   ) {}
 
   getCurrentUserId(): string | null {
@@ -311,6 +316,11 @@ export class AccessAuthorizationService {
       return fullCapabilities(true);
     }
 
+    const directRole = this.legacyMemberships?.getProjectRole(context.userId, projectId);
+    if (directRole && canManageProjectSettings(directRole)) {
+      return fullCapabilities(true);
+    }
+
     const scopedMembership = this.findScopedProjectMembership(context.userId, projectId);
     if (!scopedMembership) {
       return EMPTY_CAPABILITIES;
@@ -441,6 +451,11 @@ export class AccessAuthorizationService {
     const activeMemberships = memberships.filter(
       (entry) => entry.isActive && entry.teamIsActive,
     );
+
+    // Direct local memberships (e.g. Team Admin created a no-Team project).
+    for (const projectId of this.legacyMemberships?.listProjectIdsForUser(userId) ?? []) {
+      projectIds.add(projectId);
+    }
 
     for (const project of allProjects) {
       const assignedTeamIds = this.projectTeams.getTeamIdsForProject(project.id);

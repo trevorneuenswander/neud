@@ -34,6 +34,14 @@ export function normalizeReserveStatus(value: unknown): ReserveStatus {
   const text = String(value).trim().toLowerCase();
   if (!text || text === "—" || text === "-") return "unknown";
 
+  if (
+    /^(active|sold|unsold|pending|live|closed|open)$/.test(text) ||
+    text === "bid status" ||
+    text === "bidding"
+  ) {
+    return "unknown";
+  }
+
   const legacy = LEGACY_RESERVE_STATUS_MAP[text.replace(/\s+/g, "_")];
   if (legacy) return legacy;
 
@@ -70,12 +78,21 @@ export function getVisibleReserveLabel(status: ReserveStatus): string | null {
     : null;
 }
 
+/**
+ * Stream Bid reserve row text. Only "Offered Without Reserve" is ever shown.
+ */
+export function getStreamBidReserveText(value: unknown): string {
+  return normalizeReserveStatus(value) === "offered_without_reserve"
+    ? "Offered Without Reserve"
+    : "";
+}
+
 export function resolveReserveStatusDisplayLabel(value: unknown): string {
   const normalized = normalizeReserveStatus(value);
   if (normalized === "unknown") {
     return "";
   }
-  return formatReserveStatusLabel(normalized);
+  return getVisibleReserveLabel(normalized) ?? "";
 }
 
 export function readReserveStatusFromRecord(

@@ -420,10 +420,73 @@ export function countDirectProjectAccess(
   return directory.projectMembers.filter((membership) => membership.userId === userId).length;
 }
 
+export type EffectiveProjectAccessEntry = {
+  projectId: string;
+  projectName: string;
+  role: string;
+};
+
+type EffectiveProjectAccessDirectory = Pick<
+  AccessManagementDirectory,
+  "users" | "teams" | "teamMemberships" | "projects" | "projectMembers" | "projectTeams"
+>;
+
+/**
+ * Effective project access for a user: union of direct membership and
+ * Team Admin → assigned-project Manager inheritance (plus global owner/admin).
+ * Deduplicates by project id; role is the highest from existing access sources.
+ */
+export function listEffectiveProjectAccessForUser(
+  userId: string,
+  directory: EffectiveProjectAccessDirectory,
+): EffectiveProjectAccessEntry[] {
+  const accessDirectory = directory as AccessManagementDirectory;
+  const entries: EffectiveProjectAccessEntry[] = [];
+
+  for (const project of directory.projects) {
+    const sources = resolveProjectAccessSources(userId, project.id, accessDirectory);
+    const role = resolveHighestProjectRole(sources);
+    if (!role) {
+      continue;
+    }
+    entries.push({
+      projectId: project.id,
+      projectName: project.name,
+      role,
+    });
+  }
+
+  return entries.sort((left, right) => left.projectName.localeCompare(right.projectName));
+}
+
+export function formatEffectiveProjectAccessLabel(
+  userId: string,
+  directory: EffectiveProjectAccessDirectory,
+): string {
+  const entries = listEffectiveProjectAccessForUser(userId, directory);
+  if (entries.length === 0) {
+    return "—";
+  }
+  return entries.map((entry) => entry.projectName).join(", ");
+}
+
+export function countEffectiveProjectAccess(
+  userId: string,
+  directory: EffectiveProjectAccessDirectory,
+): number {
+  return listEffectiveProjectAccessForUser(userId, directory).length;
+}
+
 export function countTeamProjects(
   teamId: string,
-  directory: Pick<AccessManagementDirectory, "projectTeams">,
+  directory: Pick<AccessManagementDirectory, "projectTeams" | "teams" | "projects">,
 ): number {
+  const team = directory.teams.find((entry) => entry.id === teamId);
+  // NEUD Team has global access to every cloud directory project — present the
+  // effective total without fabricating project_team_assignments rows.
+  if (team && isNeudTeam(team)) {
+    return directory.projects.length;
+  }
   return directory.projectTeams.filter((assignment) => assignment.teamId === teamId).length;
 }
 
@@ -489,10 +552,7 @@ export function buildProjectAccessRows(
 
 export function matchesUserDirectorySearch(
   user: AccessManagementDirectory["users"][number],
-  directory: Pick<
-    AccessManagementDirectory,
-    "teams" | "teamMemberships" | "projects" | "projectMembers" | "users"
-  >,
+  directory: EffectiveProjectAccessDirectory,
   query: string,
 ): boolean {
   const normalized = query.trim().toLowerCase();
@@ -502,12 +562,8 @@ export function matchesUserDirectorySearch(
 
   const teamNames = listActiveTeamNamesForUser(user.id, directory).join(" ").toLowerCase();
   const teamRoles = summarizeTeamRolesForUser(user.id, directory).toLowerCase();
-  const projectAccess = directory.projectMembers
-    .filter((membership) => membership.userId === user.id)
-    .map((membership) => {
-      const project = directory.projects.find((entry) => entry.id === membership.projectId);
-      return `${project?.name ?? membership.projectId} ${membership.role}`;
-    })
+  const projectAccess = listEffectiveProjectAccessForUser(user.id, directory)
+    .map((entry) => `${entry.projectName} ${entry.role}`)
     .join(" ")
     .toLowerCase();
 

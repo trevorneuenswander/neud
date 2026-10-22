@@ -2,6 +2,10 @@ appId: com.hildreths.neud
 productName: NEUD
 copyright: © 2026 NEUD
 electronVersion: 33.4.11
+protocols:
+  - name: NEUD
+    schemes:
+      - neud
 directories:
   output: release
   buildResources: build
@@ -13,6 +17,9 @@ asar: true
 asarUnpack:
   - "**/node_modules/sharp/**/*"
   - "**/node_modules/@img/**/*"
+  - "dist/platform/macos/*.node"
+  - "dist/platform/windows/*.node"
+  - "dist/platform/decklink/*.node"
 extraResources:
   - from: build/icon.ico
     to: assets/icon.ico

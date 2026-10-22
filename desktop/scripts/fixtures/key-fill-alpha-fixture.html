@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>NEUD Key+Fill Alpha Fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 640px;
+        height: 360px;
+        background: transparent;
+        overflow: hidden;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      .cell {
+        position: absolute;
+        width: 64px;
+        height: 64px;
+        box-sizing: border-box;
+      }
+      #transparent {
+        left: 0;
+        top: 0;
+        background: rgba(0, 0, 0, 0);
+      }
+      #a25 {
+        left: 64px;
+        top: 0;
+        background: rgba(255, 255, 255, 0.25);
+      }
+      #a50 {
+        left: 128px;
+        top: 0;
+        background: rgba(255, 255, 255, 0.5);
+      }
+      #a75 {
+        left: 192px;
+        top: 0;
+        background: rgba(255, 255, 255, 0.75);
+      }
+      #a100 {
+        left: 256px;
+        top: 0;
+        background: rgba(255, 255, 255, 1);
+      }
+      #red {
+        left: 0;
+        top: 64px;
+        background: rgb(255, 0, 0);
+      }
+      #green {
+        left: 64px;
+        top: 64px;
+        background: rgb(0, 255, 0);
+      }
+      #blue {
+        left: 128px;
+        top: 64px;
+        background: rgb(0, 0, 255);
+      }
+      #white {
+        left: 192px;
+        top: 64px;
+        background: rgb(255, 255, 255);
+      }
+      #css-opacity {
+        left: 256px;
+        top: 64px;
+        background: rgb(255, 255, 255);
+        opacity: 0.5;
+      }
+      #text-white {
+        position: absolute;
+        left: 16px;
+        top: 150px;
+        color: #ffffff;
+        font-size: 48px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      #text-colored {
+        position: absolute;
+        left: 16px;
+        top: 210px;
+        color: #ff66aa;
+        font-size: 48px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      #shadow-box {
+        position: absolute;
+        left: 420px;
+        top: 40px;
+        width: 120px;
+        height: 80px;
+        background: rgba(0, 128, 255, 0.8);
+        box-shadow: 12px 12px 16px rgba(0, 0, 0, 0.5);
+      }
+      #shadow-text {
+        position: absolute;
+        left: 400px;
+        top: 180px;
+        color: #ffffff;
+        font-size: 42px;
+        font-weight: 700;
+        text-shadow: 0 4px 8px rgba(0, 0, 0, 0.6);
+      }
+      #overlap-a {
+        position: absolute;
+        left: 360px;
+        top: 260px;
+        width: 80px;
+        height: 80px;
+        background: rgba(255, 0, 0, 0.5);
+      }
+      #overlap-b {
+        position: absolute;
+        left: 400px;
+        top: 280px;
+        width: 80px;
+        height: 80px;
+        background: rgba(0, 0, 255, 0.5);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="transparent" class="cell" data-sample="transparent"></div>
+    <div id="a25" class="cell" data-sample="a25"></div>
+    <div id="a50" class="cell" data-sample="a50"></div>
+    <div id="a75" class="cell" data-sample="a75"></div>
+    <div id="a100" class="cell" data-sample="a100"></div>
+    <div id="red" class="cell" data-sample="red"></div>
+    <div id="green" class="cell" data-sample="green"></div>
+    <div id="blue" class="cell" data-sample="blue"></div>
+    <div id="white" class="cell" data-sample="white"></div>
+    <div id="css-opacity" class="cell" data-sample="css-opacity"></div>
+    <div id="text-white">NEUD</div>
+    <div id="text-colored">Alpha</div>
+    <div id="shadow-box"></div>
+    <div id="shadow-text">Soft</div>
+    <div id="overlap-a"></div>
+    <div id="overlap-b"></div>
+  </body>
+</html>

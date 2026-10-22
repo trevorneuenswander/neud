@@ -30,12 +30,34 @@
     var END_REVEAL_PADDING_PX =
       config.endRevealPaddingPx != null ? config.endRevealPaddingPx : 2;
     var MEASURE_EPS = config.measureEps != null ? config.measureEps : 0.5;
-    var rafs = new WeakMap();
+    // One authoritative loop record per scrolling container.
+    //   epoch      increments on every cancel/start; a tick or a pending measurement only
+    //              continues while the epoch it was created for is still current.
+    //   rafId      the single scheduled requestAnimationFrame callback for the live loop
+    //              (null when no loop is scheduled). Every scheduled frame is tracked here,
+    //              including the first one, so cancelLoop can always remove it.
+    //   measuring  true while startMarqueeStable is waiting for fonts/layout.
+    //   settled    "title|viewportWidth" for a title that was measured and fits (no loop
+    //              needed), so repeated identical snapshots do not re-measure it.
+    var loops = new WeakMap();
+
+    function getLoop(container) {
+      var loop = loops.get(container);
+      if (!loop) {
+        loop = { epoch: 0, rafId: null, measuring: false, settled: null };
+        loops.set(container, loop);
+      }
+      return loop;
+    }
 
     function cancelLoop(container) {
-      if (rafs.has(container)) {
-        cancelAnimationFrame(rafs.get(container));
-        rafs.delete(container);
+      var loop = loops.get(container);
+      if (!loop) return;
+      loop.epoch += 1;
+      loop.measuring = false;
+      if (loop.rafId !== null) {
+        cancelAnimationFrame(loop.rafId);
+        loop.rafId = null;
       }
     }
 
@@ -418,7 +440,11 @@
     function startMarqueeWithTrack(container, track, runtime, measureMeta) {
       runtime = runtime || {};
       measureMeta = measureMeta || {};
+      if (!container) return;
+      // Replaces any previous loop or pending measurement for this container.
       cancelLoop(container);
+      var loop = getLoop(container);
+      var loopEpoch = loop.epoch;
 
       var inner = container ? container.querySelector(".inner") : null;
       if (!inner) return;
@@ -438,6 +464,9 @@
 
       if (track.mode === "single" || track.shouldScroll !== true) {
         inner.style.transform = "translate3d(0,0,0)";
+        if (track.mode === "single" && !track.unstableMeasurement && !track.microAnimationPrevented) {
+          loop.settled = settledSignature(container);
+        }
         if (typeof runtime.onDiagnostic === "function") {
           runtime.onDiagnostic(diagEntry);
         }
@@ -500,8 +529,11 @@
       }
 
       function tick(now) {
-        var frameId = requestAnimationFrame(tick);
-        rafs.set(container, frameId);
+        loop.rafId = null;
+        // A newer start/cancel owns this container now; this callback must end the chain.
+        if (loop.epoch !== loopEpoch) {
+          return;
+        }
 
         if (inner.classList.contains("is-frozen")) {
           cancelLoop(container);
@@ -514,6 +546,8 @@
           publishDiagnostic({ resetReason: "aborted", animationRunning: false });
           return;
         }
+
+        loop.rafId = requestAnimationFrame(tick);
 
         if (phase === "prepause") {
           inner.style.transform = "translate3d(0,0,0)";
@@ -548,7 +582,7 @@
       }
 
       publishDiagnostic({ animationRunning: true });
-      requestAnimationFrame(tick);
+      loop.rafId = requestAnimationFrame(tick);
     }
 
     function startMarquee(container, runtime) {
@@ -561,13 +595,47 @@
 
     function startMarqueeStable(container, runtime) {
       runtime = runtime || {};
+      if (!container) return;
+      // The newest request wins: it cancels the running loop and any older pending
+      // measurement, so only one loop can ever result from overlapping requests.
+      cancelLoop(container);
+      var loop = getLoop(container);
+      var requestEpoch = loop.epoch;
+      loop.measuring = true;
+      loop.settled = null;
       measureStableTrack(container, function (track, measureMeta) {
+        if (loop.epoch !== requestEpoch) {
+          return;
+        }
+        loop.measuring = false;
         startMarqueeWithTrack(container, track, runtime, measureMeta);
       });
     }
 
+    function settledSignature(container) {
+      var title = container ? container.getAttribute("data-title") || "" : "";
+      return title + "\u0000" + (container ? container.clientWidth : 0);
+    }
+
+    /** True while a loop is scheduled or a measurement for this container is in flight. */
     function hasActiveLoop(container) {
-      return rafs.has(container);
+      var loop = loops.get(container);
+      return Boolean(loop && (loop.rafId !== null || loop.measuring));
+    }
+
+    /**
+     * True when this exact title/width was already measured and needs no loop (it fits).
+     * Lets repeated identical snapshots skip re-measuring (and rewriting the track DOM).
+     */
+    function hasSettledStaticLayout(container) {
+      var loop = loops.get(container);
+      return Boolean(
+        loop &&
+          !loop.measuring &&
+          loop.rafId === null &&
+          loop.settled !== null &&
+          loop.settled === settledSignature(container),
+      );
     }
 
     return {
@@ -586,6 +654,7 @@
       startMarqueeStable: startMarqueeStable,
       measureWidth: measureIntrinsicWidth,
       hasActiveLoop: hasActiveLoop,
+      hasSettledStaticLayout: hasSettledStaticLayout,
     };
   }
 

@@ -27,6 +27,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { shouldUseLocalData } from "@/lib/local/mode";
 import { localCreateProject } from "@/lib/local/api";
+import { getProjectPlatformAccess } from "@/lib/projects/platform-access";
 
 function collectCreateProjectFieldValues(formData: FormData) {
   return {
@@ -60,6 +61,85 @@ function toProjectErrorMessage(error: { message?: string } | null): string {
   }
 
   return "Unable to complete this Project action. Please try again.";
+}
+
+export async function createProjectWithCapabilitiesAction(input: {
+  name: string;
+  description?: string | null;
+  capabilities: string[];
+  teamIds?: string[];
+}): Promise<{ ok: true; slug: string } | { ok: false; error: string }> {
+  const access = await getProjectPlatformAccess();
+  if (!access.canCreateProject) {
+    return { ok: false, error: "You do not have permission to create Projects." };
+  }
+
+  const nameError = validateProjectName(input.name);
+  const descriptionError = validateProjectDescription(input.description ?? "");
+  if (nameError || descriptionError) {
+    return { ok: false, error: nameError ?? descriptionError ?? "Invalid project." };
+  }
+
+  const baseSlug = generateSlugFromName(input.name);
+  if (!baseSlug) {
+    return {
+      ok: false,
+      error: "Project name must contain at least one letter or number.",
+    };
+  }
+  const uniqueSlug = await resolveUniqueSlug(baseSlug);
+  if (!uniqueSlug) {
+    return {
+      ok: false,
+      error: "Unable to generate a unique Project slug. Try a different name.",
+    };
+  }
+
+  if (shouldUseLocalData()) {
+    try {
+      await localCreateProject({
+        name: input.name.trim(),
+        slug: uniqueSlug,
+        projectType: "modular",
+        description: input.description?.trim() || null,
+        theme: DEFAULT_PROJECT_THEME,
+        icon: DEFAULT_PROJECT_ICON,
+        capabilities: input.capabilities,
+        teamIds: input.teamIds ?? [],
+      });
+      revalidatePath("/projects");
+      return { ok: true, slug: uniqueSlug };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error ? error.message : "Unable to create Project locally.",
+      };
+    }
+  }
+
+  const supabase = await createClient();
+  const { data: projectId, error } = await supabase.rpc(
+    "create_project_with_capabilities",
+    {
+      p_name: input.name.trim(),
+      p_slug: uniqueSlug,
+      p_description: input.description?.trim() || null,
+      p_capabilities: input.capabilities,
+      p_team_ids: input.teamIds ?? [],
+      p_project_type: "modular",
+      p_theme: DEFAULT_PROJECT_THEME,
+      p_icon: DEFAULT_PROJECT_ICON,
+    },
+  );
+
+  if (error || !projectId) {
+    return { ok: false, error: toProjectErrorMessage(error) };
+  }
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  return { ok: true, slug: uniqueSlug };
 }
 
 export async function createProject(

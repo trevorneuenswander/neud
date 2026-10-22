@@ -48,6 +48,13 @@ const MIGRATION_FILES = [
   "036_display_revision_version_repair.sql",
   "037_user_pinned_viewer_preferences.sql",
   "038_user_pinned_viewer_stacks.sql",
+  "039_output_routes.sql",
+  "040_project_packages.sql",
+  "041_sema_schedule_state.sql",
+  "042_output_route_source.sql",
+  "043_project_capabilities.sql",
+  "044_sema_manual_schedule_slots.sql",
+  "045_display_video_media.sql",
 ];
 
 export function runMigrations(db: LocalDatabase, paths: AppPaths): void {

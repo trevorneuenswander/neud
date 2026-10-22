@@ -5,6 +5,7 @@ exports.normalizeAspectRatioKey = normalizeAspectRatioKey;
 exports.areDisplaysStackCompatible = areDisplaysStackCompatible;
 exports.parsePinnedStacks = parsePinnedStacks;
 exports.orderStackMemberIds = orderStackMemberIds;
+exports.orderStackLayers = orderStackLayers;
 exports.stackBaseDisplayId = stackBaseDisplayId;
 exports.deriveVisiblePinnedSlots = deriveVisiblePinnedSlots;
 exports.countVisiblePinnedSlots = countVisiblePinnedSlots;
@@ -14,6 +15,7 @@ exports.wouldExceedVisibleSlotLimit = wouldExceedVisibleSlotLimit;
 exports.buildAddToStackPreference = buildAddToStackPreference;
 exports.buildRemoveFromStackPreference = buildRemoveFromStackPreference;
 exports.buildUnpinStackPreference = buildUnpinStackPreference;
+exports.buildReorderStackPreference = buildReorderStackPreference;
 exports.listCompatibleStackTargets = listCompatibleStackTargets;
 exports.pickDefaultStackTarget = pickDefaultStackTarget;
 exports.layerZIndexForDisplayInStack = layerZIndexForDisplayInStack;
@@ -66,13 +68,21 @@ function parsePinnedStacks(raw) {
         for (const memberId of displayIds) {
             seenMembers.add(memberId);
         }
-        stacks.push({ id, displayIds });
+        stacks.push(record.customOrder === true ? { id, displayIds, customOrder: true } : { id, displayIds });
     }
     return stacks;
 }
 function orderStackMemberIds(memberIds, displayListOrderIds) {
     const memberSet = new Set(memberIds);
     return displayListOrderIds.filter((id) => memberSet.has(id));
+}
+/** Layer order TOP…BOTTOM for a stack, honoring a saved custom hierarchy. */
+function orderStackLayers(stack, displayListOrderIds) {
+    if (stack.customOrder !== true) {
+        return orderStackMemberIds(stack.displayIds, displayListOrderIds);
+    }
+    const known = new Set(displayListOrderIds);
+    return stack.displayIds.filter((id) => known.has(id));
 }
 function stackBaseDisplayId(memberIds, displayListOrderIds) {
     const ordered = orderStackMemberIds(memberIds, displayListOrderIds);
@@ -82,7 +92,7 @@ function deriveVisiblePinnedSlots(input) {
     const pinnedSet = new Set((0, pinned_viewer_preference_1.parsePinnedDisplayIds)(input.pinnedDisplayIds));
     const displayToStack = new Map();
     for (const stack of input.stacks) {
-        const orderedMembers = orderStackMemberIds(stack.displayIds, input.displayListOrderIds).filter((id) => pinnedSet.has(id));
+        const orderedMembers = orderStackLayers(stack, input.displayListOrderIds).filter((id) => pinnedSet.has(id));
         if (orderedMembers.length < 2) {
             continue;
         }
@@ -103,9 +113,11 @@ function deriveVisiblePinnedSlots(input) {
             const stack = input.stacks.find((entry) => entry.id === stackId);
             if (!stack)
                 continue;
-            const orderedMemberDisplayIds = orderStackMemberIds(stack.displayIds, input.displayListOrderIds).filter((id) => pinnedSet.has(id));
+            const orderedMemberDisplayIds = orderStackLayers(stack, input.displayListOrderIds).filter((id) => pinnedSet.has(id));
             if (orderedMemberDisplayIds.length < 2)
                 continue;
+            // Slot placement and aspect anchor always follow the global Displays list,
+            // so reordering layers never moves the stack within the pinned band.
             const baseDisplayId = stackBaseDisplayId(orderedMemberDisplayIds, input.displayListOrderIds);
             const baseDisplay = input.displaysById.get(baseDisplayId);
             const aspectRatioKey = baseDisplay
@@ -167,7 +179,7 @@ function sanitizePinnedViewerStacks(input) {
     const nextStacks = [];
     const assigned = new Set();
     for (const stack of parsePinnedStacks(input.stacks)) {
-        const members = orderStackMemberIds(stack.displayIds, input.displayListOrderIds).filter((id) => pinnedSet.has(id));
+        const members = orderStackLayers(stack, input.displayListOrderIds).filter((id) => pinnedSet.has(id));
         const uniqueMembers = members.filter((id) => {
             if (assigned.has(id))
                 return false;
@@ -182,10 +194,9 @@ function sanitizePinnedViewerStacks(input) {
         for (const memberId of uniqueMembers) {
             assigned.add(memberId);
         }
-        nextStacks.push({
-            id: stack.id,
-            displayIds: uniqueMembers,
-        });
+        nextStacks.push(stack.customOrder === true
+            ? { id: stack.id, displayIds: uniqueMembers, customOrder: true }
+            : { id: stack.id, displayIds: uniqueMembers });
     }
     return {
         pinnedDisplayIds,
@@ -237,9 +248,7 @@ function buildAddToStackPreference(input) {
             if (!stackMembersCompatible(mergedIds, input.displaysById)) {
                 throw new Error("Displays must share the same aspect ratio to stack.");
             }
-            stacks = stacks.map((stack) => stack.id === targetStack.id
-                ? { id: stack.id, displayIds: mergedIds }
-                : stack);
+            stacks = stacks.map((stack) => stack.id === targetStack.id ? { ...stack, displayIds: mergedIds } : stack);
         }
         else {
             const memberIds = [targetId, sourceId];
@@ -255,7 +264,7 @@ function buildAddToStackPreference(input) {
         if (!stackMembersCompatible(mergedIds, input.displaysById)) {
             throw new Error("Displays must share the same aspect ratio to stack.");
         }
-        stacks = stacks.map((stack) => stack.id === targetStack.id ? { id: stack.id, displayIds: mergedIds } : stack);
+        stacks = stacks.map((stack) => stack.id === targetStack.id ? { ...stack, displayIds: mergedIds } : stack);
     }
     else {
         throw new Error("Invalid stack target.");
@@ -275,7 +284,7 @@ function buildRemoveFromStackPreference(input) {
     const nextMembers = stack.displayIds.filter((id) => id !== displayId);
     let stacks = input.stacks.filter((entry) => entry.id !== stackId);
     if (nextMembers.length >= 2) {
-        stacks = [...stacks, { id: stack.id, displayIds: nextMembers }];
+        stacks = [...stacks, { ...stack, displayIds: nextMembers }];
     }
     const nextVisible = countVisiblePinnedSlots({
         pinnedDisplayIds: input.pinnedDisplayIds,
@@ -300,6 +309,32 @@ function buildUnpinStackPreference(input) {
     return {
         pinnedDisplayIds: input.pinnedDisplayIds.filter((id) => !removeSet.has(id)),
         stacks: input.stacks.filter((entry) => entry.id !== stack.id),
+    };
+}
+/**
+ * Persist a new TOP…BOTTOM layer order for one stack.
+ * Only the stack record changes — pins and the global Displays list order are untouched.
+ */
+function buildReorderStackPreference(input) {
+    const stackId = input.stackId.trim();
+    const stack = input.stacks.find((entry) => entry.id === stackId);
+    if (!stack) {
+        throw new Error("Stack not found.");
+    }
+    const ordered = (0, pinned_viewer_preference_1.parsePinnedDisplayIds)(input.orderedDisplayIds);
+    const currentMembers = new Set(stack.displayIds);
+    if (ordered.length !== currentMembers.size ||
+        ordered.some((id) => !currentMembers.has(id))) {
+        throw new Error("Stack order must include exactly the displays in this stack.");
+    }
+    if (!stackMembersCompatible(ordered, input.displaysById)) {
+        throw new Error("Displays must share the same aspect ratio to stack.");
+    }
+    return {
+        pinnedDisplayIds: input.pinnedDisplayIds,
+        stacks: input.stacks.map((entry) => entry.id === stackId
+            ? { id: entry.id, displayIds: ordered, customOrder: true }
+            : entry),
     };
 }
 function listCompatibleStackTargets(input) {

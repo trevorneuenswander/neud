@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  resolveSubmenuPlacement,
+  type SubmenuPlacement,
+} from "@/lib/displays/context-menu-placement";
 
 export type PinnedViewerMenuItem =
   | {
@@ -29,6 +34,84 @@ type PinnedViewerContextMenuProps = {
   items: PinnedViewerMenuItem[];
   onClose: () => void;
 };
+
+const DEFAULT_PLACEMENT: SubmenuPlacement = { openLeft: false, offsetTop: 0 };
+
+function SubmenuItemRow({
+  item,
+  onClose,
+}: {
+  item: Extract<PinnedViewerMenuItem, { kind: "submenu" }>;
+  onClose: () => void;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState<SubmenuPlacement>(DEFAULT_PLACEMENT);
+
+  const recomputePlacement = useCallback(() => {
+    const row = rowRef.current;
+    const panel = panelRef.current;
+    const menu = row?.closest("[data-pinned-viewer-context-menu]") as HTMLElement | null;
+    if (!row || !panel || !menu) return;
+
+    const menuRect = menu.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const next = resolveSubmenuPlacement({
+      menuRect: {
+        left: menuRect.left,
+        right: menuRect.right,
+        top: rowRect.top,
+        bottom: menuRect.bottom,
+      },
+      submenuWidth: panel.offsetWidth || 200,
+      submenuHeight: panel.offsetHeight || 0,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
+    setPlacement(next);
+  }, []);
+
+  return (
+    <div
+      ref={rowRef}
+      className="group relative"
+      data-submenu-item={item.id}
+      data-submenu-open-left={placement.openLeft ? "true" : "false"}
+      data-submenu-offset-top={String(placement.offsetTop)}
+      onMouseEnter={recomputePlacement}
+      onFocus={recomputePlacement}
+    >
+      <div className="px-3 py-1.5 text-foreground hover:bg-surface">{item.label} ›</div>
+      <div
+        ref={panelRef}
+        role="menu"
+        data-submenu-panel={item.id}
+        data-submenu-placement={placement.openLeft ? "left" : "right"}
+        className={[
+          "invisible absolute top-0 z-[2001] min-w-[200px] rounded-md border border-border bg-surface-raised py-1 opacity-0 shadow-lg",
+          "group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100",
+          placement.openLeft ? "right-full left-auto" : "left-full",
+        ].join(" ")}
+        style={{ top: placement.offsetTop }}
+      >
+        {item.items.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            role="menuitem"
+            disabled={entry.disabled}
+            className="block w-full px-3 py-1.5 text-left hover:bg-surface disabled:opacity-50"
+            onClick={() => {
+              entry.onSelect();
+              onClose();
+            }}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function PinnedViewerContextMenu({
   open,
@@ -60,15 +143,16 @@ export function PinnedViewerContextMenu({
     };
   }, [onClose, open]);
 
-  if (!open) {
+  if (!open || typeof document === "undefined") {
     return null;
   }
 
-  return (
+  return createPortal(
     <div
       ref={rootRef}
       role="menu"
-      className="fixed z-[200] min-w-[220px] rounded-md border border-border bg-surface-raised py-1 text-sm shadow-lg"
+      data-pinned-viewer-context-menu=""
+      className="fixed z-[2000] min-w-[220px] rounded-md border border-border bg-surface-raised py-1 text-sm shadow-lg"
       style={{ left: x, top: y }}
       onContextMenu={(event) => event.preventDefault()}
     >
@@ -84,28 +168,7 @@ export function PinnedViewerContextMenu({
           );
         }
         if (item.kind === "submenu") {
-          return (
-            <div key={item.id} className="group relative">
-              <div className="px-3 py-1.5 text-foreground hover:bg-surface">{item.label} ›</div>
-              <div className="invisible absolute left-full top-0 z-[201] min-w-[200px] rounded-md border border-border bg-surface-raised py-1 opacity-0 shadow-lg group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-                {item.items.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    role="menuitem"
-                    disabled={entry.disabled}
-                    className="block w-full px-3 py-1.5 text-left hover:bg-surface disabled:opacity-50"
-                    onClick={() => {
-                      entry.onSelect();
-                      onClose();
-                    }}
-                  >
-                    {entry.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
+          return <SubmenuItemRow key={item.id} item={item} onClose={onClose} />;
         }
         return (
           <button
@@ -123,6 +186,9 @@ export function PinnedViewerContextMenu({
           </button>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }
+
+export { resolveSubmenuPlacement } from "@/lib/displays/context-menu-placement";

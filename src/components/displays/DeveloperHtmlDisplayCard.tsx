@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Button } from "@/components/ui/Button";
 import { DisclosureSection } from "@/components/ui/DisclosureSection";
 import { DisplayEditMenu } from "@/components/displays/DisplayEditMenu";
+import { VideoPlaybackControls } from "@/components/displays/VideoPlaybackControls";
 import {
   DisplayCardActionSizeRow,
   DisplayCardControlRow,
@@ -68,6 +69,7 @@ type DeveloperHtmlDisplayCardProps = {
     | "archived"
     | "enabled"
     | "publishedRevisionId"
+    | "settings"
   >;
   onArchived?: (displayId: string) => void;
   onDeleted?: (displayId: string) => void;
@@ -78,7 +80,7 @@ type DeveloperHtmlDisplayCardProps = {
     slug: string;
     displayKey: string;
     description: string | null;
-    sourceType: "built-in" | "project-html";
+    sourceType: "built-in" | "project-html" | "project-video";
     enabled: boolean;
     archived: boolean;
     refreshRateMs: number;
@@ -343,8 +345,10 @@ export function DeveloperHtmlDisplayCard({
     name: display.name,
     displayKey: display.displayKey,
     url: localDisplayUrl,
+    slug: display.slug,
     width: displayWidth,
     height: displayHeight,
+    sourceType: display.sourceType,
   });
 
   return (
@@ -354,11 +358,21 @@ export function DeveloperHtmlDisplayCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-sm font-semibold text-foreground">{display.name}</h4>
+              {display.sourceType === "project-video" ? (
+                <span
+                  className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted"
+                  title="ProRes 4444 video display"
+                >
+                  Video
+                </span>
+              ) : null}
               <div className="flex items-center gap-1">
-                <DisplayVersionBadge
-                  versionNumber={activeVersionNumber}
-                  createdAt={activeVersionCreatedAt}
-                />
+                {display.sourceType !== "project-video" ? (
+                  <DisplayVersionBadge
+                    versionNumber={activeVersionNumber}
+                    createdAt={activeVersionCreatedAt}
+                  />
+                ) : null}
                 {enabled ? (
                   <DisplayPinButton
                     displayId={display.id}
@@ -370,11 +384,34 @@ export function DeveloperHtmlDisplayCard({
               </div>
             </div>
             <p className="mt-1 text-xs text-muted">
-              {display.description ?? "Custom HTML display"}
+              {display.sourceType === "project-video"
+                ? display.description?.trim() || "ProRes 4444 Video Display"
+                : display.description?.trim() || "Custom HTML Display"}
             </p>
-            <p className="mt-1 text-xs text-muted">{dataConnectionLabel}</p>
+            {/* Preserve status-line height: video cards omit HTML data-bridge "Connecting…". */}
+            <p className="mt-1 min-h-[1rem] text-xs text-muted">
+              {display.sourceType === "project-video"
+                ? dataConnectionLabel === "Connection Error"
+                  ? dataConnectionLabel
+                  : "\u00A0"
+                : dataConnectionLabel}
+            </p>
             <p className="mt-1 text-xs text-muted">
-              {displayWidth} × {displayHeight} · transparent
+              {display.sourceType === "project-video"
+                ? [
+                    `${displayWidth} × ${displayHeight}`,
+                    display.settings?.hasAlpha === true
+                      ? "alpha"
+                      : display.settings?.hasAlpha === false
+                        ? "no alpha"
+                        : null,
+                    typeof display.settings?.codecLabel === "string"
+                      ? display.settings.codecLabel
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : `${displayWidth} × ${displayHeight} · transparent`}
             </p>
           </div>
           <NoDrag>
@@ -440,11 +477,25 @@ export function DeveloperHtmlDisplayCard({
                 {canDeveloperTools ? (
                   <DisplayEditMenu
                     projectSlug={projectSlug}
+                    projectId={projectId}
                     display={display}
                     onArchived={onArchived}
                     onDeleted={onDeleted}
                     onDuplicated={onDuplicated}
                   />
+                ) : null}
+                {display.sourceType === "project-video" ? (
+                  <>
+                    <span
+                      className="mx-1 hidden h-5 w-px bg-border sm:inline-block"
+                      aria-hidden
+                    />
+                    <VideoPlaybackControls
+                      displayId={display.id}
+                      canControl={canDeveloperTools}
+                      variant="card"
+                    />
+                  </>
                 ) : null}
               </>
             }

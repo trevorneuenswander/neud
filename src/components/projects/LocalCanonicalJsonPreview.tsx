@@ -175,7 +175,7 @@ export function LocalCanonicalJsonPreview({
         <h3 className="text-sm font-semibold text-foreground">Local Canonical JSON</h3>
         <EmptyState
           title="No canonical data yet"
-          description="Run the Webpage Scraper or Local Controller to populate the effective canonical state."
+          description="Run the Webpage Scraper or Manual Controller to populate the effective canonical state."
         />
         {loadError ? <p className="mt-3 text-sm text-muted">{loadError}</p> : null}
       </Card>

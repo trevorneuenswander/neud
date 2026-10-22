@@ -7,10 +7,15 @@ export const BUNDLED_DISPLAY_HTML_FILES = [
   "stream-bid-display-v1.html",
   "stream-ticker-v1.html",
   "led-display-quail-v1.html",
+  "lot-photos-v1.html",
+  "sema-schedule-ticker-v1.html",
+  "sema-schedule-pylon-v1.html",
+  "sema-schedule-ticker-editable-v1.html",
   "legacy-pylon-v1.html",
   "auction-ticker-overlay-v1.html",
   "auction-pylon-display-v1.html",
   "auction-ticker-legacy-live-v1-2026-07-26-132400.html",
+  "live-chat-overlay-v1.html",
 ] as const;
 
 export type BundledDisplayHtmlFileName = (typeof BUNDLED_DISPLAY_HTML_FILES)[number];
@@ -92,7 +97,8 @@ export function readBundledDisplaySource(fileName: string): string {
     throw createMissingBundledDisplayError(fileName, resolvedPath);
   }
 
-  const contents = fs.readFileSync(resolvedPath, "utf8");
+  // Windows editors/checkouts may add a UTF-8 BOM; it would break `<!doctype` detection.
+  const contents = fs.readFileSync(resolvedPath, "utf8").replace(/^\uFEFF/, "");
   if (!contents.trim()) {
     throw createMissingBundledDisplayError(fileName, resolvedPath);
   }
@@ -100,12 +106,20 @@ export function readBundledDisplaySource(fileName: string): string {
   return contents;
 }
 
+/**
+ * References are stored with "/" but can arrive with Windows separators (`C:\...\x.html`).
+ * win32 basename understands both on every OS, so the file name is resolved identically.
+ */
+export function bundledDisplayFileNameFromReference(referencePath: string): string {
+  return path.win32.basename(referencePath);
+}
+
 export function resolveBundledDisplaySourcePathFromReference(referencePath: string): string {
-  return resolveBundledDisplaySourcePath(path.basename(referencePath));
+  return resolveBundledDisplaySourcePath(bundledDisplayFileNameFromReference(referencePath));
 }
 
 export function readBundledDisplaySourceFromReference(referencePath: string): string {
-  return readBundledDisplaySource(path.basename(referencePath));
+  return readBundledDisplaySource(bundledDisplayFileNameFromReference(referencePath));
 }
 
 export function validateBundledDisplaySources(): void {

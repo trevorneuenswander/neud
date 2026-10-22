@@ -288,7 +288,9 @@ export function DesktopCloudAccessManagementClient() {
   }, [applyDirectoryPayload]);
 
   useEffect(() => {
-    void reload();
+    // Always pull authoritative cloud directory on first open so newly ensured
+    // cloud projects (e.g. after migrations) appear without sign-out/sign-in.
+    void reload({ forceRefresh: true });
   }, [reload]);
 
   useEffect(() => {

@@ -15,7 +15,11 @@ import type { AccessManagementActions } from "@/lib/access-management/actions";
 import type { AccessManagementDirectory, CloudTeamRole } from "@/lib/access-management/types";
 import { accessManagementErrorMessage } from "@/lib/access-management/errors";
 import { AccessTeamDeleteButton } from "@/components/access-management/AccessTeamDeleteButton";
-import { ACCESS_TABLE_ACTION_BUTTON_CLASS } from "@/lib/access-management/table-action-buttons";
+import {
+  ACCESS_TABLE_ACTION_BUTTON_CLASS,
+  ACCESS_TABLE_ACTION_SELECT_CLASS,
+} from "@/lib/access-management/table-action-buttons";
+import { NeudModal } from "@/components/ui/NeudModal";
 import {
   ASSIGNABLE_TEAM_ROLES,
   canManageTeam,
@@ -55,9 +59,8 @@ export function TeamsPanel({
     [directory, currentUserId],
   );
 
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [name, setName] = useState("");
-  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [memberUserId, setMemberUserId] = useState("");
@@ -71,10 +74,10 @@ export function TeamsPanel({
     selectedTeam && canManageTeam(capabilities, selectedTeam.id) && Boolean(actions);
 
   useEffect(() => {
-    if (showCreateForm) {
+    if (showCreateModal) {
       createNameRef.current?.focus();
     }
-  }, [showCreateForm]);
+  }, [showCreateModal]);
 
   async function runAction(action: () => Promise<void>) {
     setBusy(true);
@@ -88,10 +91,6 @@ export function TeamsPanel({
     }
   }
 
-  function toggleExpanded(teamId: string) {
-    setExpandedTeamId((previous) => (previous === teamId ? null : teamId));
-  }
-
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
     if (!actions?.createTeam || !capabilities.hasSiteWideAccess || !isOnline || busy) {
@@ -100,7 +99,7 @@ export function TeamsPanel({
     await runAction(async () => {
       await actions.createTeam({ name: name.trim() });
       setName("");
-      setShowCreateForm(false);
+      setShowCreateModal(false);
     });
   }
 
@@ -117,14 +116,21 @@ export function TeamsPanel({
     });
   }
 
+  function closeManageModal() {
+    setSelectedTeamId(null);
+    setMemberUserId("");
+    setMemberRole("member");
+  }
+
   function renderMemberActions(
     teamId: string,
     member: (typeof teamMemberships)[number],
   ) {
     const user = users.find((entry) => entry.id === member.userId);
-    const isOwnerRow = user ? isSoleOwnerProfile(user) && isNeudTeam(
-      teams.find((team) => team.id === teamId) ?? { name: "", slug: "" },
-    ) : false;
+    const isOwnerRow = user
+      ? isSoleOwnerProfile(user) &&
+        isNeudTeam(teams.find((team) => team.id === teamId) ?? { name: "", slug: "" })
+      : false;
     const canManageMembers = canManageTeam(capabilities, teamId) && Boolean(actions) && isOnline;
 
     if (isOwnerRow || !canManageMembers) {
@@ -132,11 +138,15 @@ export function TeamsPanel({
     }
 
     return (
-      <div className="flex flex-wrap gap-2">
+      <div
+        className="flex flex-nowrap items-center justify-start gap-2"
+        data-neud-team-member-actions="single-line"
+      >
         {actions?.changeTeamMemberRole ? (
           <select
             aria-label={`Change role for ${member.userName || member.userEmail}`}
-            className="rounded-md border border-border bg-surface-raised px-2 py-1 text-sm"
+            className={ACCESS_TABLE_ACTION_SELECT_CLASS}
+            data-neud-team-member-role-control="true"
             value={member.role === "admin" ? "admin" : "member"}
             disabled={busy}
             onChange={(event) => {
@@ -161,6 +171,9 @@ export function TeamsPanel({
           <Button
             type="button"
             variant="danger"
+            size="sm"
+            className={ACCESS_TABLE_ACTION_BUTTON_CLASS}
+            data-neud-team-member-remove-control="true"
             disabled={busy}
             onClick={() =>
               void runAction(async () => {
@@ -178,46 +191,17 @@ export function TeamsPanel({
     );
   }
 
+  const selectedMembers = selectedTeamId
+    ? teamMemberships.filter((member) => member.teamId === selectedTeamId)
+    : [];
+
   return (
     <div className="space-y-6">
       {capabilities.hasSiteWideAccess && actions?.createTeam && isOnline ? (
-        <div className="space-y-4">
-          {!showCreateForm ? (
-            <Button type="button" onClick={() => setShowCreateForm(true)}>
-              Create Team
-            </Button>
-          ) : (
-            <form
-              className="space-y-4 rounded-lg border border-border p-4"
-              onSubmit={handleCreate}
-            >
-              <FormField
-                id="team-name"
-                name="team-name"
-                label="Team Name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                inputRef={createNameRef}
-                required
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={busy || !name.trim()}>
-                  {busy ? "Creating…" : "Create Team"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    setName("");
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          )}
+        <div>
+          <Button type="button" onClick={() => setShowCreateModal(true)}>
+            Create Team
+          </Button>
         </div>
       ) : null}
 
@@ -249,17 +233,7 @@ export function TeamsPanel({
                   <StatusBadge status={team.isActive ? "approved" : "rejected"} />
                 </DataTableCell>
                 <DataTableCell>
-                  <div className="flex flex-nowrap items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className={ACCESS_TABLE_ACTION_BUTTON_CLASS}
-                      disabled={busy}
-                      onClick={() => toggleExpanded(team.id)}
-                    >
-                      {expandedTeamId === team.id ? "Hide members" : "Show members"}
-                    </Button>
+                  <div className="flex flex-nowrap items-center justify-start gap-2">
                     {canManageThisTeam ? (
                       <Button
                         type="button"
@@ -314,165 +288,199 @@ export function TeamsPanel({
         </AccessManagementTable>
       )}
 
-      {expandedTeamId ? (
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground">
-            {teams.find((team) => team.id === expandedTeamId)?.name ?? "Team"} members
-          </h3>
-          <AccessManagementTable
-            columnWidths={TEAM_MEMBER_COLUMN_WIDTHS}
-            headers={["Member", "Email", "Role", "Status", "Actions"]}
-          >
-            {teamMemberships
-              .filter((member) => member.teamId === expandedTeamId)
-              .map((member) => {
-                const team = teams.find((entry) => entry.id === expandedTeamId);
-                const user = users.find((entry) => entry.id === member.userId);
-                const displayRole = team
-                  ? resolveDisplayTeamRole(member.userId, team.id, directory)
-                  : "Member";
-                const isOwnerRow =
-                  user && team && isSoleOwnerProfile(user) && isNeudTeam(team);
-
-                return (
-                  <DataTableRow key={`${member.teamId}:${member.userId}`}>
-                    <DataTableCell>{member.userName || "—"}</DataTableCell>
-                    <DataTableCell className="truncate">{member.userEmail || "—"}</DataTableCell>
-                    <DataTableCell>
-                      {isOwnerRow ? (
-                        <div className="space-y-1">
-                          <StatusBadge status="approved" label="Owner" />
-                          <p className="text-xs text-muted">Sole NEUD owner</p>
-                        </div>
-                      ) : (
-                        displayRole
-                      )}
-                    </DataTableCell>
-                    <DataTableCell>{user?.accountStatus ?? "active"}</DataTableCell>
-                    <DataTableCell>
-                      {team ? renderMemberActions(team.id, member) : "—"}
-                    </DataTableCell>
-                  </DataTableRow>
-                );
-              })}
-          </AccessManagementTable>
-        </div>
+      {showCreateModal ? (
+        <NeudModal
+          title="Create Team"
+          onClose={() => {
+            if (busy) return;
+            setShowCreateModal(false);
+            setName("");
+          }}
+          initialFocusRef={createNameRef}
+        >
+          <form className="space-y-4" onSubmit={handleCreate}>
+            <FormField
+              id="team-name"
+              name="team-name"
+              label="Team Name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              inputRef={createNameRef}
+              required
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={busy || !name.trim()}>
+                {busy ? "Creating…" : "Create"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setName("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </NeudModal>
       ) : null}
 
       {selectedTeam && canManageSelectedTeam ? (
-        <div className="space-y-6 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground">Manage {selectedTeam.name}</h3>
-
-          {actions?.updateTeam ? (
-            <form className="grid gap-4 md:grid-cols-2" onSubmit={handleUpdate}>
-              <FormField
-                id="edit-team-name"
-                name="edit-team-name"
-                label="Team Name"
-                value={editName}
-                onChange={(event) => setEditName(event.target.value)}
-                required
-              />
-              <div className="flex flex-wrap items-end gap-2 md:col-span-2">
-                <Button type="submit" disabled={busy}>
-                  Save changes
-                </Button>
-                {!isNeudTeam(selectedTeam) ? (
-                  <Button
-                    type="button"
-                    variant="danger"
-                    disabled={busy}
-                    onClick={() =>
-                      void runAction(async () => {
-                        if (
-                          !window.confirm(
-                            `Archive team "${selectedTeam.name}"? This disables the team but keeps history.`,
-                          )
-                        ) {
-                          return;
-                        }
-                        await actions.archiveTeam!(selectedTeam.id);
-                        setSelectedTeamId(null);
-                      })
-                    }
-                  >
-                    Archive team
+        <NeudModal
+          title={`Manage ${selectedTeam.name}`}
+          size="wide"
+          onClose={() => {
+            if (busy) return;
+            closeManageModal();
+          }}
+        >
+          <div className="space-y-6">
+            {actions?.updateTeam ? (
+              <form className="space-y-4" onSubmit={handleUpdate}>
+                <FormField
+                  id="edit-team-name"
+                  name="edit-team-name"
+                  label="Team Name"
+                  value={editName}
+                  onChange={(event) => setEditName(event.target.value)}
+                  required
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" disabled={busy}>
+                    Save changes
                   </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => setSelectedTeamId(null)}
-                >
-                  Close
-                </Button>
-              </div>
-            </form>
-          ) : null}
+                  {!isNeudTeam(selectedTeam) ? (
+                    <Button
+                      type="button"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={() =>
+                        void runAction(async () => {
+                          if (
+                            !window.confirm(
+                              `Archive team "${selectedTeam.name}"? This disables the team but keeps history.`,
+                            )
+                          ) {
+                            return;
+                          }
+                          await actions.archiveTeam!(selectedTeam.id);
+                          closeManageModal();
+                        })
+                      }
+                    >
+                      Archive team
+                    </Button>
+                  ) : null}
+                </div>
+              </form>
+            ) : null}
 
-          {actions?.addTeamMember ? (
-            <form
-              className="grid gap-4 md:grid-cols-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void runAction(async () => {
-                  await actions.addTeamMember!({
-                    teamId: selectedTeam.id,
-                    userId: memberUserId,
-                    role: memberRole,
+            {actions?.addTeamMember ? (
+              <form
+                className="grid gap-4 md:grid-cols-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void runAction(async () => {
+                    await actions.addTeamMember!({
+                      teamId: selectedTeam.id,
+                      userId: memberUserId,
+                      role: memberRole,
+                    });
+                    setMemberUserId("");
                   });
-                  setMemberUserId("");
-                });
-              }}
-            >
-              <div>
-                <label htmlFor="member-user" className="block text-sm font-medium text-foreground">
-                  User
-                </label>
-                <select
-                  id="member-user"
-                  name="member-user"
-                  className="mt-2 block w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm"
-                  value={memberUserId}
-                  onChange={(event) => setMemberUserId(event.target.value)}
-                  required
+                }}
+              >
+                <div>
+                  <label htmlFor="member-user" className="block text-sm font-medium text-foreground">
+                    User
+                  </label>
+                  <select
+                    id="member-user"
+                    name="member-user"
+                    className="mt-2 block w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm"
+                    value={memberUserId}
+                    onChange={(event) => setMemberUserId(event.target.value)}
+                    required
+                  >
+                    <option value="">Select user</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.fullName || user.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="member-role" className="block text-sm font-medium text-foreground">
+                    Team role
+                  </label>
+                  <select
+                    id="member-role"
+                    name="member-role"
+                    className="mt-2 block w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm"
+                    value={memberRole}
+                    onChange={(event) => setMemberRole(event.target.value as AssignableTeamRole)}
+                    required
+                  >
+                    {ASSIGNABLE_TEAM_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {role === "admin" ? "Admin" : "Member"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <Button type="submit" disabled={busy || !memberUserId}>
+                    Add member
+                  </Button>
+                </div>
+              </form>
+            ) : null}
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground">Members</h3>
+              <div className="min-w-0 overflow-x-auto">
+                <AccessManagementTable
+                  columnWidths={TEAM_MEMBER_COLUMN_WIDTHS}
+                  headers={["Member", "Email", "Role", "Actions"]}
                 >
-                  <option value="">Select user</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.fullName || user.email}
-                    </option>
-                  ))}
-                </select>
+                  {selectedMembers.map((member) => {
+                    const team = selectedTeam;
+                    const user = users.find((entry) => entry.id === member.userId);
+                    const displayRole = resolveDisplayTeamRole(
+                      member.userId,
+                      team.id,
+                      directory,
+                    );
+                    const isOwnerRow =
+                      user && team && isSoleOwnerProfile(user) && isNeudTeam(team);
+
+                    return (
+                      <DataTableRow key={`${member.teamId}:${member.userId}`}>
+                        <DataTableCell>{member.userName || "—"}</DataTableCell>
+                        <DataTableCell className="truncate">{member.userEmail || "—"}</DataTableCell>
+                        <DataTableCell>
+                          {isOwnerRow ? (
+                            <div className="space-y-1">
+                              <StatusBadge status="approved" label="Owner" />
+                              <p className="text-xs text-muted">Sole NEUD owner</p>
+                            </div>
+                          ) : (
+                            displayRole
+                          )}
+                        </DataTableCell>
+                        <DataTableCell>{renderMemberActions(team.id, member)}</DataTableCell>
+                      </DataTableRow>
+                    );
+                  })}
+                </AccessManagementTable>
               </div>
-              <div>
-                <label htmlFor="member-role" className="block text-sm font-medium text-foreground">
-                  Team role
-                </label>
-                <select
-                  id="member-role"
-                  name="member-role"
-                  className="mt-2 block w-full rounded-md border border-border bg-surface-raised px-3 py-2 text-sm"
-                  value={memberRole}
-                  onChange={(event) => setMemberRole(event.target.value as AssignableTeamRole)}
-                  required
-                >
-                  {ASSIGNABLE_TEAM_ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role === "admin" ? "Admin" : "Member"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end">
-                <Button type="submit" disabled={busy || !memberUserId}>
-                  Add member
-                </Button>
-              </div>
-            </form>
-          ) : null}
-        </div>
+            </div>
+          </div>
+        </NeudModal>
       ) : null}
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}

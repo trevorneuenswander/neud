@@ -1,23 +1,22 @@
 import { ACCESS_ACTIONS_COLUMN_WIDTH } from "@/lib/access-management/table-action-buttons";
 
-export const TEAM_COLUMN_WIDTHS = ["34%", "12%", "12%", "12%", "18%"] as const;
-export const TEAM_MEMBER_COLUMN_WIDTHS = ["22%", "26%", "14%", "14%", "18%"] as const;
-export const USER_COLUMN_WIDTHS = ["14%", "20%", "12%", "16%", "14%", "10%", "14%"] as const;
+export const TEAM_COLUMN_WIDTHS = ["30%", "12%", "12%", "16%", "18%"] as const;
+/** Member / Email / Role / Actions — Actions stays wide enough for role+Remove on one line. */
+export const TEAM_MEMBER_COLUMN_WIDTHS = ["24%", "28%", "14%", "34%"] as const;
+export const USER_COLUMN_WIDTHS = ["16%", "20%", "14%", "16%", "16%", "14%"] as const;
 export const USER_COLUMN_WIDTHS_WITH_DETAILS = [
-  "16%",
-  "16%",
+  "18%",
+  "18%",
+  "18%",
   "16%",
   "14%",
-  "12%",
-  "10%",
   "10%",
 ] as const;
 export const PROJECT_ACCESS_COLUMN_WIDTHS = [
+  "22%",
   "18%",
+  "22%",
   "16%",
-  "18%",
-  "14%",
-  "10%",
   ACCESS_ACTIONS_COLUMN_WIDTH,
 ] as const;
 

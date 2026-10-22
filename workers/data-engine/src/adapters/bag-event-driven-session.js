@@ -10,7 +10,10 @@ import {
   isBagEventDrivenLiveEnabled,
   readWorkerBuildIdentity,
 } from "./bag-live-feed-utils.js";
-import { installLiveFeedBridgeOnPage } from "./bag-live-feed-bridge.js";
+import {
+  installLiveFeedBridgeOnPage,
+  readCurrentAuctionDisplaySnapshot,
+} from "./bag-live-feed-bridge.js";
 import {
   createAbortableSleep,
   markBackgroundRefreshStarted,
@@ -46,6 +49,9 @@ export function createBagEventDrivenSession(options) {
 
   let state = createInitialLiveFeedRuntimeState();
   let lastFingerprint = null;
+  // Ordering guard: counts live events published after start, so the one-shot
+  // initial read can detect that newer live data already arrived and skip itself.
+  let liveEventEpoch = 0;
   let lastModeChangeAt = 0;
   let healthTimer = null;
   let backgroundInFlight = false;
@@ -147,6 +153,9 @@ export function createBagEventDrivenSession(options) {
       });
     }
     setCache(cache);
+    if (!timing?.initialHydration) {
+      liveEventEpoch += 1;
+    }
 
     const canonicalUpdatedAt = Date.now();
     const traceEventId = `${engineId}-${workerReceivedAt}-${fingerprint.slice(0, 12)}`;
@@ -507,8 +516,46 @@ export function createBagEventDrivenSession(options) {
     };
   }
 
+  /** One-shot read of the current auction state; publishes through the live-event path. */
+  async function hydrateInitialAuctionState() {
+    try {
+      const page = getAuctionPage();
+      const epochBeforeRead = liveEventEpoch;
+      const snapshot = await readCurrentAuctionDisplaySnapshot(page);
+      if (liveEventEpoch !== epochBeforeRead) {
+        logExecution("Initial auction state skipped; live feed already delivered current state");
+      } else if (snapshot) {
+        await publishIfChanged(
+          {
+            receivedAt: Date.now(),
+            source: "faye",
+            eventType: "initial_state",
+            vehicleId: snapshot.vehicleId,
+            lotNumber: snapshot.lotNumber,
+            year: snapshot.year,
+            title: snapshot.title,
+            biddingPrice: snapshot.biddingPrice,
+            reserveStatus: snapshot.reserveStatus,
+            currencies: snapshot.currencies,
+            photos: snapshot.photos,
+          },
+          { initialHydration: true },
+        );
+        logExecution("Initial auction state loaded");
+      } else {
+        logExecution("Initial auction state unavailable; waiting for live events");
+      }
+    } catch (error) {
+      logExecution(
+        `Initial auction state load failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   return {
-    async start(initialSettings) {
+    async start(initialSettings, startOptions = {}) {
       if (started) {
         return;
       }
@@ -542,9 +589,19 @@ export function createBagEventDrivenSession(options) {
       }
 
       acceptLiveEvents = true;
+
+      // One-shot authoritative hydration after Start (and Restart). Faye continues
+      // afterward; fingerprint guards prevent duplicate publish if a live event
+      // arrives concurrently with the same state.
       if (getOperatorMode() !== "legacy") {
+        // Load the catalog first so the initial snapshot has prev/current/next lots.
         await runBackgroundCycle();
+        // Run Once keeps its existing semantics (manual refresh publishes instead).
+        if (startOptions.initialHydration !== false) {
+          await hydrateInitialAuctionState();
+        }
       }
+
       startSchedulers();
       startHealthMonitor();
     },

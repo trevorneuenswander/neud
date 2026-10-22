@@ -31,3 +31,36 @@ export function resolveDashboardConnectionState(input: {
   }
   return "offline";
 }
+
+/**
+ * Cloud connection as shown to the user. Never collapses these into a single "Offline":
+ * - network_offline: the machine cannot reach the internet.
+ * - reconnecting: network is up, a cloud session exists (or is restorable), and the
+ *   keeper is still refreshing the token / rebuilding the authenticated client.
+ * - authentication_required: the cloud refresh token is rejected or no cloud session exists.
+ */
+export type CloudConnectionState =
+  | "connected"
+  | "network_offline"
+  | "reconnecting"
+  | "authentication_required";
+
+export function resolveCloudConnectionState(input: {
+  networkReachable: boolean;
+  sharedAuth: SharedCloudAuthSnapshot | null;
+}): CloudConnectionState {
+  const shared = input.sharedAuth;
+  if (shared?.reauthenticationRequired) {
+    return "authentication_required";
+  }
+  if (!input.networkReachable) {
+    return "network_offline";
+  }
+  if (shared?.authenticatedCloudSessionAvailable && !shared.tokenExpired) {
+    return "connected";
+  }
+  if (!shared || (!shared.hasCloudSession && !shared.hasRestorableCloudSession)) {
+    return "authentication_required";
+  }
+  return "reconnecting";
+}

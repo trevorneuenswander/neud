@@ -19,7 +19,7 @@ export const RESERVED_DISPLAY_SLUGS = new Set([
   "workers",
 ]);
 
-export const DISPLAY_SOURCE_TYPES = ["built-in", "project-html"] as const;
+export const DISPLAY_SOURCE_TYPES = ["built-in", "project-html", "project-video"] as const;
 
 export type DisplaySourceType = (typeof DISPLAY_SOURCE_TYPES)[number];
 

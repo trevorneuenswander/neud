@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { GlobalOutputTally } from "@/components/output/GlobalOutputTally";
 import { getDesktopAPI, isDesktopEnvironment } from "@/lib/desktop/client";
 import { showInWindowApplicationMenu } from "@/lib/desktop/shell-capabilities";
 
@@ -57,6 +58,7 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
       observer.disconnect();
       document.documentElement.style.removeProperty("--title-bar-height");
       document.documentElement.style.removeProperty("--window-menu-height");
+      document.documentElement.style.removeProperty("--desktop-titlebar-height");
     };
   }, [active]);
 
@@ -92,62 +94,97 @@ export function AppTitleBar({ active = true }: AppTitleBarProps) {
     });
   };
 
-  const showWindowControls = platform !== "darwin";
+  const isMac = platform === "darwin";
+  const showWindowControls = !isMac;
+
+  const menu = inWindowMenuEnabled ? (
+    <nav
+      className="flex items-center gap-1"
+      aria-label="Application menu"
+      style={noDragStyle}
+      data-titlebar-menu=""
+    >
+      {menuLabels.map((label) => (
+        <button
+          key={label}
+          type="button"
+          className="rounded px-2 py-1 text-sm text-foreground hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          onClick={(event) => popupMenu(label, event)}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  ) : (
+    <div className="min-w-0" aria-hidden="true" data-titlebar-menu-spacer="" />
+  );
+
+  const tally = (
+    <div
+      className="flex h-full items-center"
+      style={noDragStyle}
+      data-titlebar-tally-slot=""
+      data-tally-platform={platform}
+    >
+      <GlobalOutputTally />
+    </div>
+  );
+
+  const windowControls = showWindowControls ? (
+    <div
+      className="flex h-full items-stretch"
+      style={noDragStyle}
+      data-titlebar-window-controls=""
+    >
+      <button
+        type="button"
+        aria-label="Minimize"
+        className="inline-flex w-11 items-center justify-center text-sm text-foreground hover:bg-surface-raised"
+        onClick={() => windowControl("minimize")}
+      >
+        &#8211;
+      </button>
+      <button
+        type="button"
+        aria-label={isMaximized ? "Restore" : "Maximize"}
+        className="inline-flex w-11 items-center justify-center text-sm text-foreground hover:bg-surface-raised"
+        onClick={() => windowControl("maximize")}
+      >
+        {isMaximized ? "❐" : "□"}
+      </button>
+      <button
+        type="button"
+        aria-label="Close"
+        className="inline-flex w-11 items-center justify-center text-sm text-foreground hover:bg-danger hover:text-white"
+        onClick={() => windowControl("close")}
+      >
+        &#10005;
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div
       ref={titleBarRef}
       className="fixed left-0 right-0 top-0 z-[1001] flex h-9 items-center border-b border-border bg-background pl-3 pr-0"
       style={dragStyle}
+      data-titlebar-platform={platform}
+      data-titlebar-maximized={isMaximized ? "true" : "false"}
     >
-      {inWindowMenuEnabled ? (
-        <nav
-          className="flex items-center gap-1"
-          aria-label="Application menu"
-          style={noDragStyle}
-        >
-          {menuLabels.map((label) => (
-            <button
-              key={label}
-              type="button"
-              className="rounded px-2 py-1 text-sm text-foreground hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              onClick={(event) => popupMenu(label, event)}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
+      {isMac ? (
+        <>
+          {menu}
+          <div className="min-w-0 flex-1" aria-hidden="true" data-titlebar-drag-fill="" />
+          <div className="flex h-full items-center gap-2 pr-2">{tally}</div>
+        </>
       ) : (
-        <div className="min-w-0 flex-1" aria-hidden="true" />
+        <>
+          {menu}
+          <div className="ml-2 flex h-full items-center">{tally}</div>
+          <div className="min-w-0 flex-1" aria-hidden="true" data-titlebar-drag-fill="" />
+          <div className="flex h-full items-center pr-0">{windowControls}</div>
+        </>
       )}
-      {showWindowControls ? (
-        <div className="ml-auto flex h-full items-stretch" style={noDragStyle}>
-          <button
-            type="button"
-            aria-label="Minimize"
-            className="inline-flex w-11 items-center justify-center text-sm text-foreground hover:bg-surface-raised"
-            onClick={() => windowControl("minimize")}
-          >
-            &#8211;
-          </button>
-          <button
-            type="button"
-            aria-label={isMaximized ? "Restore" : "Maximize"}
-            className="inline-flex w-11 items-center justify-center text-sm text-foreground hover:bg-surface-raised"
-            onClick={() => windowControl("maximize")}
-          >
-            {isMaximized ? "❐" : "□"}
-          </button>
-          <button
-            type="button"
-            aria-label="Close"
-            className="inline-flex w-11 items-center justify-center text-sm text-foreground hover:bg-danger hover:text-white"
-            onClick={() => windowControl("close")}
-          >
-            &#10005;
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -34,7 +34,7 @@ export function useSidebarProjects(options: UseSidebarProjectsOptions = {}) {
       if (isLocalMode) {
         const meta = await localGetProjectsMeta({ wait: false });
         setViewerMode(resolveProjectsViewerMode(meta));
-        const list = await localListProjects();
+        const list = await localListProjects(undefined, { scope: "installed" });
         setProjects(list.projects as ProjectListItem[]);
       } else if (options.initialProjects) {
         setProjects(options.initialProjects);

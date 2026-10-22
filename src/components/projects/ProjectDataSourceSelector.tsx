@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ProjectOnAirSourceToggle } from "@/components/projects/ProjectOnAirSourceToggle";
 import {
   DISPLAY_DATA_SOURCE_OPTIONS,
   type DisplayDataSource,
@@ -15,34 +16,6 @@ import { isDesktopEnvironment } from "@/lib/desktop/client";
 type ProjectDataSourceSelectorProps = {
   initialDataSource?: DisplayDataSource;
 };
-
-function SelectorPlaceholder({ initialDataSource }: { initialDataSource: DisplayDataSource }) {
-  return (
-    <>
-      <span className="text-sm text-muted">Data Source</span>
-      <div
-        className="inline-flex rounded-md border border-border bg-surface p-0.5"
-        aria-hidden="true"
-      >
-        {DISPLAY_DATA_SOURCE_OPTIONS.map((option) => {
-          const selected = initialDataSource === option.value;
-          return (
-            <span
-              key={option.value}
-              className={`rounded px-3 py-1.5 text-sm font-medium ${
-                selected
-                  ? "bg-primary text-white"
-                  : "text-muted"
-              }`}
-            >
-              {option.label}
-            </span>
-          );
-        })}
-      </div>
-    </>
-  );
-}
 
 export function ProjectDataSourceSelector({
   initialDataSource = "webpage-scraper",
@@ -77,41 +50,14 @@ export function ProjectDataSourceSelector({
   );
 
   return (
-    <div
-      className="flex shrink-0 items-center gap-3 self-center"
-      role="group"
-      aria-label="Data source"
-      data-hydrated={mounted ? "true" : "false"}
-    >
-      {desktopActive ? (
-        <>
-          <span className="text-sm text-muted">Data Source</span>
-          <div className="inline-flex rounded-md border border-border bg-surface p-0.5">
-            {DISPLAY_DATA_SOURCE_OPTIONS.map((option) => {
-              const selected = source === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => {
-                    handleSelect(option.value);
-                  }}
-                  className={`rounded px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                    selected
-                      ? "bg-primary text-white"
-                      : "text-muted hover:bg-surface-raised hover:text-foreground"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      ) : (
-        <SelectorPlaceholder initialDataSource={initialDataSource} />
-      )}
+    <div data-hydrated={mounted ? "true" : "false"}>
+      <ProjectOnAirSourceToggle
+        options={DISPLAY_DATA_SOURCE_OPTIONS}
+        value={source}
+        disabled={!desktopActive}
+        ariaLabel="On-air data source"
+        onSelect={handleSelect}
+      />
     </div>
   );
 }

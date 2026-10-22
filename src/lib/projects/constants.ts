@@ -13,6 +13,7 @@ export const ALL_PROJECT_DATA_TYPES = [
   "json-ingest",
   "google-sheet-ingest",
   "bag-graphics",
+  "sema-schedule",
 ] as const;
 
 export type ProjectDataType = (typeof ALL_PROJECT_DATA_TYPES)[number];
@@ -49,6 +50,7 @@ export const PROJECT_DATA_TYPE_LABELS: Record<ProjectDataType, string> = {
   "json-ingest": "JSON Ingest",
   "google-sheet-ingest": "Google Sheet Ingest",
   "bag-graphics": "BAG Graphics",
+  "sema-schedule": "SEMA Schedule",
 };
 
 export const PROJECT_ACCESS_LEVEL_LABELS: Record<
@@ -63,6 +65,10 @@ export const PROJECT_ACCESS_LEVEL_LABELS: Record<
 
 export function projectSupportsBagController(projectType: string): boolean {
   return projectType === "bag-graphics";
+}
+
+export function projectSupportsSemaWorkflow(projectType: string): boolean {
+  return projectType === "sema-schedule";
 }
 
 export const DEFAULT_PROJECT_THEME = "default";
