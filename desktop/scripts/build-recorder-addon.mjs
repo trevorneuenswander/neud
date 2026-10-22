@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { nodeGypSpawnOptions, resolveNodeGyp } from "./lib/resolve-node-gyp.mjs";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nativeDir = path.join(desktopRoot, "native", "recorder");
@@ -53,10 +54,13 @@ if (!force && isUpToDate()) {
   process.exit(0);
 }
 
-const nodeGyp = path.join(desktopRoot, "node_modules", ".bin", "node-gyp");
+const nodeGyp = resolveNodeGyp(desktopRoot);
+const spawnOpts = nodeGypSpawnOptions(nodeGyp);
+console.log("[native] node-gyp:", nodeGyp);
 const result = spawnSync(
-  nodeGyp,
+  spawnOpts.command,
   [
+    ...spawnOpts.argsPrefix,
     "rebuild",
     "--release",
     "--target=33.4.11",
@@ -66,6 +70,7 @@ const result = spawnSync(
   {
     cwd: nativeDir,
     stdio: "inherit",
+    shell: spawnOpts.shell,
     env: {
       ...process.env,
       npm_config_runtime: "electron",
