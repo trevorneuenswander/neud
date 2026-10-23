@@ -36,7 +36,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: "/(favicon-16x16|favicon-32x32|apple-touch-icon).png",
+        source: "/favicon-16x16.png",
         headers: [
           {
             key: "Cache-Control",
@@ -45,7 +45,25 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: "/branding/neud-:path*",
+        source: "/favicon-32x32.png",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/apple-touch-icon.png",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/branding/:file*",
         headers: [
           {
             key: "Cache-Control",
