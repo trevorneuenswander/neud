@@ -1,5 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
 import { APP_NAME, APP_TAGLINE } from "@/lib/branding/app-name";
+import { NEUD_ICON_PATH } from "@/lib/branding/logo";
 
 type NeudLogoSize = "sm" | "md" | "lg" | "hero";
 
@@ -24,18 +26,39 @@ const taglineClasses: Record<NeudLogoSize, string> = {
   hero: "text-sm tracking-wide sm:text-base",
 };
 
+const iconPixels: Record<NeudLogoSize, number> = {
+  sm: 22,
+  md: 28,
+  lg: 36,
+  hero: 64,
+};
+
 export function NeudLogo({
   size = "md",
   showTagline = false,
   href = "/",
   className = "",
 }: NeudLogoProps) {
+  const iconSize = iconPixels[size];
+
   const content = (
     <div className={`inline-flex flex-col gap-1 ${className}`}>
-      <span
-        className={`font-semibold uppercase text-foreground ${sizeClasses[size]}`}
-      >
-        {APP_NAME}
+      <span className="inline-flex items-center gap-2.5 sm:gap-3">
+        <Image
+          src={NEUD_ICON_PATH}
+          alt=""
+          width={iconSize}
+          height={iconSize}
+          className="shrink-0 rounded-md"
+          style={{ width: iconSize, height: iconSize }}
+          priority={size === "hero" || size === "lg"}
+          unoptimized
+        />
+        <span
+          className={`font-semibold uppercase text-foreground ${sizeClasses[size]}`}
+        >
+          {APP_NAME}
+        </span>
       </span>
       {showTagline ? (
         <span className={`text-muted ${taglineClasses[size]}`}>{APP_TAGLINE}</span>
@@ -48,6 +71,7 @@ export function NeudLogo({
       <Link
         href={href}
         className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        aria-label={APP_NAME}
       >
         {content}
       </Link>

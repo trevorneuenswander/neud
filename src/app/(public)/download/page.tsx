@@ -1,8 +1,10 @@
+import Image from "next/image";
 import { AppVersion } from "@/components/branding/AppVersion";
 import { ReleaseDownloadSection } from "@/components/downloads/ReleaseDownloadSection";
 import { WindowsDownloadReleaseNotesLink } from "@/components/downloads/WindowsDownloadLink";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { Card } from "@/components/ui/Card";
+import { NEUD_ICON_PATH } from "@/lib/branding/logo";
 import {
   formatReleaseDate,
   getCurrentNeudRelease,
@@ -26,12 +28,24 @@ export default function DownloadPage() {
 
       <Card className="space-y-4 border-primary/30 p-6 ring-1 ring-primary/20">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-            Current release
-          </p>
-          <h2 className="text-xl font-semibold text-foreground">
-            NEUD v{currentRelease.version}
-          </h2>
+          <div className="flex items-center gap-3">
+            <Image
+              src={NEUD_ICON_PATH}
+              alt=""
+              width={40}
+              height={40}
+              className="rounded-md"
+              unoptimized
+            />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Current release
+              </p>
+              <h2 className="text-xl font-semibold text-foreground">
+                NEUD v{currentRelease.version}
+              </h2>
+            </div>
+          </div>
           <p className="text-sm text-muted">{currentRelease.summary}</p>
           <p className="text-xs text-muted">
             Released {formatReleaseDate(currentRelease.releaseDate)}

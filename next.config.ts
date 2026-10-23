@@ -25,6 +25,34 @@ const nextConfig: NextConfig = {
           { key: "Pragma", value: "no-cache" },
         ],
       },
+      // Favicons and brand marks use ?v= query busting; allow short browser cache.
+      {
+        source: "/favicon.ico",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/(favicon-16x16|favicon-32x32|apple-touch-icon).png",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/branding/neud-:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, must-revalidate",
+          },
+        ],
+      },
     ];
   },
 };

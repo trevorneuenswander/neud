@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { AppVersion } from "@/components/branding/AppVersion";
 import { SidebarTooltip } from "@/components/portal/SidebarTooltip";
 import { APP_NAME } from "@/lib/branding/app-name";
+import { NEUD_ICON_PATH } from "@/lib/branding/logo";
 import { useSidebarCollapsed } from "@/lib/portal/sidebar-collapse-context";
 import { SidebarPanelLeftIcon } from "@/lib/portal/sidebar-nav-icons";
 import {
@@ -70,8 +72,16 @@ export function SidebarBranding({ onToggleSidebar }: SidebarBrandingProps) {
     <div className="sidebar-brand flex w-full min-w-0 items-center gap-1" style={noDragStyle}>
       <Link
         href="/dashboard"
-        className="flex min-w-0 flex-1 items-baseline gap-2 truncate rounded px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="flex min-w-0 flex-1 items-center gap-2 truncate rounded px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
+        <Image
+          src={NEUD_ICON_PATH}
+          alt=""
+          width={22}
+          height={22}
+          className="shrink-0 rounded"
+          unoptimized
+        />
         <span className="sidebar-brand-name shrink-0 text-sm font-semibold uppercase tracking-[0.28em] text-foreground">
           {APP_NAME}
         </span>
