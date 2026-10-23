@@ -27,13 +27,13 @@ test("current v0.3.0 is marked current and matches package.json", () => {
 test("v0.2.3 summary covers fresh-install display recovery", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
   assert.match(catalog, /Fresh-install display recovery and cross-device published-display synchronization/);
-  assert.match(catalog, /Stream Bid, Stream Ticker, and LED Display \(Quail\)/);
+  assert.match(catalog, /Published graphics templates recover without requiring a manual republish/);
 });
 
 test("v0.2.2 remains a previous cross-platform release", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
-  assert.match(catalog, /Improved Faye live-data support in packaged apps/);
-  assert.match(catalog, /LED Display \(Quail\)/);
+  assert.match(catalog, /Improved event-driven live-data transport in packaged apps/);
+  assert.match(catalog, /Large-format LED graphics support for production workflows/);
   assert.match(catalog, /version: "0\.2\.2"/);
 });
 
@@ -109,8 +109,8 @@ test("release notes doc points to authoritative catalog", () => {
   assert.match(prior, /NEUD v0\.2\.4/);
   const notes = read("docs/releases/v0.2.3-github-release-notes.md");
   assert.match(notes, /fresh installations/);
-  assert.match(notes, /Stream Bid, Stream Ticker, and LED Display \(Quail\)/);
+  assert.match(notes, /Published graphics templates recover/);
   const older = read("docs/release-notes-v0.2.2.md");
   assert.match(older, /Apple Silicon macOS/);
-  assert.match(older, /Faye/);
+  assert.match(older, /event-driven live-data transport/);
 });

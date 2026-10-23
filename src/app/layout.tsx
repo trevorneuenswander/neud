@@ -19,7 +19,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: `${APP_NAME} — ${APP_TAGLINE}`,
+  description:
+    "A professional live graphics and data integration platform built for broadcast and live production. Local-first desktop operation with optional online published viewers.",
+  openGraph: {
+    title: `${APP_NAME} — ${APP_TAGLINE}`,
+    description:
+      "Professional live graphics and data integration for broadcast and live production.",
+  },
 };
 
 export default function RootLayout({

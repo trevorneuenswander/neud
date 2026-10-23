@@ -48,19 +48,19 @@ const V030_HIGHLIGHTS = [
   "Record to Disk on macOS: H.264 MP4, ProRes 422 HQ MOV, and ProRes 4444 MOV",
   "Native ProRes video displays with alpha-capable playback, controls, and stack synchronization",
   "Performance Monitor for system/NEUD CPU, GPU, RAM, macOS memory pressure, and output diagnostics",
-  "SEMA package updates including Manual Controller and Schedule Ticker refinements",
+  "Improved graphics template typography, layout consistency, and manual data management controls",
   "Safer on-air guards when quitting, signing out, changing stacks, or deleting/archiving/disabling source displays",
   "New official NEUD application icon for Windows and macOS",
 ] as const;
 
 const V024_HIGHLIGHTS = [
-  "Stream Bid no longer restores the previous lot photo after a lot change",
+  "Improved live graphic transitions so previous media cannot reappear after advancing",
   "macOS recovers when a cached Chrome installation is incomplete",
-  "Manual Bid can be cleared from the Manual Controller and live displays",
-  "Signing out warns when a scraper is running and stops active data engines before ending the session",
+  "Manual values can be cleared from controllers and live displays",
+  "Signing out warns when a data engine is running and stops active engines before ending the session",
   "Project team names appear correctly on user Associated Projects",
   "Display enabled state and display order follow the project across NEUD installations",
-  "Stream Bid Local URL matches Preview, Fullscreen, and pinned output",
+  "Local URL output matches Preview, Fullscreen, and pinned output",
   "Fresh installations restore published display output from cloud sync",
 ] as const;
 
@@ -68,7 +68,7 @@ const V023_HIGHLIGHTS = [
   "Fixed published displays failing to load after installing NEUD on a new computer",
   "Published display revisions now follow project and display identity changes during cloud sync",
   "Missing local published revisions can be restored from the exact cloud revision",
-  "Stream Bid, Stream Ticker, and LED Display (Quail) recover published output without a manual republish",
+  "Published graphics templates recover without requiring a manual republish",
   "Preview, Local URL, Pin, and Fullscreen resolve after a fresh installation",
   "Clearer diagnostics for missing or repaired published display content",
 ] as const;
@@ -76,8 +76,8 @@ const V023_HIGHLIGHTS = [
 const V022_HIGHLIGHTS = [
   "NEUD is now available for Windows and Apple Silicon Macs",
   "Apple Silicon macOS desktop support with native menu and window behavior",
-  "LED Display (Quail) for Broad Arrow workflows",
-  "Improved Faye live-data support in packaged apps",
+  "Large-format LED graphics support for production workflows",
+  "Improved event-driven live-data transport in packaged apps",
   "Cross-platform bundled Chrome runtime",
   "Improved display recovery on fresh installations",
   "Authentication and packaged runtime configuration hardening",
@@ -92,7 +92,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     status: "current",
     current: true,
     summary:
-      "Output Engine, Record to Disk, native ProRes video displays, Performance Monitor, and SEMA package refinements for Windows x64 and Apple Silicon Macs.",
+      "Output Engine, Record to Disk, native ProRes video displays, Performance Monitor, and graphics workflow refinements for Windows x64 and Apple Silicon Macs.",
     highlights: [...V030_HIGHLIGHTS],
     platforms: {
       windows: {
@@ -126,7 +126,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     status: "published",
     current: false,
     summary:
-      "Reliability and workflow update for live auctions, cross-device display settings, and controller polish on Windows and Apple Silicon Macs.",
+      "Reliability and workflow update for live production, cross-device display settings, and controller polish on Windows and Apple Silicon Macs.",
     highlights: [...V024_HIGHLIGHTS],
     platforms: {
       windows: {
@@ -176,7 +176,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     },
     githubReleaseUrl: getGitHubReleaseTagUrl("0.2.3"),
     knownLimitations: [
-      "Windows packaged live graphics can update more slowly than macOS during live Faye workflows; further Windows display transport optimization is planned.",
+      "Windows packaged live graphics can update more slowly than macOS during some live-data workflows; further Windows display transport optimization is planned.",
       "Alpha software; Windows builds may show SmartScreen warnings when unsigned.",
       "macOS builds from CI are unsigned and not notarized until Developer ID signing secrets are configured — Gatekeeper may require manual approval on first open.",
       "Intel Macs are not supported.",
@@ -208,7 +208,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     },
     githubReleaseUrl: getGitHubReleaseTagUrl("0.2.2"),
     knownLimitations: [
-      "Windows packaged live graphics can update more slowly than macOS during live Faye workflows; further Windows display transport optimization is planned.",
+      "Windows packaged live graphics can update more slowly than macOS during some live-data workflows; further Windows display transport optimization is planned.",
       "Alpha software; Windows builds may show SmartScreen warnings when unsigned.",
       "macOS builds from CI are unsigned and not notarized until Developer ID signing secrets are configured — Gatekeeper may require manual approval on first open.",
       "Intel Macs are not supported.",
@@ -222,13 +222,13 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     status: "published",
     current: false,
     summary:
-      "Windows-focused Alpha with access fixes, pinned display stacks, collapsible navigation, and LED Display (Quail).",
+      "Windows-focused Alpha with access fixes, pinned display stacks, collapsible navigation, and large-format LED graphics support.",
     highlights: [
       "Activity, teams, and owner access fixes",
       "Persistent pinned display stacking",
       "Collapsible desktop navigation",
-      "Initial Broad Arrow LED Display (Quail) at 9216×1536",
-      "Stream Bid and Stream Ticker compatibility preserved",
+      "Initial large-format LED graphics support at 9216×1536",
+      "Existing live graphics templates remain compatible",
     ],
     platforms: {
       windows: {
@@ -246,7 +246,7 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     },
     githubReleaseUrl: getGitHubReleaseTagUrl("0.2.1"),
     knownLimitations: [
-      "Packaged Windows builds could run legacy scrape polling instead of Faye event-driven transport (fixed in v0.2.2).",
+      "Packaged Windows builds could fall back to legacy scrape polling instead of event-driven transport (fixed in v0.2.2).",
       "No public macOS installer for this release.",
     ],
     macosSigningStatus: "unknown",
@@ -257,12 +257,12 @@ export const NEUD_RELEASES: NeudReleaseEntry[] = [
     status: "published",
     current: false,
     summary:
-      "Desktop-first polish on the v0.1.4 foundation: pinned viewer, display transport, publishing lease hardening, and scraper performance instrumentation.",
+      "Desktop-first polish on the v0.1.4 foundation: pinned viewer, display transport, publishing lease hardening, and data-collection performance instrumentation.",
     highlights: [
       "Pinned viewer and display transport improvements",
       "Publishing lease hardening",
       "Access and sync improvements",
-      "Scraper performance instrumentation",
+      "Data-collection performance instrumentation",
     ],
     platforms: {
       windows: {

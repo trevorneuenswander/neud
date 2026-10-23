@@ -15,7 +15,7 @@ NEUD Alpha 0.3.0.
 
 ### Changed
 
-- SEMA Manual Controller and Schedule Ticker refinements (package baseline v8)
+- Graphics template typography, layout consistency, and manual data management controls
 - Application lifecycle and pinned display layout polish
 - Canonical application version display: **Alpha 0.3.0**
 
