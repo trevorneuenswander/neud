@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { WindowsDownloadLink } from "@/components/downloads/WindowsDownloadLink";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { requireUser } from "@/lib/auth/authorization";
@@ -48,9 +47,12 @@ export default async function HostedSettingsPage() {
           Install the NEUD desktop app to publish displays, run data engines, and manage projects
           locally.
         </p>
-        <WindowsDownloadLink className="inline-flex text-sm font-medium text-primary hover:underline">
+        <Link
+          href="/download"
+          className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 active:bg-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
           Get NEUD
-        </WindowsDownloadLink>
+        </Link>
       </Card>
     </div>
   );
