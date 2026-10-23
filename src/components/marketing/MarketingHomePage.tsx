@@ -12,11 +12,12 @@ export function MarketingHomePage() {
           <AppVersion placement="hero" />
         </div>
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          Local-first live graphics for production teams
+          Professional live graphics and data integration
         </h1>
         <p className="mx-auto max-w-2xl text-base leading-7 text-muted">
-          NEUD Desktop is where you scrape, control, edit, and publish graphics.
-          The web portal lets authorized viewers watch displays you explicitly publish online.
+          A professional live graphics and data integration platform built for broadcast and
+          live production. Run NEUD Desktop locally to integrate data, control graphics, and
+          deliver output — then publish selected displays for authorized online viewers.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
@@ -36,15 +37,17 @@ export function MarketingHomePage() {
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="p-5">
-          <h2 className="text-sm font-semibold text-foreground">Desktop engine</h2>
+          <h2 className="text-sm font-semibold text-foreground">Local-first desktop</h2>
           <p className="mt-2 text-sm text-muted">
-            Run scrapers, Manual Controller, displays, and publishing from the authoritative desktop app.
+            Integrate external data, operate manual controls, manage displays, and publish from
+            the authoritative desktop application.
           </p>
         </Card>
         <Card className="p-5">
-          <h2 className="text-sm font-semibold text-foreground">Online viewers</h2>
+          <h2 className="text-sm font-semibold text-foreground">Modular workflows</h2>
           <p className="mt-2 text-sm text-muted">
-            Enable online viewing per display from desktop. Remote viewers watch published output only.
+            Configure data sources, graphics, and delivery paths to match your production —
+            without tying the platform to a single show format.
           </p>
         </Card>
         <Card className="p-5">

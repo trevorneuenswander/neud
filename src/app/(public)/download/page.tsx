@@ -18,7 +18,7 @@ export default function DownloadPage() {
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader
         title="Get NEUD"
-        description="Install the authoritative desktop engine for scraping, control, editing, and publishing."
+        description="Install the authoritative desktop application for data integration, graphics control, editing, and publishing."
       />
       <div className="flex items-center justify-end">
         <AppVersion placement="hero" />

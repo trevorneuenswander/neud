@@ -7,13 +7,13 @@
 ## Highlights
 
 - Added Apple Silicon macOS support
-- Restored Faye/event-driven Broad Arrow transport in packaged builds
-- Added explicit scraper transport and fallback diagnostics
+- Restored event-driven live-data transport in packaged builds
+- Added explicit data-engine transport and fallback diagnostics
 - Improved packaged Chrome resolution on Windows and macOS
 - Improved fresh-install display output hydration
 - Added macOS-native application menu/window behavior
 - Improved packaged runtime / worker validation
-- Continued LED Display (Quail) support and compatibility
+- Continued large-format LED graphics support and compatibility
 
 ## Supported platforms
 
@@ -33,4 +33,4 @@ GitHub Release tag: [v0.2.2](https://github.com/trevorneuenswander/neud/releases
 
 ## Known v0.2.1 impact
 
-Published v0.2.1 Windows packages could run legacy scrape polling instead of Faye in packaged mode. v0.2.2 includes the packaged transport parity fix.
+Published v0.2.1 Windows packages could fall back to legacy scrape polling instead of event-driven transport in packaged mode. v0.2.2 includes the packaged transport parity fix.

@@ -10,7 +10,7 @@ export type PinnedViewerDisplaySummary = {
   name: string;
   displayKey: string;
   url: string;
-  /** Custom (project HTML / Broad Arrow typed) display slug, used to resolve its Local URL. */
+  /** Custom (project HTML / typed package) display slug, used to resolve its Local URL. */
   slug?: string;
   width: number;
   height: number;

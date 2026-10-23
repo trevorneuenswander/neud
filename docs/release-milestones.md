@@ -31,13 +31,13 @@ Canonical application version is **`0.3.0`** in root and `@neud/desktop` `packag
 
 ## Alpha v0.3.0
 
-Output Engine foundation: external display output, DeckLink Key/Fill, output routing and stacking, global LIVE/REC tally, Record to Disk on macOS (H.264 MP4, ProRes 422 HQ, ProRes 4444), native ProRes video displays, Performance Monitor, SEMA package refinements, on-air safety guards, and the new official application icon. Includes all v0.2.4 functionality.
+Output Engine foundation: external display output, DeckLink Key/Fill, output routing and stacking, global LIVE/REC tally, Record to Disk on macOS (H.264 MP4, ProRes 422 HQ, ProRes 4444), native ProRes video displays, Performance Monitor, graphics workflow refinements, on-air safety guards, and the new official application icon. Includes all v0.2.4 functionality.
 
 **Not included:** Display Transforms, IN/OUT Transitions, Stream Deck integration, LAN-accessible local display hosting (deferred).
 
 ## Alpha v0.2.4
 
-Reliability and workflow update: Stream Bid lot-photo transitions, macOS Chrome recovery, Manual Bid clearing, sign-out while a scraper is running, collapsed sidebar, project team names, Activity table layout, display enabled state and order across installations, and Stream Bid Local URL background parity. Includes all v0.2.3 functionality.
+Reliability and workflow update: live graphic media transitions, macOS Chrome recovery, manual value clearing, sign-out while a data engine is running, collapsed sidebar, project team names, Activity table layout, display enabled state and order across installations, and Local URL background parity. Includes all v0.2.3 functionality.
 
 ## Alpha v0.2.3
 
@@ -49,7 +49,7 @@ NEUD-0.2.3-arm64.dmg
 NEUD-0.2.3-arm64.zip
 ```
 
-Reliability hotfix for fresh installations and cross-device display synchronization. Published Stream Bid, Stream Ticker, and LED Display (Quail) recover after cloud sync without a manual republish. Includes all v0.2.2 functionality.
+Reliability hotfix for fresh installations and cross-device display synchronization. Published graphics templates recover after cloud sync without a manual republish. Includes all v0.2.2 functionality.
 
 ## Alpha v0.2.2
 
@@ -61,11 +61,11 @@ NEUD-0.2.2-arm64.dmg
 NEUD-0.2.2-arm64.zip
 ```
 
-Cross-platform hardening release: Apple Silicon macOS desktop, packaged Chrome for Testing on macOS, native application menu / in-window title bar parity, fresh-install display output hydration, packaged Faye/event-driven Broad Arrow transport, scraper transport diagnostics, and packaged worker/build identity diagnostics. Includes all v0.2.1 functionality.
+Cross-platform hardening release: Apple Silicon macOS desktop, packaged Chrome for Testing on macOS, native application menu / in-window title bar parity, fresh-install display output hydration, packaged event-driven live-data transport, data-engine transport diagnostics, and packaged worker/build identity diagnostics. Includes all v0.2.1 functionality.
 
 ## Alpha v0.2.1
 
-Shipped scope includes activity/teams/owner access fixes, persistent pinned display stacking, collapsible desktop navigation, and the initial Broad Arrow LED Display (Quail) at 9216×1536. Stream Bid / Stream Ticker visuals and scraper architecture are unchanged.
+Shipped scope includes activity/teams/owner access fixes, persistent pinned display stacking, collapsible desktop navigation, and initial large-format LED graphics support at 9216×1536. Existing live graphics templates and data-engine architecture remain compatible.
 
 Expected packaged installer name for v0.2.1 (historical):
 
@@ -75,7 +75,7 @@ NEUD-Setup-0.2.1-x64.exe
 
 ## Alpha v0.2.0 (published)
 
-Desktop-first polish and operational features on the v0.1.4 foundation (pinned viewer, display transport, publishing lease hardening, access/sync improvements, scraper performance instrumentation, and related tests). This milestone **does not** include LAN-wide local display hosting or modular project package downloads.
+Desktop-first polish and operational features on the v0.1.4 foundation (pinned viewer, display transport, publishing lease hardening, access/sync improvements, data-collection performance instrumentation, and related tests). This milestone **does not** include LAN-wide local display hosting or modular project package downloads.
 
 ## Future milestones (planned — not started)
 

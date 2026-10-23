@@ -1,18 +1,54 @@
 # NEUD
 
-NEUD is a local-first desktop platform for live auction data extraction, workflow control, and HTML broadcast graphics. Its tagline is **The Ultimate Data Stripper.**
+**A professional live graphics and data integration platform built for broadcast and live production.**
 
-The first implemented project is **Broad Arrow Auctions**, operated by the **Hildreth Media Group** team inside NEUD. NEUD itself is the application name; HMG remains a team within the platform, not a separate product.
+NEUD is a **local-first** desktop application for integrating external data, controlling live graphics, and delivering professional video output. Its product tagline is **The Ultimate Data Stripper.**
 
-## Project status
+Current public release: **Alpha 0.3.0**
 
-| Phase | Scope |
-|-------|--------|
-| **Completed Alpha v0.1.1** | Local desktop app, SQLite runtime, Broad Arrow scraper workflow, four locked Broad Arrow displays, secure cloud publishing, hosted portal delivery |
-| **Current release milestone** | Windows x64 installer, bundled Puppeteer Chrome, packaged validation, automatic updates, GitHub release workflow |
-| **Beta (planned)** | Online JSON Viewer, browser-based controller, multi-computer synchronization, macOS support, additional graphics packages |
+## Core capabilities
 
-NEUD is not yet publicly production-ready. Unsigned Windows builds will show SmartScreen warnings until Authenticode signing is configured.
+NEUD Alpha focuses on reliable desktop operation for production teams:
+
+- Live HTML graphics and display management
+- Configurable external data sources and collection runtimes
+- Manual data controls for on-air operation
+- Layered graphics, stacking, and pinned multi-display workflows
+- Local display delivery, with online published viewers where enabled
+- Professional video output and DeckLink integration
+- Native video playback (including alpha-capable formats where supported)
+- Record to Disk on supported platforms (macOS in Alpha 0.3.0)
+- Global LIVE/REC output monitoring
+- System and application performance monitoring
+- Projects, teams, and access management
+- Offline-first desktop operation with optional cloud authentication and sync
+
+Only features that ship in the current Alpha are listed above. Planned Beta capabilities (for example browser-based controllers and multi-computer synchronization) are not yet released.
+
+## Supported platforms
+
+| Platform | Architecture | Notes |
+| --- | --- | --- |
+| Windows | x64 | Installer: `NEUD-Setup-0.3.0-x64.exe` |
+| macOS | Apple Silicon (arm64) | Disk image: `NEUD-0.3.0-arm64.dmg` |
+
+Intel Macs are not supported. Record to Disk is validated on **macOS** in Alpha 0.3.0; Windows recording is not claimed in this release.
+
+Download installers from [neud.io/download](https://neud.io/download) or the [GitHub Releases](https://github.com/trevorneuenswander/neud/releases) page.
+
+## Installation
+
+1. Download the installer for your platform from [neud.io/download](https://neud.io/download).
+2. Install and launch NEUD.
+3. Sign in with an authorized account.
+
+**Alpha limitations**
+
+- Windows builds may show SmartScreen warnings when unsigned.
+- macOS CI builds may be unsigned / not notarized; Gatekeeper may require manual approval on first open.
+- DeckLink Key/Fill requires compatible Blackmagic hardware.
+
+See [docs/releases/v0.3.0-installation.md](./docs/releases/v0.3.0-installation.md).
 
 ## Architecture
 
@@ -22,12 +58,14 @@ NEUD combines:
 - **Next.js** portal and local HTTP runtime
 - **TypeScript** application code
 - **SQLite** local project database
-- **Puppeteer** Broad Arrow scraper workers
+- **Node.js** data-collection runtimes (including packaged browser automation where configured)
 - **Supabase** authentication and authorized cloud services
 
 The desktop app remains locally operational when cloud services are unavailable, subject to existing authentication and session rules.
 
-Packaged Windows releases include a **compatible Chrome for Testing build** bundled with the installer. End users do not need Node.js, npm, Git, or a separate Chrome installation.
+Packaged releases include a compatible Chrome for Testing build. End users do not need Node.js, npm, Git, or a separate Chrome installation.
+
+Application data lives under the NEUD application data directory (for example `%APPDATA%\NEUD\` on Windows).
 
 ## Development setup
 
@@ -35,7 +73,7 @@ Packaged Windows releases include a **compatible Chrome for Testing build** bund
 
 - Node.js 20+
 - npm 10+
-- Windows 10/11 x64 for desktop packaging validation
+- Platform-appropriate tooling for desktop packaging (Windows x64 and/or macOS Apple Silicon)
 
 ### Install and run
 
@@ -52,89 +90,60 @@ Health endpoint:
 http://127.0.0.1:3000/api/health
 ```
 
-Local API and desktop data live under:
-
-```text
-%APPDATA%\NEUD\
-%APPDATA%\NEUD\data\neud.sqlite
-```
-
-Broad Arrow downloaded auction assets live under the project’s local data directories inside `%APPDATA%\NEUD\`.
-
-## Windows packaging
-
-Build the staged desktop app and NSIS installer:
+### Packaging (summary)
 
 ```bash
 npm ci
 npm run build:desktop
-npm run package:win
+npm run package:win   # Windows host
+npm run package:mac   # macOS host
 ```
 
-Validation:
+See [docs/windows-packaging.md](./docs/windows-packaging.md), [docs/github-release.md](./docs/github-release.md), and [docs/application-updates.md](./docs/application-updates.md).
 
-```bash
-npm run verify:bundled-browser
-npm run verify:win-package
-npm run smoke:packaged-app
-```
+## Current release status
 
-Release gate:
+| Item | Status |
+| --- | --- |
+| **Latest public release** | Alpha **0.3.0** |
+| **Next development milestone** | Alpha **0.3.1** stabilization |
+| **Production readiness** | Not yet publicly production-ready |
 
-```bash
-npm run release:win
-```
+Alpha 0.3.0 includes the Output Engine, Record to Disk (macOS), native video playback, Performance Monitor, and related desktop workflow improvements. See [docs/releases/v0.3.0-github-release-notes.md](./docs/releases/v0.3.0-github-release-notes.md) and [docs/CHANGELOG.md](./docs/CHANGELOG.md).
 
-Installer output:
+## Known limitations
 
-```text
-desktop/release/NEUD-Setup-0.1.1-x64.exe
-desktop/release/NEUD-Setup-latest-x64.exe
-desktop/release/latest.yml
-```
+- Alpha software; expect SmartScreen / Gatekeeper prompts on unsigned builds
+- Record to Disk claimed for macOS only in 0.3.0
+- DeckLink hardware not validated in automated CI
+- Display transforms, IN/OUT transitions, and Stream Deck integration are planned for later releases
+- macOS auto-update is available but treat as preview until signing is verified in production
 
-See [docs/github-release.md](./docs/github-release.md) for publishing to GitHub Releases and wiring the Vercel download button.
+## Roadmap
 
-Bundled browser location inside an installed app:
+Public roadmap items remain high-level:
 
-```text
-{InstallDir}\resources\puppeteer\chrome\chrome-win64\chrome.exe
-```
+- Alpha 0.3.1 stabilization
+- Display transform and transition tooling
+- Stream Deck integration after transitions
+- Broader Beta surfaces (for example browser-based control and multi-computer synchronization)
 
-## Automatic updates
-
-Packaged NEUD builds use `electron-updater` with GitHub Releases as the initial provider. Updates are checked in the background after startup and manually from:
-
-- **Settings → About NEUD → Check for Updates**
-- **Help → Check for Updates**
-
-Updates never run in development mode or unpackaged Electron sessions. Restart is always user-initiated.
-
-Publishing a new release such as **0.1.2**:
-
-1. Bump the root `package.json` version once.
-2. Run `npm run release:win`.
-3. Publish the generated installer, `latest.yml`, and blockmap to a GitHub Release.
-4. Validate update detection from an installed 0.1.1 build.
-
-See [docs/application-updates.md](docs/application-updates.md).
+Public materials describe platform capabilities only. See [docs/public-documentation-policy.md](./docs/public-documentation-policy.md).
 
 ## Security notes
 
 - No Supabase **service-role** key ships in the desktop app.
 - No release credentials or GitHub tokens are embedded in installers.
 - Local SQLite data, downloads, browser profiles, and credentials remain on the machine.
-- Unsigned local test builds are expected to trigger Windows SmartScreen until signing is configured.
 
 ## Documentation
 
-- [docs/desktop.md](docs/desktop.md)
-- [docs/windows-packaging.md](docs/windows-packaging.md)
-- [docs/bundled-puppeteer-browser.md](docs/bundled-puppeteer-browser.md)
-- [docs/application-updates.md](docs/application-updates.md)
-- [docs/windows-release-checklist.md](docs/windows-release-checklist.md)
-- [docs/alpha-v0.1.1-packaging-validation.md](docs/alpha-v0.1.1-packaging-validation.md)
-- [AGENTS.md](AGENTS.md)
+- [docs/public-documentation-policy.md](./docs/public-documentation-policy.md) — public vs internal documentation rules
+- [docs/desktop.md](./docs/desktop.md)
+- [docs/windows-packaging.md](./docs/windows-packaging.md)
+- [docs/application-updates.md](./docs/application-updates.md)
+- [docs/release-milestones.md](./docs/release-milestones.md)
+- [AGENTS.md](./AGENTS.md) — internal contributor / agent instructions
 
 ## Scripts
 
@@ -143,11 +152,13 @@ See [docs/application-updates.md](docs/application-updates.md).
 | `npm run dev:desktop` | Next.js + Electron development |
 | `npm run build:desktop` | Stage standalone resources and build desktop host |
 | `npm run package:win` | Build Windows x64 NSIS installer |
+| `npm run package:mac` | Build macOS Apple Silicon package |
 | `npm run verify:bundled-browser` | Verify bundled Chrome in unpacked output |
 | `npm run verify:win-package` | Verify installer artifacts and secret scan |
-| `npm run smoke:packaged-app` | Launch bundled Chrome from packaged resources |
 | `npm run test:neud-release-version` | Verify version metadata consistency |
-| `npm run test:neud-packaged-browser` | Bundled browser resolver tests |
 | `npm run test:neud-auto-update` | Updater configuration tests |
 | `npm run test:neud-github-release` | GitHub release + download URL tests |
-| `npm run test:neud-release-security` | Desktop secret and packaging scan |
+
+## License and support
+
+NEUD is proprietary software operated for authorized users. For access, installation, or support questions, contact your NEUD administrator or the project maintainers listed on the repository.
