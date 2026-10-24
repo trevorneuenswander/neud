@@ -2,7 +2,7 @@
 
 **A professional live graphics and data integration platform built for broadcast and live production.**
 
-NEUD is a **local-first** desktop application for integrating external data, controlling live graphics, and delivering professional video output. Its product tagline is **The Ultimate Data Stripper.**
+NEUD is a **local-first** desktop application for integrating external data, controlling live graphics, and delivering professional video output. Its product tagline is **Graphics Without Limits.**
 
 Current public release: **Alpha 0.3.0**
 

@@ -2,7 +2,7 @@
 
 ## Project purpose
 
-NEUD is a desktop-first data extraction and live graphics control application. Its tagline is "The Ultimate Data Stripper."
+NEUD is a desktop-first data extraction and live graphics control application. Its tagline is "Graphics Without Limits."
 
 Users will be able to:
 

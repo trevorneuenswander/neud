@@ -6,6 +6,7 @@ import {
   DECKLINK_MODE_UNSUPPORTED,
   DECKLINK_PIXEL_FORMAT_UNSUPPORTED,
   EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE,
+  EXTERNAL_DEVICE_STUB_BUILD,
   EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE,
   EXTERNAL_NATIVE_ADDON_FAILED,
   formatDisplayOnlyFps,
@@ -116,10 +117,14 @@ export function createDeckLinkPort(renderer: OffscreenOutputRenderer): DeckLinkE
   );
 
   if (adapter.stub) {
+    console.error("[decklink] packaged helper is a stub build — not a functional DeckLink integration", {
+      path: addonPath(),
+      compiledSdkVersion: adapter.compiledSdkVersion || null,
+    });
     return new DeckLinkOutputService(renderer, {
       sdkAvailable: false,
       sdkVersion: null,
-      reason: EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE,
+      reason: EXTERNAL_DEVICE_STUB_BUILD,
     });
   }
 

@@ -31,10 +31,31 @@
           "defines": ["NEUD_HAS_DECKLINK_SDK=1"],
           "include_dirs": ["<(decklink_include)"],
           "sources!": ["decklink-stub.cc"],
-          "sources": [
-            "decklink-addon.cc",
-            "decklink-sdk.cc",
-            "DeckLinkAPIDispatch.cpp"
+          "conditions": [
+            ["OS=='mac'", {
+              "sources": [
+                "decklink-addon.cc",
+                "decklink-sdk.cc",
+                "DeckLinkAPIDispatch.cpp"
+              ]
+            }],
+            ["OS=='win'", {
+              "sources": [
+                "decklink-addon.cc",
+                "decklink-sdk.cc",
+                "decklink-dispatch-win.cpp",
+                "DeckLinkAPI_i.c"
+              ],
+              "msvs_settings": {
+                "VCCLCompilerTool": {
+                  "ExceptionHandling": 1,
+                  "AdditionalOptions": ["/std:c++17"]
+                },
+                "VCLinkerTool": {
+                  "AdditionalDependencies": ["Ole32.lib", "OleAut32.lib"]
+                }
+              }
+            }]
           ]
         }]
       ]

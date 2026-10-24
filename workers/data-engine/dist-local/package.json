@@ -7,7 +7,7 @@
   "main": "index.js",
   "neudBuildInfo": {
     "gitCommit": "dev-local",
-    "builtAt": "2026-10-22T19:01:56.009Z"
+    "builtAt": "2026-10-24T01:40:28.198Z"
   },
   "dependencies": {
     "puppeteer": "^24.23.0"

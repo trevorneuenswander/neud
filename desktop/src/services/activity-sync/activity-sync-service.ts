@@ -319,12 +319,12 @@ export class ActivitySyncService {
   }
 
   async syncNow(reason = "manual"): Promise<void> {
+    // If a sync is already running, queue a follow-up instead of dropping
+    // login/startup/realtime pulls (Mac→Windows missed activity when login
+    // arrived while startup sync was in flight).
     if (this.syncInProgress) {
-      if (reason === "startup" || reason === "startup-restore" || reason === "login") {
-        return;
-      }
-    }
-    if (this.syncInProgress) {
+      this.logActivitySync(`sync.busy reason=${reason} — scheduling follow-up`);
+      this.scheduleFollowUpSync(reason);
       return;
     }
 
@@ -588,6 +588,16 @@ export class ActivitySyncService {
     this.retryTimer = setTimeout(() => {
       void this.syncNow("retry");
     }, delay);
+  }
+
+  /** Coalesce overlapping sync requests into a single follow-up pass. */
+  private scheduleFollowUpSync(reason: string): void {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+    }
+    this.retryTimer = setTimeout(() => {
+      void this.syncNow(`follow-up:${reason}`);
+    }, 1_000);
   }
 
   private emitState(): void {

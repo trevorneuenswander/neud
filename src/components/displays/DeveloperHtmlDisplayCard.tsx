@@ -6,7 +6,10 @@ import { Switch } from "@/components/ui/Switch";
 import { Button } from "@/components/ui/Button";
 import { DisclosureSection } from "@/components/ui/DisclosureSection";
 import { DisplayEditMenu } from "@/components/displays/DisplayEditMenu";
-import { VideoPlaybackControls } from "@/components/displays/VideoPlaybackControls";
+import {
+  VideoPlaybackControls,
+  VideoPlaybackStatusLine,
+} from "@/components/displays/VideoPlaybackControls";
 import {
   DisplayCardActionSizeRow,
   DisplayCardControlRow,
@@ -511,6 +514,11 @@ export function DeveloperHtmlDisplayCard({
               />
             }
           />
+          {display.sourceType === "project-video" ? (
+            <div className="mt-1 min-w-0">
+              <VideoPlaybackStatusLine displayId={display.id} />
+            </div>
+          ) : null}
         </NoDrag>
 
         {onlineViewer.loadError ? (

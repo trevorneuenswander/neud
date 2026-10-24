@@ -59,10 +59,17 @@ export function registerOutputIpc(input: {
   });
   registerIpcHandler("neud:output:diagnostics", () => input.engine.diagnostics());
   registerIpcHandler("neud:output:catalog", () => {
-    const projects = input.data.listProjects().map((project) => ({
+    // Output Manager only offers projects fully installed on this computer.
+    // Cloud-accessible-but-not-downloaded, downloading, or incomplete installs are omitted.
+    const installed = input.data
+      .listProjects(undefined, { scope: "installed" })
+      .filter((project) => project.isPackageInstalled === true);
+    const installedIds = new Set(installed.map((project) => project.id));
+    const projects = installed.map((project) => ({
       id: project.id,
       name: project.name,
       slug: project.slug,
+      available: true as const,
     }));
     const displays = projects.flatMap((project) => {
       const records = input.data.listProjectDisplays(project.id);
@@ -82,7 +89,7 @@ export function registerOutputIpc(input: {
         projectId: project.id,
       })),
     );
-    return { projects, displays, stacks };
+    return { projects, displays, stacks, installedProjectIds: [...installedIds] };
   });
   registerIpcHandler("neud:output:create", (_event, payload: unknown) => {
     const record = payload as Record<string, unknown>;

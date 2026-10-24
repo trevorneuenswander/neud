@@ -147,6 +147,13 @@ export class DiskRecordingService {
         error: codec?.reason || `Format ${config.format} is unavailable on this platform.`,
       };
     }
+    if (process.platform === "win32" && config.format !== "h264-mp4") {
+      return {
+        ok: false,
+        code: "codec-unavailable",
+        error: "Windows Record to Disk supports H.264 MP4 only.",
+      };
+    }
     if (!config.destinationFolder) {
       return { ok: false, code: "folder-required", error: "Choose a destination folder." };
     }

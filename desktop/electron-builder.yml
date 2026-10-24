@@ -18,11 +18,13 @@ asarUnpack:
   - "**/node_modules/sharp/**/*"
   - "**/node_modules/@img/**/*"
   - "dist/platform/macos/*.node"
-  - "dist/platform/windows/*.node"
-  - "dist/platform/decklink/*.node"
+  - "dist/platform/windows/**/*"
+  - "dist/platform/decklink/**/*"
 extraResources:
   - from: build/icon.ico
     to: assets/icon.ico
+  - from: assets/icon.png
+    to: assets/icon.png
   - from: staging/runtime-assets
     to: runtime-assets
     filter:

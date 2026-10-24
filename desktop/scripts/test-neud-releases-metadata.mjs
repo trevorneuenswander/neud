@@ -15,12 +15,13 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
-test("current v0.3.0 is marked current and matches package.json", () => {
+test("public catalog current remains v0.3.0 while in-tree app is 0.3.1", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
   const rootPkg = readJson("package.json");
   assert.match(catalog, /version: "0\.3\.0"/);
   assert.match(catalog, /current: true/);
-  assert.equal(rootPkg.version, "0.3.0");
+  assert.equal(rootPkg.version, "0.3.1");
+  assert.doesNotMatch(catalog, /version: "0\.3\.1"/);
   assert.equal([...catalog.matchAll(/current: true/g)].length, 1);
 });
 

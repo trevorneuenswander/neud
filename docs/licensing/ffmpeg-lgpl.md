@@ -45,7 +45,23 @@ Confirm the ProRes decoder is present (`ffmpeg -decoders | findstr prores`) and 
 
 NEUD’s Output Engine expects **straight (non-premultiplied) BGRA** from the decoder for canvas upload. Chromium’s paint path then yields the verified **premultiplied** BGRA contract used by DeckLink Key/Fill. Do not flatten transparency or strip the alpha plane during `swscale`.
 
+## Build & package (v0.3.1)
+
+```text
+set NEUD_WITH_FFMPEG=1
+set FFMPEG_DIR=C:\path\to\lgpl-shared-ffmpeg
+npm run build -w @neud/desktop
+node desktop/scripts/package-windows-ffmpeg-lgpl.mjs
+```
+
+`desktop/native/video/binding.gyp` compiles `video-decoder-win-ffmpeg.cpp` when `NEUD_WITH_FFMPEG=1`.
+Otherwise Windows builds keep the explicit unavailable stub (`video-decoder-win.cpp`).
+
 ## Current status
 
 - macOS: AVFoundation / VideoToolbox (system frameworks — no FFmpeg).
-- Windows: decoder interface ready; LGPL FFmpeg vendor binaries are **not** bundled until the configuration above is verified and approved for a release package.
+- Windows: FFmpeg LGPL decoder implementation is in-tree (`video-decoder-win-ffmpeg.cpp`).
+  **Vendor LGPL shared DLLs are not committed to the repo.** A release package must stage them via
+  `package-windows-ffmpeg-lgpl.mjs` after verifying the build configuration above.
+  Default CI / local Windows builds without `NEUD_WITH_FFMPEG=1` continue to report the clear
+  “FFmpeg is not present in this build” operator message.

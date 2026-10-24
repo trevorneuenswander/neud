@@ -1,4 +1,8 @@
 {
+  "variables": {
+    "neud_with_ffmpeg%": "<!(node -p \"process.env.NEUD_WITH_FFMPEG==='1'?'1':'0'\")",
+    "FFMPEG_DIR%": "<!(node -p \"process.env.FFMPEG_DIR||''\")"
+  },
   "targets": [
     {
       "target_name": "neud_video",
@@ -42,7 +46,33 @@
           }
         ],
         [
-          "OS=='win'",
+          "OS=='win' and neud_with_ffmpeg==1",
+          {
+            "sources": ["video-decoder-win-ffmpeg.cpp"],
+            "defines": [
+              "NEUD_VIDEO_HAS_PLATFORM_DECODER=1",
+              "NEUD_WITH_FFMPEG=1"
+            ],
+            "include_dirs": ["<(FFMPEG_DIR)/include"],
+            "libraries": [
+              "-lavcodec",
+              "-lavformat",
+              "-lavutil",
+              "-lswscale"
+            ],
+            "msvs_settings": {
+              "VCCLCompilerTool": {
+                "ExceptionHandling": 1,
+                "AdditionalOptions": ["/std:c++17"]
+              },
+              "VCLinkerTool": {
+                "AdditionalLibraryDirectories": ["<(FFMPEG_DIR)/lib"]
+              }
+            }
+          }
+        ],
+        [
+          "OS=='win' and neud_with_ffmpeg!=1",
           {
             "sources": ["video-decoder-win.cpp"],
             "defines": ["NEUD_VIDEO_HAS_PLATFORM_DECODER=1"],

@@ -127,11 +127,32 @@ const STATUS_LABEL: Record<string, string> = {
 
 const DISK_DEVICE_ID = "disk:local";
 
-const RECORDING_FORMAT_OPTIONS = [
+const RECORDING_FORMAT_OPTIONS_ALL = [
   { id: "prores-4444-mov", label: "ProRes 4444 (MOV) — alpha supported", supportsAlpha: true },
   { id: "prores-422hq-mov", label: "ProRes 422 HQ (MOV) — flattened", supportsAlpha: false },
   { id: "h264-mp4", label: "H.264 (MP4) — flattened", supportsAlpha: false },
 ] as const;
+
+/** Platform-aware Record to Disk formats (Windows: H.264 only; macOS: H.264 + ProRes). */
+function recordingFormatOptionsForPlatform(): Array<(typeof RECORDING_FORMAT_OPTIONS_ALL)[number]> {
+  if (typeof navigator !== "undefined" && /Win/i.test(navigator.platform || navigator.userAgent)) {
+    return RECORDING_FORMAT_OPTIONS_ALL.filter((entry) => entry.id === "h264-mp4");
+  }
+  if (typeof process !== "undefined" && process.platform === "win32") {
+    return RECORDING_FORMAT_OPTIONS_ALL.filter((entry) => entry.id === "h264-mp4");
+  }
+  // Desktop preload may expose platform; fall back to full list on macOS/unknown.
+  try {
+    const api = getDesktopAPI();
+    const platform = (api as { platform?: string } | null)?.platform;
+    if (platform === "win32") {
+      return RECORDING_FORMAT_OPTIONS_ALL.filter((entry) => entry.id === "h264-mp4");
+    }
+  } catch {
+    // ignore
+  }
+  return [...RECORDING_FORMAT_OPTIONS_ALL];
+}
 
 const RECORDING_FRAME_RATE_OPTIONS = [
   { id: "23.976", label: "23.976 fps (24000/1001)" },
@@ -222,28 +243,33 @@ type FormState = {
   recordingBackgroundColor: string;
 };
 
-const emptyForm = (): FormState => ({
-  name: "",
-  projectId: "",
-  sourceType: "display",
-  sourceId: "",
-  deviceId: "",
-  alwaysOnTop: true,
-  hideCursor: true,
-  outputType: "display",
-  displayModeId: "",
-  presentationMode: "fill",
-  keyDeviceId: "",
-  recordingFormat: "prores-4444-mov",
-  recordingFolder: "",
-  recordingWidth: 1920,
-  recordingHeight: 1080,
-  recordingFrameRateId: "29.97",
-  recordingAlphaMode: "preserve",
-  recordingBackgroundColor: "#000000",
-});
+const emptyForm = (): FormState => {
+  const formats = recordingFormatOptionsForPlatform();
+  const defaultFormat = formats[0]?.id ?? "h264-mp4";
+  return {
+    name: "",
+    projectId: "",
+    sourceType: "display",
+    sourceId: "",
+    deviceId: "",
+    alwaysOnTop: true,
+    hideCursor: true,
+    outputType: "display",
+    displayModeId: "",
+    presentationMode: "fill",
+    keyDeviceId: "",
+    recordingFormat: defaultFormat,
+    recordingFolder: "",
+    recordingWidth: 1920,
+    recordingHeight: 1080,
+    recordingFrameRateId: "29.97",
+    recordingAlphaMode: "preserve",
+    recordingBackgroundColor: "#000000",
+  };
+};
 
 export function OutputManager() {
+  const recordingFormatOptions = useMemo(() => recordingFormatOptionsForPlatform(), []);
   const [desktop, setDesktop] = useState(false);
   const [routes, setRoutes] = useState<RouteView[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -443,8 +469,8 @@ export function OutputManager() {
   const keyFillTransport = selectedDeckLink?.capabilities?.external?.keyFillTransport ?? null;
   const needsPairedKeyPort = keyFillTransport === "pairedPorts";
   const recordingSupportsAlpha =
-    RECORDING_FORMAT_OPTIONS.find((entry) => entry.id === form.recordingFormat)?.supportsAlpha ===
-    true;
+    recordingFormatOptions.find((entry) => entry.id === form.recordingFormat)?.supportsAlpha ===
+      true;
   const canSave = Boolean(
     form.projectId &&
       form.sourceId &&
@@ -505,7 +531,13 @@ export function OutputManager() {
       displayModeId: route.configuration?.decklink?.displayModeId ?? "",
       presentationMode: route.configuration?.decklink?.presentationMode === "keyFill" ? "keyFill" : "fill",
       keyDeviceId: route.configuration?.decklink?.keyEndpointId ?? "",
-      recordingFormat: route.configuration?.recording?.format ?? "prores-4444-mov",
+      recordingFormat: (() => {
+        const configured = route.configuration?.recording?.format;
+        if (configured && recordingFormatOptions.some((entry) => entry.id === configured)) {
+          return configured;
+        }
+        return recordingFormatOptions[0]?.id ?? "h264-mp4";
+      })(),
       recordingFolder: route.configuration?.recording?.destinationFolder ?? "",
       recordingWidth: route.configuration?.recording?.width ?? 1920,
       recordingHeight: route.configuration?.recording?.height ?? 1080,
@@ -758,7 +790,7 @@ export function OutputManager() {
                 onChange={(event) => {
                   const nextFormat = event.target.value;
                   const supportsAlpha =
-                    RECORDING_FORMAT_OPTIONS.find((entry) => entry.id === nextFormat)
+                    recordingFormatOptions.find((entry) => entry.id === nextFormat)
                       ?.supportsAlpha === true;
                   setForm((current) => ({
                     ...current,
@@ -767,7 +799,7 @@ export function OutputManager() {
                   }));
                 }}
               >
-                {RECORDING_FORMAT_OPTIONS.map((entry) => (
+                {recordingFormatOptions.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.label}
                   </option>

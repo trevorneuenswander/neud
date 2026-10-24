@@ -224,13 +224,33 @@ export function parseBackgroundColor(hex: string): { r: number; g: number; b: nu
   };
 }
 
+export function defaultDiskRecordingFormatForPlatform(
+  platform: NodeJS.Platform = process.platform,
+): DiskRecordingFormatId {
+  return platform === "win32" ? "h264-mp4" : "prores-4444-mov";
+}
+
+export function isDiskRecordingFormatSupportedOnPlatform(
+  format: DiskRecordingFormatId,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform === "win32") {
+    return format === "h264-mp4";
+  }
+  return DISK_RECORDING_FORMATS.some((entry) => entry.id === format);
+}
+
 export function normalizeDiskRecordingConfiguration(
   input: Partial<DiskRecordingConfiguration> | null | undefined,
+  platform: NodeJS.Platform = process.platform,
 ): DiskRecordingConfiguration {
-  const format =
+  const requested =
     input?.format && DISK_RECORDING_FORMATS.some((entry) => entry.id === input.format)
       ? input.format
-      : "prores-4444-mov";
+      : defaultDiskRecordingFormatForPlatform(platform);
+  const format = isDiskRecordingFormatSupportedOnPlatform(requested, platform)
+    ? requested
+    : defaultDiskRecordingFormatForPlatform(platform);
   const frameRateId =
     input?.frameRateId && DISK_RECORDING_FRAME_RATES.some((entry) => entry.id === input.frameRateId)
       ? input.frameRateId

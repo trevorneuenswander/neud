@@ -15,7 +15,7 @@ function readJson(relativePath) {
 }
 
 function createVersionApi() {
-  const BUILD_APP_VERSION = "0.3.0";
+  const BUILD_APP_VERSION = "0.3.1";
 
   function stripChannelSuffix(version, channel) {
     const pattern = new RegExp(`[-.]?${channel}.*$`, "i");
@@ -117,8 +117,8 @@ test("alpha suffix does not duplicate Alpha prefix", () => {
 });
 
 test("missing runtime data does not render Alpha undefined", () => {
-  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.3.0");
-  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.3.0");
+  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.3.1");
+  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.3.1");
   assert.ok(!versionApi.getDisplayVersion("").includes("undefined"));
   assert.ok(!versionApi.getDisplayVersion("").includes("null"));
 });
@@ -127,12 +127,12 @@ test("0.1.4 still formats as Alpha 0.1.4 (latest published baseline)", () => {
   assert.equal(versionApi.getDisplayVersion("0.1.4"), "Alpha 0.1.4");
 });
 
-test("canonical package metadata stays at 0.3.0 in root and desktop packages", () => {
+test("canonical package metadata stays at 0.3.1 in root and desktop packages", () => {
   const rootPkg = readJson("package.json");
   const desktopPkg = readJson("desktop/package.json");
 
-  assert.equal(rootPkg.version, "0.3.0");
-  assert.equal(desktopPkg.version, "0.3.0");
+  assert.equal(rootPkg.version, "0.3.1");
+  assert.equal(desktopPkg.version, "0.3.1");
   assert.equal(rootPkg.version, desktopPkg.version);
 });
 

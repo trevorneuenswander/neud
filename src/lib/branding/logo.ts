@@ -3,7 +3,7 @@
  * Canonical artwork source: desktop/assets/icon.png (v0.3.0 application icon).
  * Version query params bust aggressive favicon / CDN caches after deploy.
  */
-export const NEUD_ICON_ASSET_VERSION = "0.3.0";
+export const NEUD_ICON_ASSET_VERSION = "0.3.1";
 
 const v = NEUD_ICON_ASSET_VERSION;
 

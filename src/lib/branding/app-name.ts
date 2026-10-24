@@ -1,5 +1,5 @@
 export const APP_NAME = "NEUD";
-export const APP_TAGLINE = "The Ultimate Data Stripper";
+export const APP_TAGLINE = "Graphics Without Limits.";
 
 export function getAppName(): string {
   return APP_NAME;

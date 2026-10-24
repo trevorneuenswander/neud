@@ -19,7 +19,7 @@ Use the `NeudLogo` component (`src/components/branding/NeudLogo.tsx`).
 Requirements:
 
 - Uppercase **NEUD** with letter-spacing from design tokens
-- Optional tagline: **The Ultimate Data Stripper** (login, about, README — not every operational page)
+- Optional tagline: **Graphics Without Limits.** (login, about, README — not every operational page)
 
 Use the logo in:
 

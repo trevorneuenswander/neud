@@ -226,13 +226,10 @@ export function VideoPlaybackControls({
     return controls;
   }
 
+  // Card: controls only — errors render via VideoPlaybackStatus below the action/size row
+  // so long messages never displace Display Size alignment.
   if (variant === "card") {
-    return (
-      <div className="flex min-w-0 flex-col gap-1">
-        {controls}
-        {error ? <p className="text-xs text-danger">{error}</p> : null}
-      </div>
-    );
+    return controls;
   }
 
   return (
@@ -250,7 +247,52 @@ export function VideoPlaybackControls({
         ) : null}
       </div>
       {controls}
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      <VideoPlaybackStatusMessage message={error} />
     </div>
   );
+}
+
+/** Dedicated status line for video errors — keep outside control/size rows. */
+export function VideoPlaybackStatusMessage({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <p className="min-h-[1rem] text-xs text-danger" role="status" data-video-playback-status>
+      {message}
+    </p>
+  );
+}
+
+/**
+ * Card-row companion: polls the same session as VideoPlaybackControls and shows
+ * errors/warnings without affecting Play/Pause/Display Size layout.
+ */
+export function VideoPlaybackStatusLine({
+  displayId,
+}: {
+  displayId: string;
+}) {
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      const api = getDesktopAPI();
+      if (!api?.video?.getStatus) return;
+      const result = await api.video.getStatus(displayId);
+      if (cancelled) return;
+      if (result.ok) {
+        setMessage(result.session.error);
+      } else {
+        setMessage(result.error ?? "Video unavailable.");
+      }
+    }
+    void poll();
+    const timer = setInterval(() => void poll(), 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [displayId]);
+
+  return <VideoPlaybackStatusMessage message={message} />;
 }

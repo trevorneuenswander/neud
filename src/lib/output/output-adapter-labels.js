@@ -9,6 +9,7 @@ exports.operatorFacingExternalDeviceUnavailable = operatorFacingExternalDeviceUn
 exports.EXTERNAL_NO_DEVICES =
   exports.EXTERNAL_NATIVE_ADDON_FAILED =
   exports.EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE =
+  exports.EXTERNAL_DEVICE_STUB_BUILD =
   exports.EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE =
     void 0;
 exports.adapterTypeToOperatorLabel = adapterTypeToOperatorLabel;
@@ -33,14 +34,19 @@ function formatExternalPortLabel(modelName, endpointIndex) {
 }
 exports.EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE =
   "External device support is unavailable on this computer.";
-exports.EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE = "Desktop Video runtime is unavailable.";
-exports.EXTERNAL_NATIVE_ADDON_FAILED = "Native external-device helper failed to load.";
+exports.EXTERNAL_DEVICE_STUB_BUILD =
+  "External device support was not compiled into this NEUD build (DeckLink SDK missing at build time).";
+exports.EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE =
+  "Desktop Video runtime is unavailable. Install or update Blackmagic Desktop Video and restart NEUD.";
+exports.EXTERNAL_NATIVE_ADDON_FAILED =
+  "Native external-device helper failed to load. The packaged DeckLink module may be missing or incompatible.";
 exports.EXTERNAL_NO_DEVICES = "No external output devices detected.";
 function operatorFacingExternalDeviceUnavailable(reason) {
   const text = (reason ?? "").trim();
   if (!text) return exports.EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE;
   if (
     text === exports.EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE ||
+    text === exports.EXTERNAL_DEVICE_STUB_BUILD ||
     text === exports.EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE ||
     text === exports.EXTERNAL_NATIVE_ADDON_FAILED ||
     text === exports.EXTERNAL_NO_DEVICES
@@ -48,7 +54,7 @@ function operatorFacingExternalDeviceUnavailable(reason) {
     return text;
   }
   if (/stub/i.test(text) || /built without/i.test(text)) {
-    return exports.EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE;
+    return exports.EXTERNAL_DEVICE_STUB_BUILD;
   }
   if (/failed to load|native helper|addon/i.test(text)) {
     return exports.EXTERNAL_NATIVE_ADDON_FAILED;
