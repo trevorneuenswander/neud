@@ -56,7 +56,11 @@ function collectMidlCandidates() {
     path.join(programFiles, "Windows Kits", "10", "bin"),
   ]) {
     if (!fs.existsSync(kitsRoot)) continue;
-    for (const versionDir of fs.readdirSync(kitsRoot)) {
+    const versions = fs
+      .readdirSync(kitsRoot)
+      .filter((name) => /^\d+\.\d+\.\d+\.\d+$/.test(name))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    for (const versionDir of versions.reverse()) {
       for (const arch of ["x64", "x86"]) {
         found.push(path.join(kitsRoot, versionDir, arch, "midl.exe"));
       }
@@ -160,45 +164,23 @@ if (!fs.existsSync(headerPath)) {
   }
   const midl = findMidl();
   console.log(`[decklink-sdk] Generating Windows headers with MIDL (${midl})`);
-  // Prefer vcvars64 so MIDL can resolve Windows SDK/rpcndr headers.
-  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-  const vswhere = path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
-  let vcvars = "";
-  if (fs.existsSync(vswhere)) {
-    const vsPathResult = spawnSync(
-      vswhere,
-      ["-latest", "-products", "*", "-property", "installationPath"],
-      { encoding: "utf8" },
-    );
-    const vsPath = (vsPathResult.stdout || "").trim().split(/\r?\n/)[0];
-    if (vsPath) {
-      const candidate = path.join(vsPath, "VC", "Auxiliary", "Build", "vcvars64.bat");
-      if (fs.existsSync(candidate)) vcvars = candidate;
-    }
-  }
-
-  const midlArgs = [
-    "/W1",
-    "/robust",
-    "/nologo",
-    `/I${sdk.winInclude}`,
-    "/h",
-    "DeckLinkAPI.h",
-    "/iid",
-    "DeckLinkAPI_i.c",
-    "DeckLinkAPI.idl",
-  ];
-  if (vcvars) {
-    const quotedMidl = `"${midl}" ${midlArgs.map((arg) => `"${arg}"`).join(" ")}`;
-    run(
-      "cmd.exe",
-      ["/d", "/s", "/c", `"${vcvars}" >nul && cd /d "${sdk.winInclude}" && ${quotedMidl}`],
-      { cwd: sdk.winInclude },
-    );
-  } else {
-    // MIDL writes DeckLinkAPI.h / DeckLinkAPI_i.c into cwd; keep inputs in Win/include.
-    run(midl, midlArgs, { cwd: sdk.winInclude });
-  }
+  // DeckLink IDL imports sibling IDL files only; no vcvars required for generation.
+  // MIDL writes DeckLinkAPI.h / DeckLinkAPI_i.c into cwd.
+  run(
+    midl,
+    [
+      "/W1",
+      "/robust",
+      "/nologo",
+      `/I${sdk.winInclude}`,
+      "/h",
+      "DeckLinkAPI.h",
+      "/iid",
+      "DeckLinkAPI_i.c",
+      "DeckLinkAPI.idl",
+    ],
+    { cwd: sdk.winInclude },
+  );
 }
 
 const validated = validateWindowsSdkInclude(sdk.winInclude, { requireGeneratedHeader: true });
