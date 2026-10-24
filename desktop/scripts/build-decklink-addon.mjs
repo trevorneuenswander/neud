@@ -43,35 +43,41 @@ export function resolveDeckLinkIncludeDir(root = sdkRoot) {
 }
 
 function findMidlExecutable() {
+  const found = [];
   const fromEnv = process.env.NEUD_MIDL_PATH?.trim();
-  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
-  const vswhere = path.join(
-    process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
-    "Microsoft Visual Studio",
-    "Installer",
-    "vswhere.exe",
-  );
-  if (fs.existsSync(vswhere)) {
-    const result = spawnSync(
-      vswhere,
-      [
-        "-latest",
-        "-products",
-        "*",
-        "-requires",
-        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-        "-find",
-        "**\\midl.exe",
-      ],
-      { encoding: "utf8" },
-    );
-    const candidate = (result.stdout || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.toLowerCase().endsWith("midl.exe") && fs.existsSync(line));
-    if (candidate) return candidate;
+  if (fromEnv) found.push(fromEnv);
+
+  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+  for (const kitsRoot of [
+    path.join(programFilesX86, "Windows Kits", "10", "bin"),
+    path.join(programFiles, "Windows Kits", "10", "bin"),
+  ]) {
+    if (!fs.existsSync(kitsRoot)) continue;
+    for (const versionDir of fs.readdirSync(kitsRoot)) {
+      for (const arch of ["x64", "x86"]) {
+        found.push(path.join(kitsRoot, versionDir, arch, "midl.exe"));
+      }
+    }
   }
-  return "";
+
+  const vswhere = path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
+  if (fs.existsSync(vswhere)) {
+    const result = spawnSync(vswhere, ["-latest", "-products", "*", "-find", "**/midl.exe"], {
+      encoding: "utf8",
+    });
+    for (const line of (result.stdout || "").split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed) found.push(trimmed);
+    }
+  }
+
+  const existing = [...new Set(found)].filter((candidate) => fs.existsSync(candidate));
+  return (
+    existing.find((candidate) => /\\bin\\[^\\]+\\x64\\midl\.exe$/i.test(candidate)) ||
+    existing[0] ||
+    ""
+  );
 }
 
 /** Windows SDK 16 ships IDL only — generate DeckLinkAPI.h / DeckLinkAPI_i.c via MIDL. */

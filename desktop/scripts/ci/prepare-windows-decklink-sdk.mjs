@@ -42,44 +42,81 @@ function run(command, args, options = {}) {
   return result;
 }
 
-function findMidl() {
+function collectMidlCandidates() {
+  const found = [];
   const fromEnv = (process.env.NEUD_MIDL_PATH || "").trim();
-  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+  if (fromEnv) found.push(fromEnv);
 
-  const vswhere = path.join(
-    process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
-    "Microsoft Visual Studio",
-    "Installer",
-    "vswhere.exe",
-  );
+  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+
+  // MIDL ships with the Windows SDK (Windows Kits), not always under VS VC tools.
+  for (const kitsRoot of [
+    path.join(programFilesX86, "Windows Kits", "10", "bin"),
+    path.join(programFiles, "Windows Kits", "10", "bin"),
+  ]) {
+    if (!fs.existsSync(kitsRoot)) continue;
+    for (const versionDir of fs.readdirSync(kitsRoot)) {
+      for (const arch of ["x64", "x86"]) {
+        found.push(path.join(kitsRoot, versionDir, arch, "midl.exe"));
+      }
+    }
+  }
+
+  const vswhere = path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
   if (fs.existsSync(vswhere)) {
     const result = spawnSync(
       vswhere,
-      [
-        "-latest",
-        "-products",
-        "*",
-        "-requires",
-        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-        "-find",
-        "**\\midl.exe",
-      ],
+      ["-latest", "-products", "*", "-find", "**/midl.exe"],
       { encoding: "utf8" },
     );
-    const candidate = (result.stdout || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.toLowerCase().endsWith("midl.exe") && fs.existsSync(line));
-    if (candidate) return candidate;
+    for (const line of (result.stdout || "").split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed) found.push(trimmed);
+    }
+
+    // Load vcvars and resolve midl via PATH (covers Enterprise/Community images).
+    const vsPathResult = spawnSync(
+      vswhere,
+      ["-latest", "-products", "*", "-property", "installationPath"],
+      { encoding: "utf8" },
+    );
+    const vsPath = (vsPathResult.stdout || "").trim().split(/\r?\n/)[0];
+    if (vsPath) {
+      const vcvars = path.join(vsPath, "VC", "Auxiliary", "Build", "vcvars64.bat");
+      if (fs.existsSync(vcvars)) {
+        const whereMidl = spawnSync(
+          "cmd.exe",
+          ["/d", "/s", "/c", `"${vcvars}" >nul 2>&1 && where midl`],
+          { encoding: "utf8", shell: false },
+        );
+        for (const line of (whereMidl.stdout || "").split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (trimmed.toLowerCase().endsWith("midl.exe")) found.push(trimmed);
+        }
+      }
+    }
   }
 
   const pathMidl = spawnSync("where.exe", ["midl.exe"], { encoding: "utf8", shell: true });
-  const which = (pathMidl.stdout || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line && fs.existsSync(line));
-  if (which) return which;
-  throw new Error("midl.exe not found. Install Visual Studio C++ build tools with MIDL.");
+  for (const line of (pathMidl.stdout || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed) found.push(trimmed);
+  }
+
+  return [...new Set(found)].filter((candidate) => fs.existsSync(candidate));
+}
+
+function findMidl() {
+  const candidates = collectMidlCandidates();
+  // Prefer x64 Windows Kits MIDL when available.
+  const preferred =
+    candidates.find((candidate) => /\\bin\\[^\\]+\\x64\\midl\.exe$/i.test(candidate)) ||
+    candidates[0];
+  if (preferred) return preferred;
+  throw new Error(
+    "midl.exe not found. Install Visual Studio C++ build tools and a Windows 10/11 SDK (MIDL).",
+  );
 }
 
 function extractZip(zip, dest) {
@@ -122,23 +159,46 @@ if (!fs.existsSync(headerPath)) {
     process.exit(1);
   }
   const midl = findMidl();
-  console.log(`[decklink-sdk] Generating Windows headers with MIDL`);
-  // MIDL writes DeckLinkAPI.h / DeckLinkAPI_i.c into cwd; keep inputs in Win/include.
-  run(
-    midl,
-    [
-      "/W1",
-      "/robust",
-      "/nologo",
-      `/I${sdk.winInclude}`,
-      "/h",
-      "DeckLinkAPI.h",
-      "/iid",
-      "DeckLinkAPI_i.c",
-      "DeckLinkAPI.idl",
-    ],
-    { cwd: sdk.winInclude },
-  );
+  console.log(`[decklink-sdk] Generating Windows headers with MIDL (${midl})`);
+  // Prefer vcvars64 so MIDL can resolve Windows SDK/rpcndr headers.
+  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  const vswhere = path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
+  let vcvars = "";
+  if (fs.existsSync(vswhere)) {
+    const vsPathResult = spawnSync(
+      vswhere,
+      ["-latest", "-products", "*", "-property", "installationPath"],
+      { encoding: "utf8" },
+    );
+    const vsPath = (vsPathResult.stdout || "").trim().split(/\r?\n/)[0];
+    if (vsPath) {
+      const candidate = path.join(vsPath, "VC", "Auxiliary", "Build", "vcvars64.bat");
+      if (fs.existsSync(candidate)) vcvars = candidate;
+    }
+  }
+
+  const midlArgs = [
+    "/W1",
+    "/robust",
+    "/nologo",
+    `/I${sdk.winInclude}`,
+    "/h",
+    "DeckLinkAPI.h",
+    "/iid",
+    "DeckLinkAPI_i.c",
+    "DeckLinkAPI.idl",
+  ];
+  if (vcvars) {
+    const quotedMidl = `"${midl}" ${midlArgs.map((arg) => `"${arg}"`).join(" ")}`;
+    run(
+      "cmd.exe",
+      ["/d", "/s", "/c", `"${vcvars}" >nul && cd /d "${sdk.winInclude}" && ${quotedMidl}`],
+      { cwd: sdk.winInclude },
+    );
+  } else {
+    // MIDL writes DeckLinkAPI.h / DeckLinkAPI_i.c into cwd; keep inputs in Win/include.
+    run(midl, midlArgs, { cwd: sdk.winInclude });
+  }
 }
 
 const validated = validateWindowsSdkInclude(sdk.winInclude, { requireGeneratedHeader: true });
