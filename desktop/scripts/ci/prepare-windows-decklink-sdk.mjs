@@ -164,23 +164,42 @@ if (!fs.existsSync(headerPath)) {
   }
   const midl = findMidl();
   console.log(`[decklink-sdk] Generating Windows headers with MIDL (${midl})`);
-  // DeckLink IDL imports sibling IDL files only; no vcvars required for generation.
-  // MIDL writes DeckLinkAPI.h / DeckLinkAPI_i.c into cwd.
-  run(
-    midl,
-    [
-      "/W1",
-      "/robust",
-      "/nologo",
-      `/I${sdk.winInclude}`,
-      "/h",
-      "DeckLinkAPI.h",
-      "/iid",
-      "DeckLinkAPI_i.c",
-      "DeckLinkAPI.idl",
-    ],
-    { cwd: sdk.winInclude },
-  );
+  // MIDL requires the MSVC C preprocessor (cl.exe). Load vcvars64 first.
+  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  const vswhere = path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
+  let vcvars = "";
+  if (fs.existsSync(vswhere)) {
+    const vsPathResult = spawnSync(
+      vswhere,
+      ["-latest", "-products", "*", "-property", "installationPath"],
+      { encoding: "utf8" },
+    );
+    const vsPath = (vsPathResult.stdout || "").trim().split(/\r?\n/)[0];
+    if (vsPath) {
+      const candidate = path.join(vsPath, "VC", "Auxiliary", "Build", "vcvars64.bat");
+      if (fs.existsSync(candidate)) vcvars = candidate;
+    }
+  }
+  if (!vcvars) {
+    throw new Error("vcvars64.bat not found; Visual Studio C++ build tools are required for MIDL.");
+  }
+
+  const midlCmd = [
+    `"${midl}"`,
+    "/W1",
+    "/robust",
+    "/nologo",
+    `/I"${sdk.winInclude}"`,
+    "/h",
+    "DeckLinkAPI.h",
+    "/iid",
+    "DeckLinkAPI_i.c",
+    "DeckLinkAPI.idl",
+  ].join(" ");
+  // `call` is required so a .bat can return to cmd and continue the chain.
+  const commandLine = `call "${vcvars}" >nul && cd /d "${sdk.winInclude}" && ${midlCmd}`;
+  console.log("[decklink-sdk] Running MIDL under vcvars64 (command details omit secrets).");
+  run("cmd.exe", ["/d", "/s", "/c", commandLine], { cwd: sdk.winInclude });
 }
 
 const validated = validateWindowsSdkInclude(sdk.winInclude, { requireGeneratedHeader: true });
