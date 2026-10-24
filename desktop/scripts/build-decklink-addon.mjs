@@ -28,13 +28,14 @@ const sdkRoot = defaultSdkRoot();
 
 export function resolveDeckLinkIncludeDir(root = sdkRoot) {
   if (!root) return "";
-  const candidates = [
-    path.join(root, "Mac", "include"),
-    path.join(root, "Win", "include"),
-    root,
-  ];
+  const platformCandidates =
+    process.platform === "win32"
+      ? [path.join(root, "Win", "include"), path.join(root, "Mac", "include"), root]
+      : process.platform === "darwin"
+        ? [path.join(root, "Mac", "include"), path.join(root, "Win", "include"), root]
+        : [path.join(root, "Linux", "include"), path.join(root, "Win", "include"), root];
   return (
-    candidates.find(
+    platformCandidates.find(
       (candidate) =>
         fs.existsSync(path.join(candidate, "DeckLinkAPI.h")) ||
         fs.existsSync(path.join(candidate, "DeckLinkAPI.idl")),
