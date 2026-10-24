@@ -2,7 +2,7 @@
  * Blackmagic's Windows SDK 16.x ships IDL (not DeckLinkAPIDispatch.cpp).
  * Samples use CoCreateInstance; this file provides the Create* helpers used by decklink-sdk.cc.
  */
-#include "DeckLinkAPI.h"
+#include "decklink-dispatch-win.h"
 
 #include <objbase.h>
 
