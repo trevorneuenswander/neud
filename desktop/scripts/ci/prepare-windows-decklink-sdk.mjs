@@ -184,22 +184,25 @@ if (!fs.existsSync(headerPath)) {
     throw new Error("vcvars64.bat not found; Visual Studio C++ build tools are required for MIDL.");
   }
 
-  const midlCmd = [
-    `"${midl}"`,
-    "/W1",
-    "/robust",
-    "/nologo",
-    `/I"${sdk.winInclude}"`,
-    "/h",
-    "DeckLinkAPI.h",
-    "/iid",
-    "DeckLinkAPI_i.c",
-    "DeckLinkAPI.idl",
-  ].join(" ");
-  // `call` is required so a .bat can return to cmd and continue the chain.
-  const commandLine = `call "${vcvars}" >nul && cd /d "${sdk.winInclude}" && ${midlCmd}`;
-  console.log("[decklink-sdk] Running MIDL under vcvars64 (command details omit secrets).");
-  run("cmd.exe", ["/d", "/s", "/c", commandLine], { cwd: sdk.winInclude });
+  // Writing a .bat avoids cmd.exe /S quote-stripping bugs with paths that contain spaces.
+  const batPath = path.join(os.tmpdir(), `neud-decklink-midl-${process.pid}.bat`);
+  const batBody = [
+    "@echo off",
+    `call "${vcvars}"`,
+    "if errorlevel 1 exit /b 1",
+    `cd /d "${sdk.winInclude}"`,
+    "if errorlevel 1 exit /b 1",
+    `"${midl}" /W1 /robust /nologo /I"${sdk.winInclude}" /h DeckLinkAPI.h /iid DeckLinkAPI_i.c DeckLinkAPI.idl`,
+    "exit /b %ERRORLEVEL%",
+    "",
+  ].join("\r\n");
+  fs.writeFileSync(batPath, batBody, "utf8");
+  console.log("[decklink-sdk] Running MIDL under vcvars64 via helper batch file.");
+  try {
+    run("cmd.exe", ["/d", "/c", batPath], { cwd: sdk.winInclude });
+  } finally {
+    fs.rmSync(batPath, { force: true });
+  }
 }
 
 const validated = validateWindowsSdkInclude(sdk.winInclude, { requireGeneratedHeader: true });
