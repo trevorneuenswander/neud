@@ -1,7 +1,7 @@
 {
   "variables": {
     "neud_with_ffmpeg%": "<!(node -p \"process.env.NEUD_WITH_FFMPEG==='1'?'1':'0'\")",
-    "FFMPEG_DIR%": "<!(node -p \"process.env.FFMPEG_DIR||''\")"
+    "FFMPEG_DIR%": "<!(node -p \"process.env.FFMPEG_DIR||require('path').join(process.cwd(),'..','..','vendor','ffmpeg-windows-lgpl','current')\")"
   },
   "targets": [
     {

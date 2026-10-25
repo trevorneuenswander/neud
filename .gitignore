@@ -77,6 +77,10 @@ docs/validation-project-cleanup-audit.json
 desktop/native/**/build/
 desktop/node_modules/
 *.node
+
+# Downloaded Windows LGPL FFmpeg (lock file is tracked)
+desktop/vendor/ffmpeg-windows-lgpl/cache/
+desktop/vendor/ffmpeg-windows-lgpl/current/
 NEUD/
 desktop/NEUD/
 desktop/neud-bootstrap.log

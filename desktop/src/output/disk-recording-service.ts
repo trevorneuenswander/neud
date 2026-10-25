@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  buildPartialRecordingPath,
   buildRecordingBasename,
   DISK_RECORDING_DEVICE_ID,
   formatSupportsAlpha,
@@ -168,7 +169,7 @@ export class DiskRecordingService {
       format: config.format,
     });
     const finalPath = resolveUniqueRecordingPath(config.destinationFolder, basename);
-    const tempPath = `${finalPath}.neud-partial`;
+    const tempPath = buildPartialRecordingPath(finalPath);
     try {
       if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     } catch {

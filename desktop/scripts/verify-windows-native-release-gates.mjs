@@ -63,7 +63,25 @@ report.windowsProResPlaybackClaimed = withFfmpeg && report.ffmpegLgpl.present;
 if (withFfmpeg && !report.ffmpegLgpl.present) {
   assert.fail(
     "NEUD_WITH_FFMPEG=1 but no staged LGPL FFmpeg DLLs under dist/platform/windows/ffmpeg. " +
-      "Run package-windows-ffmpeg-lgpl.mjs or unset NEUD_WITH_FFMPEG.",
+      "Run fetch-windows-ffmpeg-lgpl.mjs + package-windows-ffmpeg-lgpl.mjs or unset NEUD_WITH_FFMPEG.",
+  );
+}
+if (withFfmpeg) {
+  const required = ["avcodec", "avformat", "avutil", "swscale"];
+  const dllNames = fs
+    .readdirSync(ffmpegDir)
+    .filter((name) => name.toLowerCase().endsWith(".dll"))
+    .map((name) => name.toLowerCase());
+  for (const lib of required) {
+    assert.ok(
+      dllNames.some((name) => name.startsWith(lib)),
+      `Missing required FFmpeg DLL prefix ${lib} under ${ffmpegDir}`,
+    );
+  }
+  assert.ok(
+    fs.existsSync(path.join(ffmpegDir, "LICENSE.FFmpeg.txt")) ||
+      fs.existsSync(path.join(ffmpegDir, "SOURCE_OFFER.txt")),
+    "LGPL license/source-offer text missing beside staged FFmpeg DLLs",
   );
 }
 
@@ -71,5 +89,9 @@ console.log(JSON.stringify({ ok: true, ...report }, null, 2));
 if (!report.windowsProResPlaybackClaimed) {
   console.log(
     "[gate] Windows ProRes playback is NOT claimed for this build (FFmpeg LGPL DLLs absent or NEUD_WITH_FFMPEG unset).",
+  );
+} else {
+  console.log(
+    "[gate] Windows ProRes playback packaging gate passed (LGPL FFmpeg DLLs staged). Hardware decode still requires owner validation.",
   );
 }

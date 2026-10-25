@@ -105,11 +105,27 @@ if (requirePackaged && process.platform === "win32") {
   );
   assert.ok(fs.existsSync(recorder), `Missing packaged Windows recorder addon: ${recorder}`);
   assert.ok(fs.existsSync(video), `Missing packaged Windows video addon: ${video}`);
+  const ffmpegDir = path.join(path.dirname(video), "ffmpeg");
+  let ffmpegDllCount = 0;
+  if (process.env.NEUD_WITH_FFMPEG === "1") {
+    assert.ok(fs.existsSync(ffmpegDir), `Missing packaged FFmpeg dir: ${ffmpegDir}`);
+    const dlls = fs
+      .readdirSync(ffmpegDir)
+      .filter((name) => name.toLowerCase().endsWith(".dll"));
+    ffmpegDllCount = dlls.length;
+    assert.ok(ffmpegDllCount > 0, `No FFmpeg DLLs packaged under ${ffmpegDir}`);
+    for (const lib of ["avcodec", "avformat", "avutil", "swscale"]) {
+      assert.ok(
+        dlls.some((name) => name.toLowerCase().startsWith(lib)),
+        `Packaged FFmpeg missing ${lib} DLL under ${ffmpegDir}`,
+      );
+    }
+  }
   console.log(
     JSON.stringify(
       {
         ok: true,
-        packagedWindowsNatives: { recorder, video },
+        packagedWindowsNatives: { recorder, video, ffmpegDllCount },
       },
       null,
       2,

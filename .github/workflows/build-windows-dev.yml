@@ -23,6 +23,8 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEUD_REQUIRE_REAL_DECKLINK: "1"
+      NEUD_WITH_FFMPEG: "1"
+      NEUD_DEV_BUILD_ID: "recording-prores-db-1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -64,15 +66,25 @@ jobs:
           npm run test:display-data-get-proxy
           node --test desktop/scripts/test-neud-bag-event-driven-live.mjs
           node --test desktop/scripts/test-neud-v0-2-0-display-transport-sync.mjs
+          node --test desktop/scripts/test-neud-v0-3-1-stabilization.mjs
 
       - name: Build unsigned Windows package
         run: npm run package:win
 
+      - name: SQLite migration 046 regression
+        run: node --test desktop/scripts/test-neud-sqlite-migration-046-orphan-recovery.mjs
+
+      - name: Windows ProRes decode smoke (LGPL FFmpeg)
+        shell: bash
+        run: node desktop/scripts/smoke-windows-prores-decode.mjs
+
       - name: Upload engineering artifact
         uses: actions/upload-artifact@v4
         with:
-          name: neud-windows-dev-${{ github.sha }}
+          # Distinct from prior hardware-test installers (do not overwrite retained artifacts).
+          name: neud-windows-dev-${{ env.NEUD_DEV_BUILD_ID }}-${{ github.sha }}
           path: |
             desktop/release/NEUD-Setup-*-x64.exe
             desktop/dist/build-info.json
             desktop/dist/platform/decklink/neud_decklink.meta.json
+            desktop/dist/platform/windows/ffmpeg/**

@@ -61,3 +61,17 @@ if (!fs.existsSync(built)) {
 fs.mkdirSync(path.dirname(destination), { recursive: true });
 fs.copyFileSync(built, destination);
 console.log(`Copied video addon to ${destination}`);
+
+if (process.platform === "win32" && process.env.NEUD_WITH_FFMPEG === "1") {
+  if (!process.env.FFMPEG_DIR) {
+    process.env.FFMPEG_DIR = path.join(desktopRoot, "vendor", "ffmpeg-windows-lgpl", "current");
+  }
+  const stage = spawnSync(process.execPath, [path.join(desktopRoot, "scripts", "package-windows-ffmpeg-lgpl.mjs")], {
+    cwd: desktopRoot,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (stage.status !== 0) {
+    process.exit(stage.status ?? 1);
+  }
+}

@@ -64,11 +64,16 @@ test("Windows recording is H.264-only in UI and backend guards", () => {
   const model = read("desktop/src/output/disk-recording-model.ts");
   assert.match(model, /defaultDiskRecordingFormatForPlatform/);
   assert.match(model, /isDiskRecordingFormatSupportedOnPlatform/);
+  assert.match(model, /buildPartialRecordingPath/);
   const service = read("desktop/src/output/disk-recording-service.ts");
   assert.match(service, /Windows Record to Disk supports H\.264 MP4 only/);
+  assert.match(service, /buildPartialRecordingPath/);
   const recorder = read("desktop/native/recorder/recorder-win.cpp");
   assert.match(recorder, /Media Foundation/);
   assert.match(recorder, /IMFSinkWriter/);
+  assert.match(recorder, /MF_TRANSCODE_CONTAINERTYPE/);
+  assert.match(recorder, /MfFailure/);
+  assert.match(recorder, /PathLooksLikeMp4/);
 });
 
 test("Windows FFmpeg decoder and packaging hooks exist", () => {
@@ -77,6 +82,22 @@ test("Windows FFmpeg decoder and packaging hooks exist", () => {
   assert.match(gyp, /neud_with_ffmpeg/);
   assert.match(gyp, /video-decoder-win-ffmpeg\.cpp/);
   assert.ok(fs.existsSync(path.join(repoRoot, "desktop/scripts/package-windows-ffmpeg-lgpl.mjs")));
+  assert.ok(fs.existsSync(path.join(repoRoot, "desktop/scripts/fetch-windows-ffmpeg-lgpl.mjs")));
+  const lock = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, "desktop/vendor/ffmpeg-windows-lgpl.lock.json"), "utf8"),
+  );
+  assert.match(String(lock.artifact), /lgpl-shared/i);
+  assert.ok(lock.sha256 && lock.sha256.length === 64);
+  const pkgWin = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  assert.match(pkgWin.scripts["package:win"], /NEUD_WITH_FFMPEG=1/);
+  assert.match(pkgWin.scripts["package:win"], /fetch-windows-ffmpeg-lgpl/);
+});
+
+test("migration 046 orphan_recovery_suppressed is registered", () => {
+  const migrate = read("desktop/src/database/migrate.ts");
+  assert.match(migrate, /046_video_media_orphan_recovery\.sql/);
+  const sql = read("desktop/src/database/migrations/046_video_media_orphan_recovery.sql");
+  assert.match(sql, /orphan_recovery_suppressed/);
 });
 
 test("DeckLink stub is reported distinctly from missing Desktop Video", () => {

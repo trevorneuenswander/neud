@@ -315,3 +315,15 @@ export function resolveUniqueRecordingPath(folder: string, basename: string): st
   }
   return path.join(folder, `${stem}_${Date.now()}${ext}`);
 }
+
+/**
+ * In-progress recording path. Media Foundation selects the muxer from the
+ * file extension (.mp4 / .asf / .3gp), so the partial file must keep a
+ * recognized container suffix — not `something.mp4.neud-partial`.
+ */
+export function buildPartialRecordingPath(finalPath: string): string {
+  const ext = path.extname(finalPath);
+  const stem = finalPath.slice(0, finalPath.length - ext.length);
+  const containerExt = ext || ".mp4";
+  return `${stem}.neud-partial${containerExt}`;
+}

@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -40,6 +41,82 @@ std::wstring Utf8ToWide(const std::string &utf8) {
   std::wstring wide(static_cast<size_t>(size - 1), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, wide.data(), size);
   return wide;
+}
+
+std::string HrHex(HRESULT hr) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "0x%08X", static_cast<unsigned>(static_cast<unsigned long>(hr)));
+  return buf;
+}
+
+std::string HrMessage(HRESULT hr) {
+  wchar_t *wide = nullptr;
+  const DWORD flags =
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
+  const DWORD len = FormatMessageW(flags, nullptr, static_cast<DWORD>(hr), 0,
+                                   reinterpret_cast<LPWSTR>(&wide), 0, nullptr);
+  if (!len || !wide) {
+    return "";
+  }
+  const int utf8Size = WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
+  std::string utf8;
+  if (utf8Size > 1) {
+    utf8.assign(static_cast<size_t>(utf8Size - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8.data(), utf8Size, nullptr, nullptr);
+  }
+  LocalFree(wide);
+  while (!utf8.empty() && (utf8.back() == '\r' || utf8.back() == '\n' || utf8.back() == ' ')) {
+    utf8.pop_back();
+  }
+  return utf8;
+}
+
+/** Basename only — avoid leaking full local paths into shared logs. */
+std::string SafePathLabel(const std::string &filePath) {
+  const size_t slash = filePath.find_last_of("/\\");
+  const std::string name = slash == std::string::npos ? filePath : filePath.substr(slash + 1);
+  if (name.empty()) return "(empty)";
+  return name;
+}
+
+bool PathLooksLikeMp4(const std::wstring &path) {
+  if (path.size() < 4) return false;
+  const wchar_t *ext = path.c_str() + (path.size() - 4);
+  return (ext[0] == L'.') &&
+         (ext[1] == L'm' || ext[1] == L'M') &&
+         (ext[2] == L'p' || ext[2] == L'P') &&
+         (ext[3] == L'4');
+}
+
+std::string RecordingConfigSummary(const OpenParams &params, const char *encoderAttempt) {
+  char buf[256];
+  std::snprintf(
+      buf,
+      sizeof(buf),
+      "codec=H264 container=mp4 %dx%d fps=%d/%d encoder=%s file=%s",
+      params.width,
+      params.height,
+      params.fpsNumerator,
+      std::max(1, params.fpsDenominator),
+      encoderAttempt,
+      SafePathLabel(params.filePath).c_str());
+  return buf;
+}
+
+std::string MfFailure(
+    const char *operation,
+    HRESULT hr,
+    const OpenParams &params,
+    const char *encoderAttempt) {
+  std::string msg = std::string(operation) + " failed (" + HrHex(hr) + ")";
+  const std::string win = HrMessage(hr);
+  if (!win.empty()) {
+    msg += ": ";
+    msg += win;
+  }
+  msg += ". ";
+  msg += RecordingConfigSummary(params, encoderAttempt);
+  return msg;
 }
 
 void FlattenBgraToBgrx(
@@ -102,14 +179,16 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     const bool coInitHere = SUCCEEDED(hr) || hr == S_FALSE || hr == RPC_E_CHANGED_MODE;
     if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
-      if (error) *error = "Unable to initialize COM for Media Foundation.";
+      if (error) {
+        *error = MfFailure("CoInitializeEx", hr, params, "n/a");
+      }
       return false;
     }
     comInitialized_ = (hr == S_OK);
 
     hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
     if (FAILED(hr)) {
-      if (error) *error = "Media Foundation startup failed.";
+      if (error) *error = MfFailure("MFStartup", hr, params, "n/a");
       teardownCom();
       return false;
     }
@@ -117,15 +196,33 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
 
     const std::wstring path = Utf8ToWide(params.filePath);
     if (path.empty()) {
-      if (error) *error = "Invalid destination path.";
+      if (error) *error = "Invalid destination path (UTF-8 conversion failed).";
+      close();
+      return false;
+    }
+    if (!PathLooksLikeMp4(path)) {
+      if (error) {
+        *error =
+            "H.264 recording destination must end with .mp4 so Media Foundation can select "
+            "the MPEG-4 sink. Partial files must use a .neud-partial.mp4 suffix. " +
+            RecordingConfigSummary(params, "n/a");
+      }
       close();
       return false;
     }
 
+    // Prefer hardware H.264 transforms when available; fall back to software on configure failure.
+    const char *encoderAttempt = "hardware-preferred";
     IMFSinkWriter *writer = nullptr;
-    hr = MFCreateSinkWriterFromURL(path.c_str(), nullptr, nullptr, &writer);
+    hr = CreateMpeg4SinkWriter(path, true, &writer);
     if (FAILED(hr) || !writer) {
-      if (error) *error = "Unable to create Media Foundation sink writer for MP4.";
+      encoderAttempt = "software";
+      hr = CreateMpeg4SinkWriter(path, false, &writer);
+    }
+    if (FAILED(hr) || !writer) {
+      if (error) {
+        *error = MfFailure("MFCreateSinkWriterFromURL", hr, params, encoderAttempt);
+      }
       close();
       return false;
     }
@@ -134,13 +231,15 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     hr = MFCreateMediaType(&outType);
     if (FAILED(hr) || !outType) {
       writer->Release();
-      if (error) *error = "Unable to create H.264 output media type.";
+      if (error) *error = MfFailure("MFCreateMediaType(output)", hr, params, encoderAttempt);
       close();
       return false;
     }
     outType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
     outType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
-    outType->SetUINT32(MF_MT_AVG_BITRATE, static_cast<UINT32>(params.width * params.height * 4));
+    const UINT32 bitrate = static_cast<UINT32>(
+        std::max(1'000'000, params.width * params.height * 4));
+    outType->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
     outType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
     MFSetAttributeSize(outType, MF_MT_FRAME_SIZE, params.width, params.height);
     MFSetAttributeRatio(
@@ -155,7 +254,7 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     outType->Release();
     if (FAILED(hr)) {
       writer->Release();
-      if (error) *error = "Unable to add H.264 stream to sink writer.";
+      if (error) *error = MfFailure("IMFSinkWriter::AddStream(H264)", hr, params, encoderAttempt);
       close();
       return false;
     }
@@ -164,7 +263,7 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     hr = MFCreateMediaType(&inType);
     if (FAILED(hr) || !inType) {
       writer->Release();
-      if (error) *error = "Unable to create input media type.";
+      if (error) *error = MfFailure("MFCreateMediaType(input)", hr, params, encoderAttempt);
       close();
       return false;
     }
@@ -181,10 +280,76 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     inType->SetUINT32(MF_MT_DEFAULT_STRIDE, params.width * 4);
 
     hr = writer->SetInputMediaType(streamIndex, inType, nullptr);
+    if (FAILED(hr) && std::strcmp(encoderAttempt, "hardware-preferred") == 0) {
+      // Rebuild with software-only transforms when the hardware encoder rejects RGB32.
+      inType->Release();
+      writer->Release();
+      writer = nullptr;
+      encoderAttempt = "software";
+      hr = CreateMpeg4SinkWriter(path, false, &writer);
+      if (FAILED(hr) || !writer) {
+        if (error) {
+          *error = MfFailure("MFCreateSinkWriterFromURL(software retry)", hr, params, encoderAttempt);
+        }
+        close();
+        return false;
+      }
+      outType = nullptr;
+      hr = MFCreateMediaType(&outType);
+      if (FAILED(hr) || !outType) {
+        writer->Release();
+        if (error) *error = MfFailure("MFCreateMediaType(output,software)", hr, params, encoderAttempt);
+        close();
+        return false;
+      }
+      outType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+      outType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+      outType->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
+      outType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+      MFSetAttributeSize(outType, MF_MT_FRAME_SIZE, params.width, params.height);
+      MFSetAttributeRatio(
+          outType,
+          MF_MT_FRAME_RATE,
+          static_cast<UINT32>(params.fpsNumerator),
+          static_cast<UINT32>(std::max(1, params.fpsDenominator)));
+      MFSetAttributeRatio(outType, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+      streamIndex = 0;
+      hr = writer->AddStream(outType, &streamIndex);
+      outType->Release();
+      if (FAILED(hr)) {
+        writer->Release();
+        if (error) {
+          *error = MfFailure("IMFSinkWriter::AddStream(H264,software)", hr, params, encoderAttempt);
+        }
+        close();
+        return false;
+      }
+      hr = MFCreateMediaType(&inType);
+      if (FAILED(hr) || !inType) {
+        writer->Release();
+        if (error) *error = MfFailure("MFCreateMediaType(input,software)", hr, params, encoderAttempt);
+        close();
+        return false;
+      }
+      inType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+      inType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
+      inType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+      MFSetAttributeSize(inType, MF_MT_FRAME_SIZE, params.width, params.height);
+      MFSetAttributeRatio(
+          inType,
+          MF_MT_FRAME_RATE,
+          static_cast<UINT32>(params.fpsNumerator),
+          static_cast<UINT32>(std::max(1, params.fpsDenominator)));
+      MFSetAttributeRatio(inType, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+      inType->SetUINT32(MF_MT_DEFAULT_STRIDE, params.width * 4);
+      hr = writer->SetInputMediaType(streamIndex, inType, nullptr);
+    }
     inType->Release();
     if (FAILED(hr)) {
       writer->Release();
-      if (error) *error = "Unable to set RGB32 input type for H.264 encoding.";
+      if (error) {
+        *error = MfFailure("IMFSinkWriter::SetInputMediaType(RGB32)", hr, params, encoderAttempt);
+      }
       close();
       return false;
     }
@@ -192,7 +357,7 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     hr = writer->BeginWriting();
     if (FAILED(hr)) {
       writer->Release();
-      if (error) *error = "Media Foundation BeginWriting failed.";
+      if (error) *error = MfFailure("IMFSinkWriter::BeginWriting", hr, params, encoderAttempt);
       close();
       return false;
     }
@@ -214,6 +379,23 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     opened_ = true;
     (void)coInitHere;
     return true;
+  }
+
+  static HRESULT CreateMpeg4SinkWriter(
+      const std::wstring &path,
+      bool enableHardwareTransforms,
+      IMFSinkWriter **writerOut) {
+    *writerOut = nullptr;
+    IMFAttributes *attrs = nullptr;
+    HRESULT hr = MFCreateAttributes(&attrs, 2);
+    if (FAILED(hr) || !attrs) return FAILED(hr) ? hr : E_OUTOFMEMORY;
+    attrs->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4);
+    attrs->SetUINT32(
+        MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS,
+        enableHardwareTransforms ? TRUE : FALSE);
+    hr = MFCreateSinkWriterFromURL(path.c_str(), nullptr, attrs, writerOut);
+    attrs->Release();
+    return hr;
   }
 
   bool appendFrame(
@@ -250,7 +432,9 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     HRESULT hr = MFCreateMemoryBuffer(static_cast<DWORD>(bottomUp.size()), &buffer);
     if (FAILED(hr) || !buffer) {
       droppedFrames_++;
-      if (error) *error = "Unable to allocate Media Foundation frame buffer.";
+      if (error) {
+        *error = std::string("MFCreateMemoryBuffer failed (") + HrHex(hr) + ")";
+      }
       return false;
     }
     BYTE *data = nullptr;
@@ -258,7 +442,9 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     if (FAILED(hr) || !data) {
       buffer->Release();
       droppedFrames_++;
-      if (error) *error = "Unable to lock Media Foundation frame buffer.";
+      if (error) {
+        *error = std::string("IMFMediaBuffer::Lock failed (") + HrHex(hr) + ")";
+      }
       return false;
     }
     memcpy(data, bottomUp.data(), bottomUp.size());
@@ -270,7 +456,9 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     if (FAILED(hr) || !sample) {
       buffer->Release();
       droppedFrames_++;
-      if (error) *error = "Unable to create Media Foundation sample.";
+      if (error) {
+        *error = std::string("MFCreateSample failed (") + HrHex(hr) + ")";
+      }
       return false;
     }
     sample->AddBuffer(buffer);
@@ -285,7 +473,9 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     sample->Release();
     if (FAILED(hr)) {
       droppedFrames_++;
-      if (error) *error = "Media Foundation WriteSample failed.";
+      if (error) {
+        *error = std::string("IMFSinkWriter::WriteSample failed (") + HrHex(hr) + ")";
+      }
       return false;
     }
 
@@ -302,7 +492,10 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     }
     const HRESULT hr = writer_->Finalize();
     if (FAILED(hr)) {
-      if (error) *error = "Media Foundation Finalize failed; recording file may be incomplete.";
+      if (error) {
+        *error = std::string("IMFSinkWriter::Finalize failed (") + HrHex(hr) +
+                 "); recording file may be incomplete.";
+      }
       return false;
     }
     writer_->Release();

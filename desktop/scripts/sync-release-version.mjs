@@ -60,12 +60,21 @@ export function syncReleaseVersion() {
       process.env.GITHUB_SHA?.trim() ||
       process.env.NEUD_BUILD_COMMIT?.trim() ||
       "dev-local",
+    developmentBuildId:
+      process.env.NEUD_DEV_BUILD_ID?.trim() ||
+      process.env.NEUD_DEVELOPMENT_BUILD_ID?.trim() ||
+      null,
+    withFfmpegLgpl: process.env.NEUD_WITH_FFMPEG === "1",
     builtAt: new Date().toISOString(),
   };
   writeJson(path.join(distDir, "build-info.json"), buildInfo);
 
   console.log(`Wrote dist/package.json with release version ${releaseVersion}`);
-  console.log(`Wrote dist/build-info.json (commit ${buildInfo.gitCommit})`);
+  console.log(
+    `Wrote dist/build-info.json (commit ${buildInfo.gitCommit}` +
+      (buildInfo.developmentBuildId ? `, dev=${buildInfo.developmentBuildId}` : "") +
+      ")",
+  );
 
   return releaseVersion;
 }
