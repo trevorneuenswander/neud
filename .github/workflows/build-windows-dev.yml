@@ -68,11 +68,14 @@ jobs:
           node --test desktop/scripts/test-neud-v0-2-0-display-transport-sync.mjs
           node --test desktop/scripts/test-neud-v0-3-1-stabilization.mjs
           node --test desktop/scripts/test-windows-recording-orientation.mjs
-          node --test desktop/scripts/test-recording-live-stats.mjs
-          node --test desktop/scripts/test-neud-v0-3-0-record-to-disk.mjs
 
       - name: Build unsigned Windows package
         run: npm run package:win
+
+      - name: Recording orientation and live-stats regressions
+        run: |
+          node --test desktop/scripts/test-recording-live-stats.mjs
+          node --test desktop/scripts/test-neud-v0-3-0-record-to-disk.mjs
 
       - name: SQLite migration 046 regression
         run: node --test desktop/scripts/test-neud-sqlite-migration-046-orphan-recovery.mjs
