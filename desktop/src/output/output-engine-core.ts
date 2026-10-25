@@ -1457,10 +1457,13 @@ export class OutputEngine {
                             ? "error"
                             : "idle",
                   startedAt: session.startedAt,
-                  durationSeconds: 0,
+                  durationSeconds: session.startedAt
+                    ? Math.max(0, (Date.now() - Date.parse(session.startedAt)) / 1000)
+                    : 0,
                   outputPath: null,
                   tempPath: null,
                   byteSize: 0,
+                  diskBytesPending: false,
                   droppedFrames: 0,
                   encodedFrames: 0,
                   actualFps: null,

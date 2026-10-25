@@ -24,6 +24,7 @@ import {
   EXTERNAL_NO_DEVICES,
   operatorFacingExternalDeviceUnavailable,
 } from "@/lib/output/output-adapter-labels";
+import { formatRecordingLiveStats } from "@/lib/output/recording-live-stats";
 
 type DeckLinkMode = {
   id: string;
@@ -100,8 +101,10 @@ type RouteView = {
   } | null;
   recording?: {
     lifecycle?: string;
+    startedAt?: string | null;
     durationSeconds?: number;
     byteSize?: number;
+    diskBytesPending?: boolean;
     droppedFrames?: number;
     encodedFrames?: number;
     outputPath?: string | null;
@@ -374,11 +377,60 @@ export function OutputManager() {
       setDevices(devicesNext);
       setMonitorsState(devicesNext.length > 0 ? "ready" : "empty");
     });
+    const unsubscribeSession = api?.output.onSessionChanged?.(() => {
+      void api.output
+        .listRoutes()
+        .then((next) => {
+          if (!cancelled) setRoutes(next as RouteView[]);
+        })
+        .catch(() => {
+          // tally refresh is best-effort; next poll recovers
+        });
+    });
     return () => {
       cancelled = true;
       unsubscribe?.();
+      unsubscribeSession?.();
     };
   }, [loadMonitors, loadProjects]);
+
+  const hasActiveDiskRecording = useMemo(
+    () =>
+      routes.some(
+        (route) =>
+          route.adapterType === "disk" &&
+          (route.session.status === "recording" ||
+            route.session.status === "starting" ||
+            route.session.status === "finalizing" ||
+            route.recording?.lifecycle === "recording" ||
+            route.recording?.lifecycle === "finalizing"),
+      ),
+    [routes],
+  );
+
+  // While any disk route is recording, refresh authoritative metrics ~1 Hz so
+  // duration/byteSize/frames stay live without a competing frontend timer.
+  useEffect(() => {
+    if (!desktop || !hasActiveDiskRecording) return;
+    const api = getDesktopAPI();
+    if (!api?.output.listRoutes) return;
+    let cancelled = false;
+    const tick = () => {
+      void api.output
+        .listRoutes()
+        .then((next) => {
+          if (!cancelled) setRoutes(next as RouteView[]);
+        })
+        .catch(() => {
+          // ignore transient IPC errors during recording
+        });
+    };
+    const intervalId = window.setInterval(tick, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [desktop, hasActiveDiskRecording]);
 
   useEffect(() => {
     if (!form.projectId) {
@@ -1157,11 +1209,18 @@ export function OutputManager() {
                       {recordingConfig.destinationFolder}
                     </p>
                   ) : null}
-                  {isDisk && route.recording?.lifecycle === "recording" ? (
-                    <p className="mt-2 text-sm text-muted">
-                      {Math.floor(route.recording.durationSeconds ?? 0)}s ·{" "}
-                      {Math.round((route.recording.byteSize ?? 0) / 1024)} KB · dropped{" "}
-                      {route.recording.droppedFrames ?? 0}
+                  {isDisk &&
+                  (route.recording?.lifecycle === "recording" ||
+                    route.session.status === "recording") ? (
+                    <p className="mt-2 text-sm text-muted" data-testid="output-recording-live-stats">
+                      {formatRecordingLiveStats({
+                        startedAt: route.recording?.startedAt ?? route.session.startedAt,
+                        durationSeconds: route.recording?.durationSeconds,
+                        byteSize: route.recording?.byteSize,
+                        diskBytesPending: route.recording?.diskBytesPending,
+                        encodedFrames: route.recording?.encodedFrames,
+                        droppedFrames: route.recording?.droppedFrames,
+                      })}
                     </p>
                   ) : null}
                   {live && startedLabel ? <p className="mt-2 text-sm text-muted">{startedLabel}</p> : null}

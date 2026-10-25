@@ -84,15 +84,23 @@ export class DiskRecordingService {
     if (!session) return null;
     let byteSize = 0;
     try {
-      const probe = fs.existsSync(session.tempPath)
-        ? session.tempPath
-        : session.outputPath;
+      // Active recordings write to *.neud-partial.mp4 until finalize promotes the file.
+      const probe =
+        session.lifecycle === "recording" || session.lifecycle === "finalizing"
+          ? session.tempPath
+          : fs.existsSync(session.tempPath)
+            ? session.tempPath
+            : session.outputPath;
       if (fs.existsSync(probe)) byteSize = fs.statSync(probe).size;
     } catch {
       byteSize = 0;
     }
     const durationSeconds =
-      session.startedMs > 0 ? Math.max(0, (Date.now() - session.startedMs) / 1000) : 0;
+      session.startedAt
+        ? Math.max(0, (Date.now() - Date.parse(session.startedAt)) / 1000)
+        : session.startedMs > 0
+          ? Math.max(0, (Date.now() - session.startedMs) / 1000)
+          : 0;
     const actualFps =
       session.lifecycle === "recording" && durationSeconds > 0.5 && session.encodedFrames > 0
         ? Math.round((session.encodedFrames / durationSeconds) * 10) / 10
@@ -103,12 +111,16 @@ export class DiskRecordingService {
       const elapsed = (nowMs - session.lastByteSample.atMs) / 1000;
       if (elapsed >= 0.5) {
         const delta = Math.max(0, byteSize - session.lastByteSample.bytes);
-        writeBytesPerSecond = Math.round(delta / elapsed);
+        writeBytesPerSecond = byteSize > 0 ? Math.round(delta / elapsed) : null;
         session.lastByteSample = { atMs: nowMs, bytes: byteSize };
       }
     } else {
       session.lastByteSample = { atMs: nowMs, bytes: byteSize };
     }
+    const diskBytesPending =
+      (session.lifecycle === "recording" || session.lifecycle === "finalizing") &&
+      byteSize === 0 &&
+      session.encodedFrames > 0;
     return {
       lifecycle: session.lifecycle,
       startedAt: session.startedAt,
@@ -116,6 +128,7 @@ export class DiskRecordingService {
       outputPath: session.lifecycle === "recording" ? session.tempPath : session.outputPath,
       tempPath: session.tempPath,
       byteSize,
+      diskBytesPending,
       droppedFrames: session.droppedFrames,
       encodedFrames: session.encodedFrames,
       actualFps,
@@ -334,6 +347,9 @@ export class DiskRecordingService {
     const durationSeconds = session.startedMs
       ? Math.max(0, (Date.now() - session.startedMs) / 1000)
       : 0;
+    const finalByteSize = fs.existsSync(session.outputPath)
+      ? fs.statSync(session.outputPath).size
+      : 0;
     return {
       ok: true,
       metrics: {
@@ -342,7 +358,8 @@ export class DiskRecordingService {
         durationSeconds,
         outputPath: session.outputPath,
         tempPath: null,
-        byteSize: fs.existsSync(session.outputPath) ? fs.statSync(session.outputPath).size : 0,
+        byteSize: finalByteSize,
+        diskBytesPending: false,
         droppedFrames: session.droppedFrames,
         encodedFrames: session.encodedFrames,
         actualFps:

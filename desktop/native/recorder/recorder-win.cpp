@@ -419,17 +419,14 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
     FlattenBgraToBgrx(
         bgra, byteLength, width, height, backgroundR_, backgroundG_, backgroundB_, &scratch_);
 
-    // MF RGB32 expects bottom-up DIBs for some pipelines; reverse rows for top-down BGRA source.
-    const int stride = width * 4;
-    std::vector<uint8_t> bottomUp(scratch_.size());
-    for (int y = 0; y < height; ++y) {
-      const uint8_t *src = scratch_.data() + static_cast<size_t>(y) * stride;
-      uint8_t *dst = bottomUp.data() + static_cast<size_t>(height - 1 - y) * stride;
-      memcpy(dst, src, static_cast<size_t>(stride));
-    }
+    // Chromium/Electron capture and NEUD OffscreenOutputRenderer deliver top-down BGRA.
+    // MF_MT_DEFAULT_STRIDE is set to a positive stride (top-down). Feeding bottom-up
+    // DIB rows while advertising a positive stride inverted the recorded H.264 picture
+    // on Windows hardware (Build 2). Do not vertically flip here — that would double
+    // invert relative to live display / Key-Fill paths, which share the same top-down source.
 
     IMFMediaBuffer *buffer = nullptr;
-    HRESULT hr = MFCreateMemoryBuffer(static_cast<DWORD>(bottomUp.size()), &buffer);
+    HRESULT hr = MFCreateMemoryBuffer(static_cast<DWORD>(scratch_.size()), &buffer);
     if (FAILED(hr) || !buffer) {
       droppedFrames_++;
       if (error) {
@@ -447,9 +444,9 @@ class MediaFoundationH264Recorder final : public DiskRecorder {
       }
       return false;
     }
-    memcpy(data, bottomUp.data(), bottomUp.size());
+    memcpy(data, scratch_.data(), scratch_.size());
     buffer->Unlock();
-    buffer->SetCurrentLength(static_cast<DWORD>(bottomUp.size()));
+    buffer->SetCurrentLength(static_cast<DWORD>(scratch_.size()));
 
     IMFSample *sample = nullptr;
     hr = MFCreateSample(&sample);

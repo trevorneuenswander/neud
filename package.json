@@ -165,7 +165,7 @@
     "test:activity-user-navigation": "node desktop/scripts/test-activity-user-navigation.mjs",
     "validate:activity-migration": "node scripts/validate-activity-migration.mjs",
     "audit:legacy-naming": "node scripts/audit-legacy-naming.mjs",
-    "package:win": "node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 NEUD_DEV_BUILD_ID=recording-prores-db-1 -- node desktop/scripts/fetch-windows-ffmpeg-lgpl.mjs && node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 NEUD_DEV_BUILD_ID=recording-prores-db-1 -- npm run build:desktop && node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 NEUD_DEV_BUILD_ID=recording-prores-db-1 -- npm run package:win -w @neud/desktop",
+    "package:win": "node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 NEUD_DEV_BUILD_ID=recording-orientation-stats-1 -- node desktop/scripts/fetch-windows-ffmpeg-lgpl.mjs && node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 NEUD_DEV_BUILD_ID=recording-orientation-stats-1 -- npm run build:desktop && node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 NEUD_DEV_BUILD_ID=recording-orientation-stats-1 -- npm run package:win -w @neud/desktop",
     "package:mac": "npm run build:desktop && npm run package:mac -w @neud/desktop",
     "dist:win": "npm run package:win",
     "verify:bundled-browser": "node desktop/scripts/verify-bundled-browser.mjs",

@@ -74,6 +74,8 @@ test("Windows recording is H.264-only in UI and backend guards", () => {
   assert.match(recorder, /MF_TRANSCODE_CONTAINERTYPE/);
   assert.match(recorder, /MfFailure/);
   assert.match(recorder, /PathLooksLikeMp4/);
+  assert.match(recorder, /Do not vertically flip/);
+  assert.doesNotMatch(recorder, /height - 1 - y/);
 });
 
 test("Windows FFmpeg decoder and packaging hooks exist", () => {
