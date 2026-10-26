@@ -115,30 +115,68 @@ class FFmpegVideoDecoder final : public VideoDecoder {
     bgra_.assign(static_cast<size_t>(stride) * static_cast<size_t>(info_.height), 0);
     state_ = PlaybackState::Opened;
     if (outInfo) *outInfo = info_;
-    emitState(state_, "");
+    emitStateUnlocked(PlaybackState::Opened, "");
     return true;
   }
 
   void play() override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (state_ == PlaybackState::Error || state_ == PlaybackState::Idle) return;
-    if (state_ == PlaybackState::Ended || state_ == PlaybackState::Stopped) {
-      seekStartUnlocked();
+    bool resumeOnly = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (state_ == PlaybackState::Error || state_ == PlaybackState::Idle) return;
+      // Already playing: do not interrupt or re-seek.
+      if (state_ == PlaybackState::Playing) return;
+      // Resume paused decode loop without restarting the worker.
+      if (state_ == PlaybackState::Paused && worker_.joinable()) {
+        playing_ = true;
+        state_ = PlaybackState::Playing;
+        resumeOnly = true;
+      }
     }
-    playing_ = true;
-    state_ = PlaybackState::Playing;
-    emitState(state_, "");
-    if (!worker_.joinable()) {
-      worker_ = std::thread([this]() { decodeLoop(); });
+    if (resumeOnly) {
+      emitStateUnlocked(PlaybackState::Playing, "");
+      return;
     }
+
+    // Ended keeps the worker sleeping (joinable). Stop joins it. If the worker
+    // exited for any reason, join before starting a replacement thread.
+    if (workerFinished_.load()) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        playing_ = false;
+        stopRequested_ = true;
+      }
+      if (worker_.joinable()) worker_.join();
+      workerFinished_ = false;
+      stopRequested_ = false;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      // Play from ended/stopped/opened starts at the beginning.
+      if (state_ == PlaybackState::Ended || state_ == PlaybackState::Stopped ||
+          state_ == PlaybackState::Opened) {
+        seekStartUnlocked();
+      }
+      playing_ = true;
+      stopRequested_ = false;
+      workerFinished_ = false;
+      state_ = PlaybackState::Playing;
+      if (!worker_.joinable()) {
+        worker_ = std::thread([this]() { decodeLoop(); });
+      }
+    }
+    emitStateUnlocked(PlaybackState::Playing, "");
   }
 
   void pause() override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (state_ != PlaybackState::Playing) return;
-    playing_ = false;
-    state_ = PlaybackState::Paused;
-    emitState(state_, "");
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (state_ != PlaybackState::Playing) return;
+      playing_ = false;
+      state_ = PlaybackState::Paused;
+    }
+    emitStateUnlocked(PlaybackState::Paused, "");
   }
 
   void stop() override {
@@ -147,12 +185,28 @@ class FFmpegVideoDecoder final : public VideoDecoder {
       playing_ = false;
       stopRequested_ = true;
       state_ = PlaybackState::Stopped;
-      emitState(state_, "");
     }
+    emitStateUnlocked(PlaybackState::Stopped, "");
     if (worker_.joinable()) worker_.join();
+    workerFinished_ = false;
     stopRequested_ = false;
-    std::lock_guard<std::mutex> lock(mutex_);
-    seekStartUnlocked();
+
+    // Seek to zero, present first frame for UI/preview, then rewind again so a
+    // subsequent Play starts cleanly at frame 0 (peek advances the demuxer).
+    DecodedFrame firstFrame{};
+    bool haveFrame = false;
+    FrameCallback frameCb;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      seekStartUnlocked();
+      haveFrame = decodeOneFrameUnlocked(&firstFrame);
+      seekStartUnlocked();
+      frameCb = frameCb_;
+      state_ = PlaybackState::Stopped;
+    }
+    if (haveFrame && frameCb) {
+      frameCb(firstFrame);
+    }
   }
 
   void restart() override {
@@ -195,14 +249,66 @@ class FFmpegVideoDecoder final : public VideoDecoder {
   }
 
  private:
-  void emitState(PlaybackState state, const std::string &error) {
-    if (stateCb_) stateCb_(state, error);
+  void emitStateUnlocked(PlaybackState state, const std::string &error) {
+    StateCallback cb;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      cb = stateCb_;
+    }
+    if (cb) cb(state, error);
   }
 
   void seekStartUnlocked() {
     if (!format_ || videoStream_ < 0) return;
     av_seek_frame(format_, videoStream_, 0, AVSEEK_FLAG_BACKWARD);
     if (codec_) avcodec_flush_buffers(codec_);
+  }
+
+  bool fillFrameFromCurrentUnlocked(DecodedFrame *out) {
+    if (!out || !frame_ || !sws_ || info_.width <= 0 || info_.height <= 0) return false;
+    uint8_t *dstSlices[4] = {bgra_.data(), nullptr, nullptr, nullptr};
+    int dstStride[4] = {info_.width * 4, 0, 0, 0};
+    sws_scale(
+        sws_,
+        frame_->data,
+        frame_->linesize,
+        0,
+        info_.height,
+        dstSlices,
+        dstStride);
+    out->width = info_.width;
+    out->height = info_.height;
+    out->stride = info_.width * 4;
+    out->ptsUs = frame_->pts != AV_NOPTS_VALUE
+                     ? static_cast<int64_t>(
+                           frame_->pts * av_q2d(format_->streams[videoStream_]->time_base) *
+                           1'000'000.0)
+                     : 0;
+    out->bgra = bgra_.data();
+    out->byteLength = bgra_.size();
+    return true;
+  }
+
+  /** Decode a single frame at the current demuxer position. Caller holds mutex_. */
+  bool decodeOneFrameUnlocked(DecodedFrame *out) {
+    if (!format_ || !codec_ || !frame_ || !packet_ || !sws_ || videoStream_ < 0) return false;
+    for (int attempts = 0; attempts < 10000; ++attempts) {
+      const int read = av_read_frame(format_, packet_);
+      if (read < 0) return false;
+      if (packet_->stream_index != videoStream_) {
+        av_packet_unref(packet_);
+        continue;
+      }
+      if (avcodec_send_packet(codec_, packet_) < 0) {
+        av_packet_unref(packet_);
+        continue;
+      }
+      av_packet_unref(packet_);
+      if (avcodec_receive_frame(codec_, frame_) == 0) {
+        return fillFrameFromCurrentUnlocked(out);
+      }
+    }
+    return false;
   }
 
   void decodeLoop() {
@@ -223,12 +329,17 @@ class FFmpegVideoDecoder final : public VideoDecoder {
         if (loop_) {
           std::lock_guard<std::mutex> lock(mutex_);
           seekStartUnlocked();
+          nextPresent = clock::now();
           continue;
         }
+        // Natural EOF: enter Ended and keep the worker alive so Play can seek and
+        // resume without requiring Restart. Do not exit the thread here — a
+        // finished-but-still-joinable std::thread caused Play to no-op.
         playing_ = false;
         state_ = PlaybackState::Ended;
-        emitState(state_, "");
-        break;
+        emitStateUnlocked(PlaybackState::Ended, "");
+        nextPresent = clock::now();
+        continue;
       }
       if (packet_->stream_index != videoStream_) {
         av_packet_unref(packet_);
@@ -241,35 +352,24 @@ class FFmpegVideoDecoder final : public VideoDecoder {
       av_packet_unref(packet_);
 
       while (avcodec_receive_frame(codec_, frame_) == 0) {
-        uint8_t *dstSlices[4] = {bgra_.data(), nullptr, nullptr, nullptr};
-        int dstStride[4] = {info_.width * 4, 0, 0, 0};
-        sws_scale(
-            sws_,
-            frame_->data,
-            frame_->linesize,
-            0,
-            info_.height,
-            dstSlices,
-            dstStride);
-
         DecodedFrame out;
-        out.width = info_.width;
-        out.height = info_.height;
-        out.stride = info_.width * 4;
-        out.ptsUs = frame_->pts != AV_NOPTS_VALUE
-                        ? static_cast<int64_t>(
-                              frame_->pts * av_q2d(format_->streams[videoStream_]->time_base) *
-                              1'000'000.0)
-                        : 0;
-        out.bgra = bgra_.data();
-        out.byteLength = bgra_.size();
-        if (frameCb_) frameCb_(out);
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          if (!fillFrameFromCurrentUnlocked(&out)) break;
+        }
+        FrameCallback cb;
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          cb = frameCb_;
+        }
+        if (cb) cb(out);
 
         nextPresent += frameDuration;
         std::this_thread::sleep_until(nextPresent);
         if (stopRequested_ || !playing_) break;
       }
     }
+    workerFinished_ = true;
   }
 
   std::mutex mutex_;
@@ -286,6 +386,7 @@ class FFmpegVideoDecoder final : public VideoDecoder {
   std::atomic<bool> playing_{false};
   std::atomic<bool> stopRequested_{false};
   std::atomic<bool> loop_{false};
+  std::atomic<bool> workerFinished_{false};
   std::atomic<PlaybackState> state_{PlaybackState::Idle};
   std::thread worker_;
 };

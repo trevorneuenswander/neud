@@ -24,7 +24,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEUD_REQUIRE_REAL_DECKLINK: "1"
       NEUD_WITH_FFMPEG: "1"
-      NEUD_DEV_BUILD_ID: "recording-orientation-stats-1"
+      NEUD_DEV_BUILD_ID: "prores-playback-controls-1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -67,6 +67,7 @@ jobs:
           node --test desktop/scripts/test-neud-bag-event-driven-live.mjs
           node --test desktop/scripts/test-neud-v0-2-0-display-transport-sync.mjs
           node --test desktop/scripts/test-neud-v0-3-1-stabilization.mjs
+          node --test desktop/scripts/test-neud-v0-3-1-video-playback-controls.mjs
           node --test desktop/scripts/test-windows-recording-orientation.mjs
 
       - name: Build unsigned Windows package
@@ -83,6 +84,10 @@ jobs:
       - name: Windows ProRes decode smoke (LGPL FFmpeg)
         shell: bash
         run: node desktop/scripts/smoke-windows-prores-decode.mjs
+
+      - name: Windows ProRes playback controls smoke
+        shell: bash
+        run: node desktop/scripts/smoke-windows-prores-playback-controls.mjs
 
       - name: Windows H.264 recording orientation smoke
         shell: bash

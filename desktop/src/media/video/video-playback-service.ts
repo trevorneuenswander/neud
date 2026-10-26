@@ -149,6 +149,13 @@ export class VideoPlaybackService extends EventEmitter {
       const status = this.addon?.getStatus(nativeId);
       internal.state = normalizeState(status?.state ?? "stopped");
       internal.error = null;
+      // Native stop seeks to zero and presents the first frame; refresh the
+      // local frame cache so UI/position reflect the reset (Windows + macOS).
+      const frame = this.addon?.pullFrame(nativeId);
+      if (frame) {
+        internal.latestFrame = frame;
+        this.emit("frame", displayId, frame);
+      }
       this.emit("state", displayId, this.toView(internal));
     }
     console.info("[video-playback] stop: complete", { displayId, elapsedMs });
