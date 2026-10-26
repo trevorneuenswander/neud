@@ -90,7 +90,7 @@ test("activity insert SQL matches table column count", () => {
   );
 });
 
-test("activity insert succeeds against migrated sqlite schema", async () => {
+test("activity insert succeeds against migrated sqlite schema", async (t) => {
   const { mkdirSync, existsSync } = await import("node:fs");
   const { pathToFileURL } = await import("node:url");
   const distRepo = path.join(
@@ -101,22 +101,14 @@ test("activity insert succeeds against migrated sqlite schema", async () => {
     path.dirname(fileURLToPath(import.meta.url)),
     "../dist/database/connection.js",
   );
-  const srcRepo = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../src/repositories/activity-events-repository.ts",
+  if (!existsSync(distRepo) || !existsSync(distDb)) {
+    t.skip("requires desktop/dist — run after build:desktop / package:win");
+    return;
+  }
+  const { ActivityEventsRepository } = await import(pathToFileURL(distRepo).href);
+  const { openLocalDatabase, closeLocalDatabase } = await import(
+    pathToFileURL(distDb).href
   );
-  const srcDb = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../src/database/connection.ts",
-  );
-  const repoMod = existsSync(distRepo)
-    ? await import(pathToFileURL(distRepo).href)
-    : await import(pathToFileURL(srcRepo).href);
-  const dbMod = existsSync(distDb)
-    ? await import(pathToFileURL(distDb).href)
-    : await import(pathToFileURL(srcDb).href);
-  const { ActivityEventsRepository } = repoMod;
-  const { openLocalDatabase, closeLocalDatabase } = dbMod;
 
   const suffix = randomUUID().slice(0, 8);
   const root = path.join(process.cwd(), `.tmp-activity-insert-${suffix}`);
