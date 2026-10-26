@@ -61,12 +61,23 @@ export function toCloudActivityRow(input: {
   cloudId: string;
   instanceId: string;
   teamId?: string | null;
+  /**
+   * Hosted project UUID for cloud upload. When local SQLite still uses a
+   * different project id (e.g. SEMA), pass the mapped cloud id here without
+   * rewriting local metadata.
+   */
+  cloudProjectId?: string | null;
 }): CloudActivityRow {
   const metadata = { ...(input.event.metadata ?? {}) };
-  const projectId =
+  const metadataProjectId =
     typeof metadata.projectId === "string" && metadata.projectId.trim()
       ? metadata.projectId.trim()
       : null;
+  const override =
+    typeof input.cloudProjectId === "string" && input.cloudProjectId.trim()
+      ? input.cloudProjectId.trim()
+      : null;
+  const projectId = override ?? metadataProjectId;
   const teamId =
     input.teamId ??
     (typeof metadata.teamId === "string" && metadata.teamId.trim()

@@ -24,7 +24,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEUD_REQUIRE_REAL_DECKLINK: "1"
       NEUD_WITH_FFMPEG: "1"
-      NEUD_DEV_BUILD_ID: "prores-playback-controls-1"
+      NEUD_DEV_BUILD_ID: "activity-sync-aliases-1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -68,6 +68,9 @@ jobs:
           node --test desktop/scripts/test-neud-v0-2-0-display-transport-sync.mjs
           node --test desktop/scripts/test-neud-v0-3-1-stabilization.mjs
           node --test desktop/scripts/test-neud-v0-3-1-video-playback-controls.mjs
+          node --experimental-strip-types --test desktop/scripts/test-neud-v0-3-1-activity-sync-project-aliases.mjs
+          node --test desktop/scripts/test-activity-sync-project-mapping.mjs
+          node --test desktop/scripts/test-activity-sync.mjs
           node --test desktop/scripts/test-windows-recording-orientation.mjs
 
       - name: Build unsigned Windows package

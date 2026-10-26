@@ -1,5 +1,18 @@
 import type { AuthenticatedCloudCoordinator } from "../authenticated-cloud-coordinator";
 import type { CloudActivityRow } from "./cloud-activity-mapper";
+import type { ActivitySyncCursor } from "./types";
+
+export type CloudActivityPullPage = {
+  /** Rows that passed the accessible-project / global-user filter. */
+  rows: CloudActivityRow[];
+  /** Raw rows returned by Supabase before client-side filtering. */
+  scanned: number;
+  /**
+   * Cursor of the last raw row in the page so pull can advance past
+   * inaccessible projects without stalling (or skipping forever after a later accept).
+   */
+  pageCursor: ActivitySyncCursor | null;
+};
 
 export class CloudActivityClient {
   constructor(private readonly cloud: AuthenticatedCloudCoordinator) {}
@@ -48,14 +61,14 @@ export class CloudActivityClient {
   }
 
   async fetchChangedSince(input: {
-    cursor: { updatedAt: string; id: string } | null;
+    cursor: ActivitySyncCursor | null;
     accessibleProjectIds: string[];
     includeGlobalForUserId: string | null;
     limit: number;
-  }): Promise<CloudActivityRow[]> {
+  }): Promise<CloudActivityPullPage> {
     const supabase = await this.cloud.getClient();
     if (!supabase) {
-      return [];
+      return { rows: [], scanned: 0, pageCursor: null };
     }
 
     let query = supabase
@@ -75,8 +88,14 @@ export class CloudActivityClient {
       throw new Error(error.message);
     }
 
+    const raw = (data ?? []) as CloudActivityRow[];
+    const lastRaw = raw.length > 0 ? raw[raw.length - 1] : null;
+    const pageCursor: ActivitySyncCursor | null = lastRaw
+      ? { updatedAt: lastRaw.updated_at, id: lastRaw.id }
+      : null;
+
     const accessible = new Set(input.accessibleProjectIds);
-    return ((data ?? []) as CloudActivityRow[]).filter((row) => {
+    const rows = raw.filter((row) => {
       if (input.cursor) {
         const updatedAt = row.updated_at;
         const id = row.id;
@@ -93,5 +112,7 @@ export class CloudActivityClient {
       }
       return input.accessibleProjectIds.length > 0;
     });
+
+    return { rows, scanned: raw.length, pageCursor };
   }
 }

@@ -33,3 +33,28 @@ test("cloud activity mapper uses metadata projectId for hosted upload", () => {
   const mapper = read("desktop/src/services/activity-sync/cloud-activity-mapper.ts");
   assert.match(mapper, /project_id: projectId/);
 });
+
+test("activity pull accepts package-directory cloud project aliases", () => {
+  const service = read("desktop/src/services/activity-sync/activity-sync-service.ts");
+  assert.match(service, /buildActivityPullProjectScope/);
+  assert.match(service, /remapCloudActivityProjectId/);
+  assert.match(service, /setProjectDirectoryAliasProvider/);
+});
+
+test("activity pull advances cursor from raw page to avoid alias stalls", () => {
+  const client = read("desktop/src/services/activity-sync/cloud-activity-client.ts");
+  assert.match(client, /pageCursor/);
+  assert.match(client, /scanned/);
+  const service = read("desktop/src/services/activity-sync/activity-sync-service.ts");
+  assert.match(service, /page\.pageCursor/);
+  assert.match(service, /ACTIVITY_SYNC_ALIAS_BACKFILL_KEY/);
+});
+
+test("activity upload maps to hosted UUID without rewriting local project metadata", () => {
+  const service = read("desktop/src/services/activity-sync/activity-sync-service.ts");
+  assert.match(service, /resolveCloudProjectIdForUpload/);
+  assert.match(service, /cloudProjectId/);
+  assert.doesNotMatch(service, /updateMetadataProjectId\(activeRecord\.cloudId/);
+  const main = read("desktop/src/main.ts");
+  assert.match(main, /realignOnSlugConflict: false/);
+});

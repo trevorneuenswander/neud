@@ -175,8 +175,11 @@ test("two installation IDs converge through shared cloud id upsert", () => {
 test("compound sync cursor avoids timestamp collisions", () => {
   const client = readSrc("desktop/src/services/activity-sync/cloud-activity-client.ts");
   assert.match(client, /updatedAt === input\.cursor\.updatedAt && id <= input\.cursor\.id/);
+  assert.match(client, /pageCursor/);
+  assert.match(client, /CloudActivityPullPage/);
   const types = readSrc("desktop/src/services/activity-sync/types.ts");
   assert.match(types, /neud\.activitySync\.cursor/);
+  assert.match(types, /neud\.activitySync\.cloudProjectAliasBackfillV1/);
 });
 
 test("activity IPC exposes sync state and manual sync", () => {

@@ -100,6 +100,8 @@ export class ProjectsRepository {
     description?: string | null;
     theme?: string;
     icon?: string;
+    /** Prefer a stable hosted UUID (e.g. SEMA cloud id) when installing builtins. */
+    id?: string;
   }): LocalProject {
     const now = new Date().toISOString();
     const nextNumber =
@@ -109,8 +111,18 @@ export class ProjectsRepository {
           .get() as { max_number: number | null }
       ).max_number ?? 0;
 
+    const preferredId = typeof input.id === "string" ? input.id.trim() : "";
+    const id =
+      preferredId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        preferredId,
+      ) &&
+      !this.getById(preferredId)
+        ? preferredId
+        : randomUUID();
+
     const project: LocalProject = {
-      id: randomUUID(),
+      id,
       projectNumber: nextNumber + 1,
       name: input.name.trim(),
       slug: input.slug.trim(),

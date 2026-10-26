@@ -1881,7 +1881,10 @@ export class LocalDataService {
     this.projectCodeStorage = storage;
   }
 
-  async ensureHostedProjectRegisteredForSync(projectId: string): Promise<{
+  async ensureHostedProjectRegisteredForSync(
+    projectId: string,
+    options?: { realignOnSlugConflict?: boolean },
+  ): Promise<{
     ok: boolean;
     projectId: string;
     realigned: boolean;
@@ -1911,6 +1914,7 @@ export class LocalDataService {
       displayCode: this.displayCodeRepo,
       storage: this.projectCodeStorage ?? undefined,
       projectId,
+      realignOnSlugConflict: options?.realignOnSlugConflict,
     });
 
     if (!result.ok) {

@@ -1010,6 +1010,17 @@ async function createMainWindow() {
     () => localDataService!.notifyActivitySyncChanged(),
     paths,
   );
+  activitySyncService.setProjectDirectoryAliasProvider(() =>
+    projectPackageService
+      .listDirectoryItems()
+      .filter((entry): entry is typeof entry & { cloudProjectId: string } =>
+        Boolean(entry.cloudProjectId),
+      )
+      .map((entry) => ({
+        cloudProjectId: entry.cloudProjectId,
+        localProjectId: entry.localProjectId,
+      })),
+  );
   localDataService.setActivitySync(activitySyncService);
 
   userDirectorySyncService = new SupabaseUserDirectorySyncService(
@@ -1323,9 +1334,15 @@ async function createMainWindow() {
     registerOutputIpc({ engine: outputEngine, data: localDataService });
   }
   registerSystemIpc();
+  // Activity sync must NOT rewrite established local project UUIDs on slug conflict
+  // (realignProjectId omits SEMA schedule state, output routes, media assets, etc.).
+  // Translate cloud↔local IDs at the sync boundary via package-directory aliases.
   activitySyncService?.setEnsureHostedProjectForSync((projectId) =>
-    localDataService!.ensureHostedProjectRegisteredForSync(projectId),
+    localDataService!.ensureHostedProjectRegisteredForSync(projectId, {
+      realignOnSlugConflict: false,
+    }),
   );
+  void activitySyncService?.syncNow("startup-activity-sync");
 
   const writePackagedRuntimeDiagnostics = () => {
     void runAndWriteInstalledBrowserDiagnostic(paths).catch((error) => {
