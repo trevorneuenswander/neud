@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -91,15 +91,34 @@ test("activity insert SQL matches table column count", () => {
 });
 
 test("activity insert succeeds against migrated sqlite schema", async () => {
-  const { mkdirSync } = await import("node:fs");
-  const { ActivityEventsRepository } = await import(
-    "../dist/repositories/activity-events-repository.js"
+  const { mkdirSync, existsSync } = await import("node:fs");
+  const { pathToFileURL } = await import("node:url");
+  const distRepo = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../dist/repositories/activity-events-repository.js",
   );
-  const { openLocalDatabase, closeLocalDatabase } = await import(
-    "../dist/database/connection.js"
+  const distDb = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../dist/database/connection.js",
   );
+  const srcRepo = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/repositories/activity-events-repository.ts",
+  );
+  const srcDb = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../src/database/connection.ts",
+  );
+  const repoMod = existsSync(distRepo)
+    ? await import(pathToFileURL(distRepo).href)
+    : await import(pathToFileURL(srcRepo).href);
+  const dbMod = existsSync(distDb)
+    ? await import(pathToFileURL(distDb).href)
+    : await import(pathToFileURL(srcDb).href);
+  const { ActivityEventsRepository } = repoMod;
+  const { openLocalDatabase, closeLocalDatabase } = dbMod;
 
-  const suffix = crypto.randomUUID().slice(0, 8);
+  const suffix = randomUUID().slice(0, 8);
   const root = path.join(process.cwd(), `.tmp-activity-insert-${suffix}`);
   const paths = {
     root,
@@ -146,8 +165,8 @@ test("activity insert succeeds against migrated sqlite schema", async () => {
         source: "system",
         severity: "info",
       },
-      cloudId: crypto.randomUUID(),
-      instanceId: crypto.randomUUID(),
+      cloudId: randomUUID(),
+      instanceId: randomUUID(),
     });
     assert.equal(record.type, "data-source.changed");
     assert.equal(repository.listNewestFirst(1)[0]?.message, record.message);

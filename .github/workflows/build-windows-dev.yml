@@ -58,7 +58,9 @@ jobs:
         run: npm ci
 
       - name: Targeted release regression tests
+        shell: bash
         run: |
+          set -euo pipefail
           npm run test:neud-release-version
           npm run test:packaged-auth-config
           npm run test:neud-packaged-browser
@@ -70,7 +72,7 @@ jobs:
           node --test desktop/scripts/test-neud-v0-3-1-video-playback-controls.mjs
           node --experimental-strip-types --test desktop/scripts/test-neud-v0-3-1-activity-sync-project-aliases.mjs
           node --test desktop/scripts/test-activity-sync-project-mapping.mjs
-          node --test desktop/scripts/test-activity-sync.mjs
+          node --experimental-strip-types --test desktop/scripts/test-activity-sync.mjs
           node --test desktop/scripts/test-windows-recording-orientation.mjs
 
       - name: Build unsigned Windows package
