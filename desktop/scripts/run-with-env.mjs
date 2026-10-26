@@ -25,7 +25,12 @@ for (const assignment of envAssignments) {
     console.error(`Invalid env assignment: ${assignment}`);
     process.exit(1);
   }
-  env[assignment.slice(0, eq)] = assignment.slice(eq + 1);
+  const key = assignment.slice(0, eq);
+  const value = assignment.slice(eq + 1);
+  // Do not clobber vars already provided by CI/workflow (e.g. NEUD_DEV_BUILD_ID).
+  if (env[key] === undefined || env[key] === "") {
+    env[key] = value;
+  }
 }
 
 const result = spawnSync(command, commandArgs, {
