@@ -175,7 +175,8 @@ test("disk-recording-service uses actionable unavailable message", () => {
 test("asarUnpack includes recorder native module", () => {
   const yml = read("desktop/electron-builder.yml");
   assert.match(yml, /dist\/platform\/macos\/\*\.node/);
-  assert.match(yml, /dist\/platform\/windows\/\*\.node/);
+  assert.match(yml, /dist\/platform\/windows\/\*\*\/\*/);
+  assert.match(yml, /dist\/platform\/decklink\/\*\*\/\*/);
 });
 
 test("performance bar spacing and compact GPU", () => {

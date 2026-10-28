@@ -89,9 +89,11 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
 
     if (isBroadArrow) {
       const { displays } = await localGetProjectDisplays(slug).catch(() => ({ displays: [] }));
-      const developerDisplays = access.canManageSettings
-        ? (await localListDeveloperDisplays(slug).catch(() => ({ displays: [] }))).displays
-        : [];
+      // Developer display rows are required to build package cards (name, published HTML).
+      // Always load them for Broad Arrow; canManageSettings only gates Archived/Add controls.
+      const developerDisplays = (
+        await localListDeveloperDisplays(slug).catch(() => ({ displays: [] }))
+      ).displays;
       const archivedDisplays = access.canManageSettings
         ? (await localListArchivedDisplays(slug).catch(() => ({ displays: [] }))).displays
         : [];
@@ -113,6 +115,28 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
         developerDisplays,
         versionSummaries,
       });
+
+      if (process.env.NODE_ENV !== "production") {
+        const developerKeys = new Set(developerDisplays.map((row) => row.displayKey));
+        const excluded = displays
+          .filter((row) => !developerKeys.has(row.display_key))
+          .map((row) => ({
+            id: row.id,
+            displayKey: row.display_key,
+            reason: "missing_developer_display_row",
+          }));
+        console.debug("[Displays][BroadArrowPage]", {
+          projectSlug: slug,
+          projectId: access.project.id,
+          projectRole: access.projectRole,
+          canManageSettings: access.canManageSettings,
+          projectDisplayCount: displays.length,
+          developerDisplayCount: developerDisplays.length,
+          visibleCardCount: displayItems.length,
+          archivedCount: archivedDisplays.length,
+          excluded,
+        });
+      }
 
       return (
         <DisplaysPageClient
@@ -160,9 +184,10 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
         newTickerV1Enabled: newTickerEnabled,
       });
 
-      const developerDisplays = access.canManageSettings
-        ? (await localListDeveloperDisplays(slug).catch(() => ({ displays: [] }))).displays
-        : [];
+      // Same as Broad Arrow/SEMA: developer rows feed display cards for all authorized roles.
+      const developerDisplays = (
+        await localListDeveloperDisplays(slug).catch(() => ({ displays: [] }))
+      ).displays;
       const archivedDisplays = access.canManageSettings
         ? (await localListArchivedDisplays(slug).catch(() => ({ displays: [] }))).displays
         : [];

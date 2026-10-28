@@ -231,6 +231,13 @@ export type SemaDisplaySchedulePayload = {
   next: SemaDisplayRowPayload | null;
   later: SemaDisplayRowPayload | null;
   /**
+   * Label above the right-hand slot. Defaults to "LATER"; becomes the operator
+   * Highlight label (e.g. "HIGHLIGHT") when a Highlight overlay is active.
+   */
+  laterLabel: string;
+  /** True when the right-hand slot shows a Highlight overlay instead of schedule LATER. */
+  highlightActive: boolean;
+  /**
    * Changes only when the operator navigates (NEXT/PREV/Jump/NOW/source switch), never on a
    * live sheet edit. The Schedule Ticker animates a staged advance when this token changes and
    * swaps text in place when only row content changes.
@@ -256,12 +263,21 @@ export function buildSemaDisplaySchedule(input: {
   state: SemaScheduleState;
   selectionToken: string;
   stale: boolean;
+  laterLabel?: string;
+  highlightActive?: boolean;
+  highlightRow?: SemaDisplayRowPayload | null;
 }): SemaDisplaySchedulePayload {
   const { state } = input;
+  const highlightActive = input.highlightActive === true;
   return {
     now: toDisplayRow(state.now),
     next: toDisplayRow(state.next),
-    later: toDisplayRow(state.later),
+    later: highlightActive
+      ? (input.highlightRow ?? { date: "", time: "", title: "", description: "" })
+      : toDisplayRow(state.later),
+    laterLabel: (input.laterLabel ?? (highlightActive ? "HIGHLIGHT" : "LATER")).trim() ||
+      (highlightActive ? "HIGHLIGHT" : "LATER"),
+    highlightActive,
     currentRowId: input.selectionToken,
     currentIndex: state.currentIndex,
     rowCount: state.rows.length,

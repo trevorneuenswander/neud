@@ -17,9 +17,9 @@ Native addon: `desktop/native/recorder` → `neud_recorder.node`.
 | Format | Status | Notes |
 |--------|--------|-------|
 | ProRes 4444 / 422 HQ | **Unavailable** | Encode would require a redistributable encoder (e.g. LGPL FFmpeg with ProRes encode). That is a **separate** licensing decision from NEUD’s decode-only LGPL FFmpeg plan (`docs/licensing/ffmpeg-lgpl.md`). Not bundled. |
-| H.264 | **Unavailable (planned)** | Media Foundation system H.264 is intended; not wired in this milestone. |
+| H.264 | **Available (v0.3.1)** | Media Foundation Sink Writer (`desktop/native/recorder/recorder-win.cpp`). System MF H.264 — no FFmpeg redistribute for encode. |
 
-Windows builds report accurate unsupported codec availability rather than simulating successful recording.
+Windows builds report ProRes encode as unavailable. H.264 MP4 uses system Media Foundation.
 
 ## Explicit non-goals
 

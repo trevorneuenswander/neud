@@ -55,6 +55,9 @@ const MIGRATION_FILES = [
   "043_project_capabilities.sql",
   "044_sema_manual_schedule_slots.sql",
   "045_display_video_media.sql",
+  "046_video_media_orphan_recovery.sql",
+  "047_sema_ticker_highlight.sql",
+  "048_sema_viewing_worksheet.sql",
 ];
 
 export function runMigrations(db: LocalDatabase, paths: AppPaths): void {
@@ -91,12 +94,31 @@ export function runMigrations(db: LocalDatabase, paths: AppPaths): void {
   for (const file of pending) {
     const version = parseMigrationVersion(file);
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
-    db.exec(sql);
+    try {
+      db.exec(sql);
+    } catch (error) {
+      // Safe retry when an ADD COLUMN was applied outside schema_migrations.
+      if (!isBenignMigrationError(error, file)) {
+        throw error;
+      }
+    }
     db.prepare("INSERT INTO schema_migrations (version, name) VALUES (?, ?)").run(
       version,
       file,
     );
   }
+}
+
+function isBenignMigrationError(error: unknown, file: string): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/duplicate column name/i.test(message)) {
+    return true;
+  }
+  // sql.js sometimes surfaces SQLite duplicate-column as a generic message.
+  if (/orphan_recovery_suppressed/i.test(file) && /column.+already exists/i.test(message)) {
+    return true;
+  }
+  return false;
 }
 
 function parseMigrationVersion(filename: string): number {

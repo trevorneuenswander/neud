@@ -6,7 +6,10 @@ import { Switch } from "@/components/ui/Switch";
 import { Button } from "@/components/ui/Button";
 import { DisclosureSection } from "@/components/ui/DisclosureSection";
 import { DisplayEditMenu } from "@/components/displays/DisplayEditMenu";
-import { VideoPlaybackControls } from "@/components/displays/VideoPlaybackControls";
+import {
+  VideoPlaybackControls,
+  VideoPlaybackStatusLine,
+} from "@/components/displays/VideoPlaybackControls";
 import {
   DisplayCardActionSizeRow,
   DisplayCardControlRow,
@@ -45,7 +48,6 @@ import { normalizeDisplaySize } from "@/lib/displays/display-size";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { getDesktopAPI } from "@/lib/desktop/client";
 import type { ProjectDisplaySource } from "@/lib/developer-tools/types";
-
 type PreviewConnectionState = "disconnected" | "connected" | "error";
 
 type DeveloperHtmlDisplayCardProps = {
@@ -511,6 +513,11 @@ export function DeveloperHtmlDisplayCard({
               />
             }
           />
+          {display.sourceType === "project-video" ? (
+            <div className="mt-1 min-w-0">
+              <VideoPlaybackStatusLine displayId={display.id} />
+            </div>
+          ) : null}
         </NoDrag>
 
         {onlineViewer.loadError ? (

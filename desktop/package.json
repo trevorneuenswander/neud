@@ -1,8 +1,8 @@
 {
   "name": "@neud/desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
-  "description": "NEUD — The Ultimate Data Stripper",
+  "description": "NEUD — Graphics Without Limits.",
   "author": "NEUD",
   "repository": {
     "type": "git",
@@ -15,7 +15,7 @@
     "watch": "tsc -p tsconfig.json -w",
     "start": "electron dist/bootstrap.js",
     "test:packages": "tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs && node --test dist/packages/__tests__/*.test.js dist/packages/sema/__tests__/*.test.js",
-    "package:win": "node scripts/verify-code-signing-config.mjs && node scripts/ensure-windows-icon.mjs && electron-builder --win dir --config electron-builder.yml --publish never && node scripts/ensure-packaged-app-update-config.mjs && node scripts/verify-packaged-auto-update-config.mjs && node scripts/verify-win-unpacked-runtime-assets.mjs && node scripts/verify-packaged-cloud-config.mjs && node scripts/embed-windows-exe-icon.mjs && electron-builder --win nsis --prepackaged release/win-unpacked --config electron-builder.yml --publish never && node scripts/verify-packaged-auto-update-config.mjs --require-latest-yml && node scripts/prepare-release-artifacts.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-authenticode-signatures.ps1",
+    "package:win": "node scripts/verify-code-signing-config.mjs && node scripts/ensure-windows-icon.mjs && node scripts/verify-windows-native-release-gates.mjs && electron-builder --win dir --config electron-builder.yml --publish never && node scripts/ensure-packaged-app-update-config.mjs && node scripts/verify-packaged-auto-update-config.mjs && node scripts/verify-win-unpacked-runtime-assets.mjs && node scripts/verify-packaged-decklink-addon.mjs --packaged && node scripts/verify-decklink-addon-load.mjs --packaged && node scripts/verify-packaged-no-decklink-sdk.mjs && node scripts/verify-packaged-cloud-config.mjs && node scripts/embed-windows-exe-icon.mjs && electron-builder --win nsis --prepackaged release/win-unpacked --config electron-builder.yml --publish never && node scripts/verify-packaged-auto-update-config.mjs --require-latest-yml && node scripts/prepare-release-artifacts.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-authenticode-signatures.ps1",
     "package:mac": "node scripts/assert-host-platform.mjs darwin && node scripts/ensure-macos-icon.mjs && electron-builder --mac dir --arm64 --config electron-builder.yml --publish never && node scripts/ensure-packaged-app-update-config.mjs --mac && node scripts/verify-packaged-auto-update-config.mjs --mac && node scripts/verify-mac-unpacked-runtime-assets.mjs && node scripts/verify-packaged-cloud-config.mjs && electron-builder --mac dmg zip --prepackaged release/mac-arm64 --config electron-builder.yml --publish never --arm64 && node scripts/verify-packaged-auto-update-config.mjs --mac --require-latest-mac-yml && node scripts/prepare-release-artifacts-mac.mjs",
     "publish:win": "node scripts/ensure-windows-icon.mjs && electron-builder --win --config electron-builder.yml --publish always",
     "package:win:dir": "electron-builder --win dir --config electron-builder.yml"

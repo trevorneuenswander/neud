@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import { BrowserWindow, app, screen } from "electron";
 import { getCanonicalReleaseVersion } from "./release-version";
@@ -9,7 +10,31 @@ const SPLASH_HEIGHT = 260;
 let splashWindow: BrowserWindow | null = null;
 let splashClosed = false;
 
-function splashHtml(version: string): string {
+/** Resolve canonical NEUD icon for splash (same artwork as desktop/assets/icon.png). */
+function resolveSplashIconDataUri(): string | null {
+  const candidates = [
+    path.join(process.resourcesPath ?? "", "assets", "icon.png"),
+    path.join(app.getAppPath(), "assets", "icon.png"),
+    path.join(__dirname, "..", "..", "assets", "icon.png"),
+    path.join(__dirname, "..", "..", "..", "desktop", "assets", "icon.png"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) {
+        const bytes = fs.readFileSync(candidate);
+        return `data:image/png;base64,${bytes.toString("base64")}`;
+      }
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
+function splashHtml(version: string, iconDataUri: string | null): string {
+  const iconBlock = iconDataUri
+    ? `<img class="icon" src="${iconDataUri}" width="64" height="64" alt="" draggable="false" />`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,7 +48,7 @@ function splashHtml(version: string): string {
       overflow: hidden;
       background: transparent;
       font-family: "Avenir Next", "Segoe UI", sans-serif;
-      color: #f4f4f5;
+      color: #eef2ff;
       user-select: none;
       -webkit-app-region: drag;
       display: flex;
@@ -38,14 +63,21 @@ function splashHtml(version: string): string {
       display: flex;
       align-items: center;
       justify-content: center;
-      background: radial-gradient(circle at 50% 30%, #2a2f38 0%, #121418 70%);
+      background: radial-gradient(circle at 50% 28%, #1a2450 0%, #070a12 72%);
       border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.08);
+      border: 1px solid rgba(47,107,255,0.18);
       box-shadow: 0 18px 50px rgba(0,0,0,0.45);
     }
     .inner {
       text-align: center;
       margin: auto;
+    }
+    .icon {
+      display: block;
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 14px;
+      border-radius: 12px;
     }
     .brand {
       font-size: 42px;
@@ -57,13 +89,13 @@ function splashHtml(version: string): string {
       margin-top: 10px;
       font-size: 13px;
       letter-spacing: 0.08em;
-      color: rgba(244,244,245,0.65);
+      color: rgba(238,242,255,0.65);
     }
     .bar {
       margin: 28px auto 0;
       width: 120px;
       height: 2px;
-      background: rgba(255,255,255,0.12);
+      background: rgba(139,124,255,0.22);
       overflow: hidden;
       border-radius: 999px;
     }
@@ -71,7 +103,7 @@ function splashHtml(version: string): string {
       display: block;
       width: 40%;
       height: 100%;
-      background: rgba(255,255,255,0.7);
+      background: rgba(47,107,255,0.85);
       animation: slide 1.2s ease-in-out infinite;
     }
     @keyframes slide {
@@ -83,6 +115,7 @@ function splashHtml(version: string): string {
 <body>
   <div class="shell" data-neud-splash-shell data-neud-splash-vcenter="true">
     <div class="inner" data-neud-splash-content>
+      ${iconBlock}
       <div class="brand">NEUD</div>
       <div class="version">v${version}</div>
       <div class="bar"><i></i></div>
@@ -129,7 +162,7 @@ export function showStartupSplash(): BrowserWindow {
     },
   });
 
-  const html = splashHtml(version);
+  const html = splashHtml(version, resolveSplashIconDataUri());
   void splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
   splashWindow.once("ready-to-show", () => {
     if (!splashClosed && splashWindow && !splashWindow.isDestroyed()) {

@@ -45,10 +45,9 @@ async function resolvePackageInstallGate(slug: string): Promise<{
     if (!entry) {
       return { installed: false, name: null, accessible: false };
     }
+    // Same authoritative install flag as the Projects directory listing.
     const installed =
-      entry.isPackageInstalled === true ||
-      entry.packageState === "downloaded" ||
-      entry.packageState === "update_available";
+      entry.isPackageInstalled === true || entry.packageState === "update_available";
     return {
       installed,
       name: typeof entry.name === "string" ? entry.name : null,
@@ -92,13 +91,7 @@ export default async function ProjectLayout({
   }
 
   if (resolution.state === "denied") {
-    if (packageGate.accessible) {
-      return (
-        <div className="flex min-h-[50vh] items-center justify-center p-8">
-          <ProjectNotInstalledPanel slug={slug} name={packageGate.name} />
-        </div>
-      );
-    }
+    // Do not mislabel authorization failures as a missing package download.
     notFound();
   }
 

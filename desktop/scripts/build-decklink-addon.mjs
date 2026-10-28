@@ -28,12 +28,106 @@ const sdkRoot = defaultSdkRoot();
 
 export function resolveDeckLinkIncludeDir(root = sdkRoot) {
   if (!root) return "";
-  const candidates = [
-    path.join(root, "Mac", "include"),
-    path.join(root, "Win", "include"),
-    root,
-  ];
-  return candidates.find((candidate) => fs.existsSync(path.join(candidate, "DeckLinkAPI.h"))) || "";
+  const platformCandidates =
+    process.platform === "win32"
+      ? [path.join(root, "Win", "include"), path.join(root, "Mac", "include"), root]
+      : process.platform === "darwin"
+        ? [path.join(root, "Mac", "include"), path.join(root, "Win", "include"), root]
+        : [path.join(root, "Linux", "include"), path.join(root, "Win", "include"), root];
+  return (
+    platformCandidates.find(
+      (candidate) =>
+        fs.existsSync(path.join(candidate, "DeckLinkAPI.h")) ||
+        fs.existsSync(path.join(candidate, "DeckLinkAPI.idl")),
+    ) || ""
+  );
+}
+
+function findMidlExecutable() {
+  const found = [];
+  const fromEnv = process.env.NEUD_MIDL_PATH?.trim();
+  if (fromEnv) found.push(fromEnv);
+
+  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+  for (const kitsRoot of [
+    path.join(programFilesX86, "Windows Kits", "10", "bin"),
+    path.join(programFiles, "Windows Kits", "10", "bin"),
+  ]) {
+    if (!fs.existsSync(kitsRoot)) continue;
+    for (const versionDir of fs.readdirSync(kitsRoot)) {
+      for (const arch of ["x64", "x86"]) {
+        found.push(path.join(kitsRoot, versionDir, arch, "midl.exe"));
+      }
+    }
+  }
+
+  const vswhere = path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe");
+  if (fs.existsSync(vswhere)) {
+    const result = spawnSync(vswhere, ["-latest", "-products", "*", "-find", "**/midl.exe"], {
+      encoding: "utf8",
+    });
+    for (const line of (result.stdout || "").split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed) found.push(trimmed);
+    }
+  }
+
+  const existing = [...new Set(found)].filter((candidate) => fs.existsSync(candidate));
+  return (
+    existing.find((candidate) => /\\bin\\[^\\]+\\x64\\midl\.exe$/i.test(candidate)) ||
+    existing[0] ||
+    ""
+  );
+}
+
+/** Windows SDK 16 ships IDL only — generate DeckLinkAPI.h / DeckLinkAPI_i.c via MIDL. */
+export function ensureWindowsDeckLinkHeaders(includeDir) {
+  if (!includeDir) return { ok: false, error: "Missing include dir" };
+  const header = path.join(includeDir, "DeckLinkAPI.h");
+  const iid = path.join(includeDir, "DeckLinkAPI_i.c");
+  if (fs.existsSync(header) && fs.existsSync(iid)) {
+    return { ok: true, generated: false };
+  }
+  if (!fs.existsSync(path.join(includeDir, "DeckLinkAPI.idl"))) {
+    return { ok: false, error: `DeckLinkAPI.idl missing in ${includeDir}` };
+  }
+  if (process.platform !== "win32") {
+    return {
+      ok: false,
+      error: "Windows DeckLink headers require MIDL on win32 (IDL-only SDK tree).",
+    };
+  }
+  const midl = findMidlExecutable();
+  if (!midl) {
+    return { ok: false, error: "midl.exe not found (Visual Studio C++ / MIDL required)." };
+  }
+  console.log(`[decklink] Generating Windows headers with MIDL`);
+  const result = spawnSync(
+    midl,
+    [
+      "/W1",
+      "/robust",
+      "/nologo",
+      `/I${includeDir}`,
+      "/h",
+      "DeckLinkAPI.h",
+      "/iid",
+      "DeckLinkAPI_i.c",
+      "DeckLinkAPI.idl",
+    ],
+    { cwd: includeDir, encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      error: `MIDL failed: ${(result.stderr || result.stdout || "").trim() || "unknown error"}`,
+    };
+  }
+  if (!fs.existsSync(header) || !fs.existsSync(iid)) {
+    return { ok: false, error: "MIDL completed but DeckLinkAPI.h / DeckLinkAPI_i.c were not produced." };
+  }
+  return { ok: true, generated: true };
 }
 
 export function stageDeckLinkInclude(includeDir, stageDir = stagedInclude) {
@@ -78,12 +172,47 @@ export function isRealDeckLinkAddonBinary(filePath = destination) {
   }
 }
 
+/**
+ * When true (NEUD_REQUIRE_REAL_DECKLINK=1 or options.requireReal), refuse stub builds.
+ * Windows release packaging must set this so installers never ship a DeckLink stub.
+ */
+export function requireRealDeckLinkAddon(options = {}) {
+  return (
+    options.requireReal === true ||
+    process.env.NEUD_REQUIRE_REAL_DECKLINK === "1" ||
+    process.env.NEUD_REQUIRE_REAL_DECKLINK === "true"
+  );
+}
+
 export function buildDeckLinkAddon(options = {}) {
   const includeDir = resolveDeckLinkIncludeDir(options.sdkRoot ?? sdkRoot);
   const staged = stageDeckLinkInclude(includeDir, options.stageDir ?? stagedInclude);
   const hasSdk = Boolean(staged);
   const forceStub = options.forceStub === true;
+  const requireReal = requireRealDeckLinkAddon(options);
   const targetArch = options.arch ?? arch;
+
+  if (requireReal && forceStub) {
+    return {
+      ok: false,
+      status: 1,
+      hasSdk,
+      error:
+        "NEUD_REQUIRE_REAL_DECKLINK=1 cannot be combined with a forced DeckLink stub build.",
+    };
+  }
+
+  if (requireReal && !hasSdk) {
+    return {
+      ok: false,
+      status: 1,
+      hasSdk: false,
+      error:
+        "DeckLink SDK not found. Set NEUD_DECKLINK_SDK to the Blackmagic DeckLink SDK root " +
+        "(must contain Win/include/DeckLinkAPI.idl or Mac/include/DeckLinkAPI.h). " +
+        "Windows release packaging refuses stub DeckLink addons.",
+    };
+  }
 
   // Ordinary desktop builds without SDK must not destroy a previously built real addon
   // for the same Electron ABI (Pass 8 regression: stub overwrite → UltraStudio unavailable).
@@ -101,13 +230,28 @@ export function buildDeckLinkAddon(options = {}) {
     return { ok: true, status: 0, hasSdk: false, preserved: true, destination };
   }
 
+  if (hasSdk && process.platform === "win32") {
+    const ensured = ensureWindowsDeckLinkHeaders(includeDir);
+    if (!ensured.ok) {
+      return { ok: false, status: 1, hasSdk, error: ensured.error };
+    }
+  }
+
   const dispatchSource = path.join(staged || "", "DeckLinkAPIDispatch.cpp");
   const localDispatch = path.join(nativeDir, "DeckLinkAPIDispatch.cpp");
+  const localIid = path.join(nativeDir, "DeckLinkAPI_i.c");
+  const sdkIid = path.join(includeDir || "", "DeckLinkAPI_i.c");
 
-  if (hasSdk && fs.existsSync(dispatchSource)) {
+  if (hasSdk && process.platform === "darwin" && fs.existsSync(dispatchSource)) {
     fs.copyFileSync(dispatchSource, localDispatch);
-  } else if (fs.existsSync(localDispatch) && !hasSdk) {
+  } else if (fs.existsSync(localDispatch)) {
     fs.rmSync(localDispatch, { force: true });
+  }
+
+  if (hasSdk && process.platform === "win32" && fs.existsSync(sdkIid)) {
+    fs.copyFileSync(sdkIid, localIid);
+  } else if (fs.existsSync(localIid) && !(hasSdk && process.platform === "win32")) {
+    fs.rmSync(localIid, { force: true });
   }
 
   const nodeGyp = resolveNodeGyp(desktopRoot);
@@ -151,14 +295,35 @@ export function buildDeckLinkAddon(options = {}) {
   }
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.copyFileSync(built, destination);
+  const stub = !hasSdk;
   writeAddonMeta({
-    stub: !hasSdk,
+    stub,
     electronTarget: ELECTRON_TARGET,
     arch: targetArch,
     builtAt: new Date().toISOString(),
     sdkRoot: hasSdk ? path.resolve(options.sdkRoot ?? sdkRoot) : null,
   });
-  return { ok: true, status: 0, hasSdk, staged, destination, preserved: false };
+  if (requireReal && stub) {
+    return {
+      ok: false,
+      status: 1,
+      hasSdk,
+      staged,
+      destination,
+      error: "DeckLink addon built as stub despite NEUD_REQUIRE_REAL_DECKLINK=1.",
+    };
+  }
+  if (requireReal && !isRealDeckLinkAddonBinary(destination)) {
+    return {
+      ok: false,
+      status: 1,
+      hasSdk,
+      staged,
+      destination,
+      error: "DeckLink addon failed real-binary verification after build.",
+    };
+  }
+  return { ok: true, status: 0, hasSdk, staged, destination, preserved: false, stub };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -45,6 +45,12 @@
           {
             "sources": ["recorder-win.cpp"],
             "defines": ["NEUD_RECORDER_HAS_PLATFORM=1"],
+            "libraries": [
+              "mfplat.lib",
+              "mfreadwrite.lib",
+              "mfuuid.lib",
+              "Ole32.lib"
+            ],
             "msvs_settings": {
               "VCCLCompilerTool": {
                 "ExceptionHandling": 1,

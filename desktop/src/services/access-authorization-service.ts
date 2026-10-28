@@ -35,6 +35,8 @@ import {
 import { canDeleteUserInDirectory } from "../access/can-delete-user";
 
 export class AccessAuthorizationService {
+  private cloudDirectoryProvider: (() => UserDetailsDirectory | null) | null = null;
+
   constructor(
     private readonly auth: AuthLicenseManager,
     private readonly users: LocalUsersRepository,
@@ -46,6 +48,15 @@ export class AccessAuthorizationService {
     private readonly dataSources: DataSourcesRepository,
     private readonly legacyMemberships: LocalProjectMembershipsRepository | null = null,
   ) {}
+
+  /**
+   * Optional cloud access-directory cache. Used so team-assigned manager access
+   * still works when local SQLite project UUIDs differ from hosted project UUIDs
+   * (project↔team assignments may exist only under the cloud id).
+   */
+  setCloudDirectoryProvider(provider: (() => UserDetailsDirectory | null) | null) {
+    this.cloudDirectoryProvider = provider;
+  }
 
   getCurrentUserId(): string | null {
     return this.auth.getAuthenticatedUser()?.userId ?? null;
@@ -89,7 +100,7 @@ export class AccessAuthorizationService {
     }
 
     const memberships = this.teamMemberships.listForUser(user.id);
-    const teamMemberships = memberships
+    const localTeamMemberships = memberships
       .map((membership) => {
         const team = this.teams.getById(membership.teamId);
         if (!team) {
@@ -104,6 +115,11 @@ export class AccessAuthorizationService {
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    // Merge cloud-directory memberships (Supabase UUIDs) and alias them onto local
+    // team rows when names/slugs match. Hosted project↔team assignments often use
+    // cloud team IDs while ensureHildrethTeamAdmin creates a separate local team id.
+    const teamMemberships = this.mergeCloudTeamMemberships(user.id, localTeamMemberships);
 
     const accessibleTeamIds = this.resolveAccessibleTeamIds(user.platformRole, teamMemberships);
     const accessibleProjectIds = this.resolveAccessibleProjectIds(
@@ -173,6 +189,16 @@ export class AccessAuthorizationService {
     return this.projects
       .list()
       .filter((project) => projectIds.includes(project.id));
+  }
+
+  /** Local SQLite project↔team assignment ids only (no cloud bridge). */
+  listLocalProjectTeamIds(projectId: string): string[] {
+    return this.projectTeams.getTeamIdsForProject(projectId);
+  }
+
+  /** Local + cloud-bridged team assignment ids for diagnostics. */
+  listEffectiveProjectTeamIds(projectId: string): string[] {
+    return this.getAssignedTeamIdsForProject(projectId);
   }
 
   getVisibleProjectTeams(
@@ -254,6 +280,15 @@ export class AccessAuthorizationService {
           }
         }
       }
+    } else {
+      const localProject = this.projects.getById(projectId);
+      if (localProject?.slug && cloudDirectory.projects) {
+        for (const project of cloudDirectory.projects) {
+          if (project.slug === localProject.slug) {
+            projectIds.add(project.id);
+          }
+        }
+      }
     }
     const teamIds = new Set<string>();
     for (const assignment of cloudDirectory.projectTeams) {
@@ -262,6 +297,190 @@ export class AccessAuthorizationService {
       }
     }
     return [...teamIds];
+  }
+
+  private readCloudDirectory(): UserDetailsDirectory | null {
+    if (!this.cloudDirectoryProvider) {
+      return null;
+    }
+    try {
+      return this.cloudDirectoryProvider() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeTeamKey(value: string | null | undefined): string {
+    return (value ?? "").trim().toLowerCase();
+  }
+
+  /**
+   * True when two team ids refer to the same logical team across local SQLite
+   * and the cloud directory. Matches exact ids, or a single local↔cloud pair
+   * with the same name/slug.
+   *
+   * Intentionally does NOT collapse two distinct local teams that share a name,
+   * and does NOT grant access across unrelated same-name teams.
+   */
+  private teamIdsReferToSameLogicalTeam(leftId: string, rightId: string): boolean {
+    if (leftId === rightId) {
+      return true;
+    }
+    const cloudDirectory = this.readCloudDirectory();
+    const leftLocal = this.teams.getById(leftId);
+    const rightLocal = this.teams.getById(rightId);
+    // Never equate two different local team rows by name alone.
+    if (leftLocal && rightLocal) {
+      return false;
+    }
+    const leftCloud = cloudDirectory?.teams?.find((entry) => entry.id === leftId);
+    const rightCloud = cloudDirectory?.teams?.find((entry) => entry.id === rightId);
+
+    if (leftLocal && rightCloud) {
+      return (
+        this.normalizeTeamKey(leftLocal.name) === this.normalizeTeamKey(rightCloud.name) ||
+        (Boolean(rightCloud.slug) &&
+          this.normalizeTeamKey(leftLocal.name) === this.normalizeTeamKey(rightCloud.slug))
+      );
+    }
+    if (rightLocal && leftCloud) {
+      return (
+        this.normalizeTeamKey(rightLocal.name) === this.normalizeTeamKey(leftCloud.name) ||
+        (Boolean(leftCloud.slug) &&
+          this.normalizeTeamKey(rightLocal.name) === this.normalizeTeamKey(leftCloud.slug))
+      );
+    }
+    return false;
+  }
+
+  private membershipMatchesAssignedTeams(
+    membershipTeamId: string,
+    assignedTeamIds: readonly string[],
+  ): boolean {
+    for (const assigned of assignedTeamIds) {
+      if (this.teamIdsReferToSameLogicalTeam(membershipTeamId, assigned)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private resolveActorIdentityIds(localUserId: string): Set<string> {
+    const ids = new Set<string>([localUserId]);
+    const user = this.users.getById(localUserId);
+    if (user?.supabaseUserId) {
+      ids.add(user.supabaseUserId);
+    }
+    const authUserId = this.auth.getAuthenticatedUser()?.userId;
+    if (authUserId) {
+      ids.add(authUserId);
+    }
+    return ids;
+  }
+
+  private mergeCloudTeamMemberships(
+    localUserId: string,
+    localMemberships: AuthorizationContext["teamMemberships"],
+  ): AuthorizationContext["teamMemberships"] {
+    const cloudDirectory = this.readCloudDirectory();
+    if (!cloudDirectory?.teamMemberships?.length) {
+      return localMemberships;
+    }
+
+    const actorIds = this.resolveActorIdentityIds(localUserId);
+    const byTeamId = new Map(
+      localMemberships.map((entry) => [entry.teamId, entry] as const),
+    );
+    const roleRank = { admin: 2, operator: 1, viewer: 0 } as const;
+
+    for (const membership of cloudDirectory.teamMemberships) {
+      if (!actorIds.has(membership.userId)) {
+        continue;
+      }
+      const roleRaw = (membership.role ?? "").toLowerCase();
+      const role: TeamRole =
+        roleRaw === "admin" || roleRaw === "owner"
+          ? "admin"
+          : roleRaw === "operator"
+            ? "operator"
+            : "viewer";
+
+      // Prefer a unique local team row with the same name so later assignment
+      // checks line up with ensureHildrethTeamAdmin / local SQLite team ids.
+      // Ambiguous same-name local teams are left on the cloud id (no cross-grant).
+      let resolvedTeamId = membership.teamId;
+      const cloudTeam = cloudDirectory.teams?.find((entry) => entry.id === membership.teamId);
+      if (cloudTeam) {
+        const localMatches = this.teams.listAll().filter(
+          (team) =>
+            this.normalizeTeamKey(team.name) === this.normalizeTeamKey(cloudTeam.name),
+        );
+        if (localMatches.length === 1) {
+          resolvedTeamId = localMatches[0]!.id;
+        }
+      }
+
+      const localTeam = this.teams.getById(resolvedTeamId);
+      const existing = byTeamId.get(resolvedTeamId);
+      if (
+        existing &&
+        (roleRank[existing.role] ?? 0) >= (roleRank[role] ?? 0)
+      ) {
+        continue;
+      }
+
+      byTeamId.set(resolvedTeamId, {
+        teamId: resolvedTeamId,
+        teamName: localTeam?.name ?? cloudTeam?.name ?? resolvedTeamId,
+        teamIsActive: localTeam?.isActive ?? true,
+        role,
+        isActive: true,
+      });
+    }
+
+    return [...byTeamId.values()];
+  }
+
+  /** Local + cloud team assignments for a project (slug-bridged cloud project ids). */
+  private getAssignedTeamIdsForProject(projectId: string): string[] {
+    const teamIds = new Set(this.projectTeams.getTeamIdsForProject(projectId));
+    const cloudDirectory = this.readCloudDirectory();
+    if (cloudDirectory) {
+      for (const teamId of this.resolveCloudProjectTeamIds(
+        projectId,
+        cloudDirectory,
+        this.projects.getById(projectId)?.slug,
+      )) {
+        teamIds.add(teamId);
+      }
+    }
+    return [...teamIds];
+  }
+
+  /** True when cloud directory cache is present (may still be stale). */
+  hasCloudDirectoryCache(): boolean {
+    return this.readCloudDirectory() != null;
+  }
+
+  private hasCloudScopedProjectMembership(userId: string, projectId: string): boolean {
+    const cloudDirectory = this.readCloudDirectory();
+    if (!cloudDirectory?.projectMembers?.length) {
+      return false;
+    }
+    const projectIds = new Set<string>([projectId]);
+    const localProject = this.projects.getById(projectId);
+    if (localProject?.slug && cloudDirectory.projects) {
+      for (const project of cloudDirectory.projects) {
+        if (project.slug === localProject.slug) {
+          projectIds.add(project.id);
+        }
+      }
+    }
+    const actorIds = this.resolveActorIdentityIds(userId);
+    // Caller already verified the user has an active membership on an assigned team.
+    return cloudDirectory.projectMembers.some(
+      (entry) => actorIds.has(entry.userId) && projectIds.has(entry.projectId),
+    );
   }
 
   getAccessibleProjects(userId?: string | null): LocalProject[] {
@@ -369,10 +588,10 @@ export class AccessAuthorizationService {
     }
     const membership = context.teamMemberships.find(
       (entry) =>
-        entry.teamId === teamId &&
         entry.role === "admin" &&
         entry.isActive &&
-        entry.teamIsActive,
+        entry.teamIsActive &&
+        this.teamIdsReferToSameLogicalTeam(entry.teamId, teamId),
     );
     if (!membership) {
       throw new Error("You do not have permission to manage this team.");
@@ -458,18 +677,22 @@ export class AccessAuthorizationService {
     }
 
     for (const project of allProjects) {
-      const assignedTeamIds = this.projectTeams.getTeamIdsForProject(project.id);
+      const assignedTeamIds = this.getAssignedTeamIdsForProject(project.id);
       if (assignedTeamIds.length === 0) {
         continue;
       }
 
       for (const membership of activeMemberships) {
-        if (!assignedTeamIds.includes(membership.teamId)) {
+        if (!this.membershipMatchesAssignedTeams(membership.teamId, assignedTeamIds)) {
           continue;
         }
 
         const team = this.teams.getById(membership.teamId);
-        if (!team?.isActive) {
+        // Cloud-aliased memberships may not have a local teams row; still honor admin.
+        if (team && !team.isActive) {
+          continue;
+        }
+        if (!team && !membership.teamIsActive) {
           continue;
         }
 
@@ -485,6 +708,11 @@ export class AccessAuthorizationService {
         );
         if (scopedMembership) {
           projectIds.add(project.id);
+          continue;
+        }
+
+        if (this.hasCloudScopedProjectMembership(userId, project.id)) {
+          projectIds.add(project.id);
         }
       }
     }
@@ -496,14 +724,14 @@ export class AccessAuthorizationService {
     context: AuthorizationContext,
     projectId: string,
   ): TeamRole | null {
-    const assignedTeamIds = this.projectTeams.getTeamIdsForProject(projectId);
+    const assignedTeamIds = this.getAssignedTeamIdsForProject(projectId);
     let highest: TeamRole | null = null;
 
-    for (const teamId of assignedTeamIds) {
-      const membership = context.teamMemberships.find(
-        (entry) => entry.teamId === teamId && entry.isActive && entry.teamIsActive,
-      );
-      if (!membership) {
+    for (const membership of context.teamMemberships) {
+      if (!membership.isActive || !membership.teamIsActive) {
+        continue;
+      }
+      if (!this.membershipMatchesAssignedTeams(membership.teamId, assignedTeamIds)) {
         continue;
       }
       if (membership.role === "admin") {
@@ -521,9 +749,10 @@ export class AccessAuthorizationService {
     const memberships = this.projectMemberships.listForProject(projectId).filter(
       (entry) => entry.userId === userId,
     );
+    const assignedTeamIds = this.getAssignedTeamIdsForProject(projectId);
 
     for (const membership of memberships) {
-      if (!this.projectTeams.isAssigned(projectId, membership.teamId)) {
+      if (!this.membershipMatchesAssignedTeams(membership.teamId, assignedTeamIds)) {
         continue;
       }
 

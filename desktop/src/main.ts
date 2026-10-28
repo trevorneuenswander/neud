@@ -1010,6 +1010,37 @@ async function createMainWindow() {
     () => localDataService!.notifyActivitySyncChanged(),
     paths,
   );
+  activitySyncService.setProjectDirectoryAliasProvider(() =>
+    projectPackageService
+      .listDirectoryItems()
+      .filter((entry): entry is typeof entry & { cloudProjectId: string } =>
+        Boolean(entry.cloudProjectId),
+      )
+      .map((entry) => ({
+        cloudProjectId: entry.cloudProjectId,
+        localProjectId:
+          entry.localProjectId ??
+          projectsRepository.getBySlug(entry.slug)?.id ??
+          null,
+        slug: entry.slug,
+      })),
+  );
+  activitySyncService.setCloudSlugProjectProvider(() => {
+    try {
+      const cached = cloudAccessCacheRepository.getCachedDirectory()?.directory;
+      const projects = Array.isArray(cached?.projects)
+        ? (cached.projects as Array<{ id?: string; slug?: string }>)
+        : [];
+      return projects
+        .map((project) => ({
+          slug: typeof project.slug === "string" ? project.slug : "",
+          cloudProjectId: typeof project.id === "string" ? project.id : "",
+        }))
+        .filter((project) => project.slug && project.cloudProjectId);
+    } catch {
+      return [];
+    }
+  });
   localDataService.setActivitySync(activitySyncService);
 
   userDirectorySyncService = new SupabaseUserDirectorySyncService(
@@ -1323,9 +1354,15 @@ async function createMainWindow() {
     registerOutputIpc({ engine: outputEngine, data: localDataService });
   }
   registerSystemIpc();
+  // Activity sync must NOT rewrite established local project UUIDs on slug conflict
+  // (realignProjectId omits SEMA schedule state, output routes, media assets, etc.).
+  // Translate cloud↔local IDs at the sync boundary via package-directory aliases.
   activitySyncService?.setEnsureHostedProjectForSync((projectId) =>
-    localDataService!.ensureHostedProjectRegisteredForSync(projectId),
+    localDataService!.ensureHostedProjectRegisteredForSync(projectId, {
+      realignOnSlugConflict: false,
+    }),
   );
+  void activitySyncService?.syncNow("startup-activity-sync");
 
   const writePackagedRuntimeDiagnostics = () => {
     void runAndWriteInstalledBrowserDiagnostic(paths).catch((error) => {
@@ -1601,6 +1638,7 @@ async function createMainWindow() {
     },
   );
   localApiServer.setDeveloperTools(developerToolsService);
+  developerToolsService.setAccessAuthorization(accessAuthorizationService);
   const videoMediaStore = new VideoMediaStore(localDatabase!, paths);
   developerToolsService.setVideoMediaStore(videoMediaStore);
   registerMediaIpc(developerToolsService);

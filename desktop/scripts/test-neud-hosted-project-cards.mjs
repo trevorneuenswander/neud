@@ -36,8 +36,9 @@ test("hosted project cards do not nest interactive controls inside the link", ()
   assert.doesNotMatch(dashboardClient, /<Link[\s\S]*<Button/);
 });
 
-test("hosted project access still uses membership-scoped queries", () => {
+test("hosted project access uses RLS-visible projects (membership + team admin)", () => {
   const queries = read("src/lib/hosted/portal-queries.ts");
   assert.match(queries, /getHostedAccessibleProjects/);
-  assert.match(queries, /from\("project_members"\)/);
+  assert.match(queries, /from\("projects"\)/);
+  assert.doesNotMatch(queries, /from\("project_members"\)/);
 });

@@ -303,6 +303,9 @@ export function ProjectsPageClient({
         projects={projects}
         viewerMode={viewerMode}
         onPackageChanged={() => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("neud:projects-directory-refreshed"));
+          }
           if (meta) {
             void loadProjects(meta);
           }

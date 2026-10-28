@@ -37,7 +37,7 @@ function resolveCardState(input: {
   install: ProjectPackageInstallRecord | null;
   availableVersion: number | null;
 }): ProjectPackageCardState {
-  if (!input.install) {
+  if (!input.install || input.install.installState === "not_downloaded") {
     return "not_downloaded";
   }
   if (input.install.installState === "downloading") {
@@ -48,6 +48,9 @@ function resolveCardState(input: {
   }
   if (input.install.installState === "error") {
     return "error";
+  }
+  if (input.install.installState !== "installed") {
+    return "not_downloaded";
   }
   const available =
     input.availableVersion ??
@@ -947,12 +950,23 @@ export class ProjectPackageService {
       : this.projects.getBySlug(slug);
 
     if (!project) {
+      // Prefer the hosted cloud UUID from the package directory when known so
+      // Activity/Display sync keys match peer devices (critical for SEMA).
+      const directory = this.packages.getDirectoryBySlug(slug);
+      const hostedId = directory?.cloudProjectId?.trim() ?? "";
+      const preferredId =
+        hostedId &&
+        !hostedId.startsWith("builtin:") &&
+        !hostedId.startsWith("local:")
+          ? hostedId
+          : undefined;
       project = this.projects.create({
         name: catalog.name,
         slug: catalog.slug,
         projectType: catalog.projectType,
         description: catalog.description,
         icon: catalog.projectType === "bag-graphics" ? "bag" : "sema",
+        id: preferredId,
       });
     }
 

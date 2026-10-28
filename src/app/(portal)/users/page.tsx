@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/portal/PageHeader";
 import { PageSection } from "@/components/portal/PageSection";
 import { getApplicationRole } from "@/lib/auth/application-roles";
-import { requireAdmin } from "@/lib/auth/authorization";
+import { requireAdmin, requireUser } from "@/lib/auth/authorization";
 import { getUserManagementContext } from "@/lib/users/actions";
 import { countActiveOwners, getPlatformUsersDirectory } from "@/lib/users/queries";
 import { shouldUseLocalData } from "@/lib/local/mode";
@@ -18,8 +18,24 @@ export default async function UsersPage() {
   const localMode = shouldUseLocalData();
 
   if (localMode) {
-    await requireAdmin();
+    // Capability-based: Owners and Team Admins (canManageUsersAndAccess).
+    // Platform-admin-only gates exclude Team Admins with application-role "user".
+    await requireUser();
     const meta = await localGetProjectsMeta();
+    if (
+      meta.identityStatus === "loading-session" ||
+      meta.identityStatus === "loading-profile"
+    ) {
+      return (
+        <div className="space-y-8">
+          <PageHeader
+            title="Users and Access"
+            description="Loading your access permissions…"
+          />
+          <p className="text-sm text-muted">Restoring your account session…</p>
+        </div>
+      );
+    }
     if (!meta.canManageUsersAndAccess) {
       redirect("/dashboard");
     }

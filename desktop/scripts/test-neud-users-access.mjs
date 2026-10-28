@@ -187,6 +187,8 @@ test("expected email references remain limited to migration and identity modules
     [
       "desktop/scripts/test-neud-default-owner-email.mjs",
       "desktop/scripts/test-neud-owner-permissions.mjs",
+      "desktop/scripts/test-neud-project-access-management.mjs",
+      "desktop/scripts/test-neud-team-assigned-project-access.mjs",
       "desktop/scripts/test-neud-users-access.mjs",
       "desktop/src/auth/default-owner-email.ts",
       "src/lib/auth/default-owner-email.ts",

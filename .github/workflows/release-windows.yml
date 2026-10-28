@@ -28,6 +28,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build-windows:
@@ -38,6 +39,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEUD_REQUIRE_CODE_SIGNING: ${{ inputs.require_code_signing && '1' || '' }}
+      NEUD_REQUIRE_REAL_DECKLINK: "1"
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
     steps:
@@ -72,6 +74,26 @@ jobs:
             exit 1
           }
           Write-Host "Public Supabase publishable key is configured (value not logged)."
+
+      - name: Require Google build service account variable
+        shell: bash
+        run: |
+          if [ -z "${{ vars.NEUD_GCP_BUILD_SERVICE_ACCOUNT }}" ]; then
+            echo "Missing repository variable NEUD_GCP_BUILD_SERVICE_ACCOUNT."
+            echo "Set it to the full email of service account neud-build-dependencies"
+            echo "(format: neud-build-dependencies@<GCP_PROJECT_ID>.iam.gserviceaccount.com)."
+            echo "Do not assume the GCP project ID equals the display name 'NEUD'."
+            echo "See docs/output-engine/decklink-windows-release.md."
+            exit 1
+          fi
+          echo "NEUD_GCP_BUILD_SERVICE_ACCOUNT is configured (value not logged)."
+
+      - name: Install Blackmagic DeckLink SDK from private Google Drive
+        uses: ./.github/actions/setup-decklink-sdk-windows
+        with:
+          workload_identity_provider: projects/241025226693/locations/global/workloadIdentityPools/neud-github-actions/providers/github-actions
+          service_account: ${{ vars.NEUD_GCP_BUILD_SERVICE_ACCOUNT }}
+          drive_file_id: 1iYubcuA0WzlsLG6jilF2nR7_hC2sx-8A
 
       - name: Configure release signing mode
         shell: pwsh

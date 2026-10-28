@@ -77,6 +77,13 @@ export async function reconcileHostedProjectAndDisplayIdentity(input: {
   storage?: ProjectCodeStorageService;
   projectId: string;
   displayIds?: string[];
+  /**
+   * When false, slug conflicts resolve to the hosted UUID for the caller without
+   * rewriting the local projects.id or dependent SQLite/filesystem references.
+   * Activity sync must use false — realignProjectId is incomplete for SEMA/output.
+   * Default true preserves existing Display Sync behavior.
+   */
+  realignOnSlugConflict?: boolean;
 }): Promise<HostedIdentityReconciliationResult> {
   const localProject = input.projects.getById(input.projectId);
   if (!localProject) {
@@ -109,6 +116,16 @@ export async function reconcileHostedProjectAndDisplayIdentity(input: {
     }
 
     if (hostedProject.id !== localProject.id) {
+      if (input.realignOnSlugConflict === false) {
+        // Non-destructive: return hosted id for cloud boundary mapping only.
+        return {
+          ok: true,
+          projectId: hostedProject.id,
+          realignedProjectId: false,
+          realignedDisplayIds: [],
+        };
+      }
+
       input.projects.realignProjectId(localProject.id, hostedProject.id);
       input.storage?.relocateProjectCodeRoot(localProject.id, hostedProject.id);
       resolvedProjectId = hostedProject.id;

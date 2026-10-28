@@ -80,13 +80,8 @@ export async function updateSession(request: NextRequest) {
   const isAuthenticated = Boolean(data?.claims);
   const { pathname } = request.nextUrl;
 
-  if (!isHostedViewerPath(pathname) && isHostedDesktopOnlyPath(pathname)) {
-    const portalUrl = request.nextUrl.clone();
-    portalUrl.pathname = DEFAULT_HOSTED_LANDING_PATH;
-    portalUrl.search = "";
-    return NextResponse.redirect(portalUrl);
-  }
-
+  // Prefer legacy → portal remaps (/users → /portal/users) before the
+  // catch-all desktop-only redirect to /portal (dashboard).
   if (isHostedLegacyPortalPath(pathname)) {
     const mapped = mapHostedLegacyPathToPortal(pathname);
     if (mapped && mapped !== pathname) {
@@ -94,6 +89,13 @@ export async function updateSession(request: NextRequest) {
       portalUrl.pathname = mapped;
       return NextResponse.redirect(portalUrl);
     }
+  }
+
+  if (!isHostedViewerPath(pathname) && isHostedDesktopOnlyPath(pathname)) {
+    const portalUrl = request.nextUrl.clone();
+    portalUrl.pathname = DEFAULT_HOSTED_LANDING_PATH;
+    portalUrl.search = "";
+    return NextResponse.redirect(portalUrl);
   }
 
   if (!isAuthenticated && isProtectedPath(pathname)) {

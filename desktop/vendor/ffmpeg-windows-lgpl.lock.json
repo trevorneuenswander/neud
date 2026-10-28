@@ -1,0 +1,20 @@
+{
+  "description": "Pinned Windows x64 LGPL shared FFmpeg for NEUD ProRes decode. Source: BtbN/FFmpeg-Builds (lgpl-shared, no GPL/nonfree).",
+  "source": "https://github.com/BtbN/FFmpeg-Builds",
+  "releaseTag": "latest",
+  "artifact": "ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip",
+  "downloadUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip",
+  "checksumsUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256",
+  "sha256": "09772a308ccee4304e93ad1137d513e16710e83f56161bc626e2df4e5d3b6b5b",
+  "variant": "lgpl-shared",
+  "abiLabel": "n8.1",
+  "requiredLibraries": ["avcodec", "avformat", "avutil", "swscale"],
+  "license": "LGPL-3.0-or-later",
+  "notes": [
+    "Artifact name must contain lgpl-shared and must not be a gpl build.",
+    "BtbN lgpl-shared builds are configured without --enable-gpl and without --enable-nonfree (verified via embedded configure string: disable-libx264/x265, libavcodec license LGPL).",
+    "Shipped LICENSE.txt is GNU LGPL version 3.",
+    "NEUD dynamically links shared DLLs only; do not statically link FFmpeg into neud_video.node.",
+    "When BtbN updates n8.1-latest, refresh sha256 from checksums.sha256 before rebuilding."
+  ]
+}

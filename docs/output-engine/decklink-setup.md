@@ -16,18 +16,20 @@ The exact cards are whatever the installed Desktop Video SDK enumerates. NEUD do
 
 ## Development
 
-SDK headers are needed only when compiling the hardware path. Download the DeckLink SDK from Blackmagic and point the desktop build at it:
+SDK headers are needed only when compiling the hardware path. Download the **DeckLink SDK 16.x** from Blackmagic (verified: **16.0**) and point the desktop build at it:
 
 ```bash
 NEUD_DECKLINK_SDK=/path/to/DeckLink\ SDK npm run build -w @neud/desktop
 ```
 
-Expected header locations:
+Expected locations:
 
-- macOS: `Mac/include/DeckLinkAPI.h`
-- Windows: `Win/include/DeckLinkAPI.h`
+- macOS: `Mac/include/DeckLinkAPI.h` (+ `DeckLinkAPIDispatch.cpp`)
+- Windows: `Win/include/DeckLinkAPI.idl` (MIDL generates `DeckLinkAPI.h`; NEUD uses `decklink-dispatch-win.cpp`)
 
-Without `NEUD_DECKLINK_SDK`, the desktop build compiles a stub. The stub reports the SDK as unavailable. Unit tests use a mock scheduler and do not need a card.
+Without `NEUD_DECKLINK_SDK`, ordinary desktop builds may compile a stub for local development. The stub reports the SDK as unavailable. Unit tests use a mock scheduler and do not need a card.
+
+**Windows release packaging must not ship a stub.** Set `NEUD_REQUIRE_REAL_DECKLINK=1` (already set by `npm run package:win` and the Release Windows workflow). Missing SDK or a stub addon fails the packaging job. See [decklink-windows-release.md](./decklink-windows-release.md).
 
 Do not commit the Blackmagic SDK into this repository. Desktop Video is a machine prerequisite, not an app resource.
 

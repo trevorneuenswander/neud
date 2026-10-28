@@ -34,9 +34,12 @@ export function useSidebarProjects(options: UseSidebarProjectsOptions = {}) {
       if (isLocalMode) {
         const meta = await localGetProjectsMeta({ wait: false });
         setViewerMode(resolveProjectsViewerMode(meta));
+        // Desktop sidebar: accessible + locally installed only. Full directory
+        // (including Download actions for uninstalled packages) stays on Projects.
         const list = await localListProjects(undefined, { scope: "installed" });
         setProjects(list.projects as ProjectListItem[]);
       } else if (options.initialProjects) {
+        // Hosted portal has no local package installs — keep server-provided list.
         setProjects(options.initialProjects);
       }
       setHasLoaded(true);
@@ -60,6 +63,22 @@ export function useSidebarProjects(options: UseSidebarProjectsOptions = {}) {
       void refresh();
     }
   }, [isLocalMode, pathname, refresh]);
+
+  useEffect(() => {
+    if (!isLocalMode || typeof window === "undefined") {
+      return;
+    }
+    const onDirectoryRefreshed = () => {
+      void refresh();
+    };
+    window.addEventListener("neud:projects-directory-refreshed", onDirectoryRefreshed);
+    return () => {
+      window.removeEventListener(
+        "neud:projects-directory-refreshed",
+        onDirectoryRefreshed,
+      );
+    };
+  }, [isLocalMode, refresh]);
 
   return {
     projects,

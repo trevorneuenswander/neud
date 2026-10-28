@@ -9,6 +9,10 @@ import { resolveLocalAuthenticatedPrincipal } from "@/lib/local/auth.server";
 import { localGetProjectsMeta } from "@/lib/local/displays-api";
 import type { LocalProjectsListMeta } from "@/lib/displays/types";
 import { localGetProjectAccessContext } from "@/lib/local/access-api";
+import {
+  isLocalApiError,
+  LOCAL_API_ERROR_CODES,
+} from "@/lib/local/errors";
 import type { ProjectAccessContext } from "@/lib/projects/types";
 import {
   PROJECT_ACCESS_LEVELS,
@@ -38,11 +42,34 @@ async function resolveProjectMembership(
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error || !data) {
+  if (
+    !error &&
+    data?.access_level &&
+    canAssignProjectAccessLevel(data.access_level as ProjectAccessLevel)
+  ) {
+    return data.access_level as ProjectAccessLevel;
+  }
+
+  // Team Admins inherit manager access via RLS helpers (046); include that path here
+  // so portal detail routes match desktop authorization.
+  const { data: effectiveLevel, error: rpcError } = await supabase.rpc(
+    "get_project_access_level",
+    { p_project_id: projectId },
+  );
+
+  if (rpcError || typeof effectiveLevel !== "string") {
     return null;
   }
 
-  return data.access_level as ProjectAccessLevel;
+  if (effectiveLevel === "admin") {
+    return "manager";
+  }
+  if (canAssignProjectAccessLevel(effectiveLevel as ProjectAccessLevel)) {
+    return effectiveLevel as ProjectAccessLevel;
+  }
+
+  void userId;
+  return null;
 }
 
 function toAccessLevel(projectRole: ProjectRole): ProjectAccessLevelWithAdmin {
@@ -145,6 +172,14 @@ export async function resolveProjectAccess(
 
     try {
       const access = await localGetProjectAccessContext(projectIdentifier);
+      if (
+        access &&
+        typeof access === "object" &&
+        "pending" in access &&
+        (access as { pending?: unknown }).pending === true
+      ) {
+        return { state: "loading" };
+      }
       const projectRecord = access.project as ProjectAccessContext["project"];
       return {
         state: "ready",
@@ -155,7 +190,13 @@ export async function resolveProjectAccess(
           canOperateDisplays: access.capabilities.canOperateDisplays,
         }),
       };
-    } catch {
+    } catch (error) {
+      if (
+        isLocalApiError(error) &&
+        error.code === LOCAL_API_ERROR_CODES.PROJECT_ACCESS_PENDING
+      ) {
+        return { state: "loading" };
+      }
       return { state: "denied" };
     }
   }

@@ -43,6 +43,15 @@ export function getVersionedWindowsDownloadUrl(version: string): string {
   return `https://github.com/${NEUD_GITHUB_RELEASE_OWNER}/${NEUD_GITHUB_RELEASE_REPO}/releases/download/v${version}/${filename}`;
 }
 
+const V031_HIGHLIGHTS = [
+  "SEMA Google Sheets worksheet viewing with live-data separation, cross-tab Jump, and worksheet-aware Highlight",
+  "SEMA ticker empty-slot fade behavior for cleaner on-air transitions",
+  "Team Admin Users and Access for administered teams, including Hildreth Media Group workflows",
+  "Cloud last-Team-Admin protection so demote/remove cannot leave a team without an active Admin",
+  "Recording ↔ Output conversion persistence across Output Manager sessions",
+  "Hosted portal Team Admin routing and clearer display-list error reporting",
+] as const;
+
 const V030_HIGHLIGHTS = [
   "Output Engine with external display routing, DeckLink Key/Fill, display stacking, and global LIVE/REC tally",
   "Record to Disk on macOS: H.264 MP4, ProRes 422 HQ MOV, and ProRes 4444 MOV",
@@ -87,10 +96,44 @@ const V022_HIGHLIGHTS = [
 /** Authoritative NEUD desktop release catalog for neud.io and release-note parity. */
 export const NEUD_RELEASES: NeudReleaseEntry[] = [
   {
-    version: "0.3.0",
-    releaseDate: "2026-10-22",
+    version: "0.3.1",
+    releaseDate: "2026-10-27",
     status: "current",
     current: true,
+    summary:
+      "SEMA worksheet and Jump/Highlight workflow, Team Admin Users and Access, cloud last-Team-Admin protection, and Output type persistence on the v0.3.0 Output Engine baseline.",
+    highlights: [...V031_HIGHLIGHTS],
+    platforms: {
+      windows: {
+        supported: true,
+        architecture: "x64",
+        downloadUrl: getVersionedWindowsDownloadUrl("0.3.1"),
+        artifactLabel: getVersionedWindowsInstallerFilename("0.3.1"),
+      },
+      macos: {
+        supported: true,
+        architecture: "Apple Silicon (arm64)",
+        downloadUrl: getMacDmgDownloadUrl("0.3.1"),
+        artifactLabel: "NEUD-0.3.1-arm64.dmg",
+      },
+    },
+    githubReleaseUrl: getGitHubReleaseTagUrl("0.3.1"),
+    knownLimitations: [
+      "Broad Arrow Online Viewer displays remain unpublished until explicitly enabled; active cloud display records are still listed for authorized users.",
+      "DeckLink Key/Fill requires compatible Blackmagic hardware; automated CI cannot validate physical DeckLink devices.",
+      "Alpha software; Windows builds may show SmartScreen warnings when unsigned.",
+      "macOS builds from CI are unsigned and not notarized until Developer ID signing secrets are configured — Gatekeeper may require manual approval on first open.",
+      "Intel Macs are not supported.",
+      "Display Transforms, IN/OUT Transitions, and Stream Deck integration are planned for a later release.",
+      "macOS auto-update feed exists (latest-mac.yml) but treat Mac updater as preview until signing is verified in production.",
+    ],
+    macosSigningStatus: "unsigned-ci",
+  },
+  {
+    version: "0.3.0",
+    releaseDate: "2026-10-22",
+    status: "published",
+    current: false,
     summary:
       "Output Engine, Record to Disk, native ProRes video displays, Performance Monitor, and graphics workflow refinements for Windows x64 and Apple Silicon Macs.",
     highlights: [...V030_HIGHLIGHTS],

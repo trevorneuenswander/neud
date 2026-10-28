@@ -17,6 +17,7 @@ import {
   toCloudActivityRow,
 } from "./cloud-activity-mapper";
 import {
+  ACTIVITY_SYNC_ALIAS_BACKFILL_KEY,
   ACTIVITY_SYNC_BACKOFF_MS,
   ACTIVITY_SYNC_CURSOR_KEY,
   ACTIVITY_SYNC_LAST_PULL_KEY,
@@ -32,6 +33,13 @@ import {
 } from "../../lib/activity/sync-allowlist";
 import type { AppPaths } from "../app-paths";
 import { appendActivitySyncLog } from "../runtime-diagnostics-log";
+import {
+  buildActivityPullProjectScope,
+  remapCloudActivityProjectId,
+  resolveCloudProjectIdForUpload,
+  type ActivityCloudSlugProjectRef,
+  type ProjectDirectoryAliasEntry,
+} from "./project-id-aliases";
 
 type ActivitySyncListener = (state: ActivitySyncState) => void;
 
@@ -60,6 +68,8 @@ export class ActivitySyncService {
   private ensureHostedProjectForSync:
     | ((projectId: string) => Promise<EnsureHostedProjectForSyncResult>)
     | null = null;
+  private listProjectDirectoryAliases: (() => ProjectDirectoryAliasEntry[]) | null = null;
+  private listCloudProjectsBySlug: (() => ActivityCloudSlugProjectRef[]) | null = null;
   private serviceStarted = false;
 
   constructor(
@@ -86,6 +96,37 @@ export class ActivitySyncService {
     handler: (projectId: string) => Promise<EnsureHostedProjectForSyncResult>,
   ): void {
     this.ensureHostedProjectForSync = handler;
+  }
+
+  /**
+   * Supplies package-directory cloud↔local project links so pull accepts SEMA
+   * (and other builtins) keyed by hosted UUID while the local install still
+   * uses a different SQLite project id.
+   */
+  setProjectDirectoryAliasProvider(
+    provider: () => ProjectDirectoryAliasEntry[],
+  ): void {
+    this.listProjectDirectoryAliases = provider;
+  }
+
+  /**
+   * Optional hosted project IDs keyed by slug (cloud access directory). Used when
+   * the package directory still exposes builtin: placeholders for SEMA/etc.
+   */
+  setCloudSlugProjectProvider(provider: () => ActivityCloudSlugProjectRef[]): void {
+    this.listCloudProjectsBySlug = provider;
+  }
+
+  private buildPullScope(localAccessible: string[]) {
+    return buildActivityPullProjectScope({
+      accessibleLocalProjectIds: localAccessible,
+      directoryEntries: this.listProjectDirectoryAliases?.() ?? [],
+      localProjects: this.projects.list().map((project) => ({
+        id: project.id,
+        slug: project.slug,
+      })),
+      cloudProjectsBySlug: this.listCloudProjectsBySlug?.() ?? [],
+    });
   }
 
   start(): void {
@@ -319,12 +360,12 @@ export class ActivitySyncService {
   }
 
   async syncNow(reason = "manual"): Promise<void> {
+    // If a sync is already running, queue a follow-up instead of dropping
+    // login/startup/realtime pulls (Mac→Windows missed activity when login
+    // arrived while startup sync was in flight).
     if (this.syncInProgress) {
-      if (reason === "startup" || reason === "startup-restore" || reason === "login") {
-        return;
-      }
-    }
-    if (this.syncInProgress) {
+      this.logActivitySync(`sync.busy reason=${reason} — scheduling follow-up`);
+      this.scheduleFollowUpSync(reason);
       return;
     }
 
@@ -418,13 +459,22 @@ export class ActivitySyncService {
 
     const now = new Date().toISOString();
     let uploaded = 0;
+    const context = this.access.getAuthorizationContext();
+    const localAccessible = context?.accessibleProjectIds ?? [];
+    const scope = this.buildPullScope(localAccessible);
 
     for (const record of pending) {
-      let activeRecord = record;
+      const activeRecord = record;
       const metadataProjectId =
         typeof activeRecord.metadata?.projectId === "string"
           ? activeRecord.metadata.projectId
           : null;
+
+      // Resolve hosted UUID for cloud upload without rewriting local project ids.
+      let cloudProjectId = resolveCloudProjectIdForUpload(
+        metadataProjectId,
+        scope.localToCloud,
+      );
 
       if (metadataProjectId && this.ensureHostedProjectForSync) {
         const ensured = await this.ensureHostedProjectForSync(metadataProjectId);
@@ -439,18 +489,15 @@ export class ActivitySyncService {
           continue;
         }
         if (ensured.projectId !== metadataProjectId) {
-          this.repository.updateMetadataProjectId(activeRecord.cloudId, ensured.projectId);
-          activeRecord = {
-            ...activeRecord,
-            metadata: {
-              ...(activeRecord.metadata ?? {}),
-              projectId: ensured.projectId,
-            },
-          };
+          cloudProjectId = ensured.projectId;
           this.logActivitySync(
-            `push.project_realigned cloudId=${activeRecord.cloudId.slice(0, 8)} from=${metadataProjectId.slice(0, 8)} to=${ensured.projectId.slice(0, 8)}`,
+            `push.cloud_project_mapped cloudId=${activeRecord.cloudId.slice(0, 8)} local=${metadataProjectId.slice(0, 8)} hosted=${ensured.projectId.slice(0, 8)} realigned=${ensured.realigned ? "1" : "0"}`,
           );
+        } else {
+          cloudProjectId = ensured.projectId;
         }
+        // Intentionally do NOT rewrite local metadata.projectId or call
+        // realignProjectId — keep local relationships on the established UUID.
       }
 
       if (!this.canUploadRecord(activeRecord)) {
@@ -480,6 +527,7 @@ export class ActivitySyncService {
         cloudId: activeRecord.cloudId,
         instanceId: this.instanceId,
         teamId,
+        cloudProjectId,
       });
 
       const result = await this.cloudClient.upsertEvents([row]);
@@ -493,6 +541,9 @@ export class ActivitySyncService {
 
       this.repository.markSynced(activeRecord.cloudId, now);
       uploaded += 1;
+      this.logActivitySync(
+        `push.ok cloudId=${activeRecord.cloudId.slice(0, 8)} localProject=${metadataProjectId?.slice(0, 8) ?? "none"} hostedProject=${String(row.project_id ?? "none").slice(0, 8)}`,
+      );
     }
 
     if (uploaded > 0) {
@@ -505,43 +556,98 @@ export class ActivitySyncService {
   private async pullRemote(): Promise<void> {
     const context = this.access.getAuthorizationContext();
     const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
-    const accessibleProjectIds = context?.accessibleProjectIds ?? [];
+    const localAccessible = context?.accessibleProjectIds ?? [];
+    const scope = this.buildPullScope(localAccessible);
+
     let cursor = this.getCursor();
+    const priorAliasFingerprint = this.settings.get<string>(
+      ACTIVITY_SYNC_ALIAS_BACKFILL_KEY,
+      "",
+    );
+    if (scope.aliasFingerprint !== priorAliasFingerprint) {
+      // Mapping changed (new install alias, or local id realigned to cloud id).
+      // Rewind so historical peer-device events are not stuck behind the cursor.
+      if (priorAliasFingerprint || scope.aliasFingerprint) {
+        this.logActivitySync(
+          `pull.alias_backfill_reset aliases=${scope.cloudToLocal.size} fingerprint=${(scope.aliasFingerprint || priorAliasFingerprint).slice(0, 48)}`,
+        );
+        cursor = null;
+      }
+    }
+
+    this.logActivitySync(
+      `pull.begin localProjects=${localAccessible.length} queryIds=${scope.accessibleQueryIds.length} aliases=${scope.cloudToLocal.size} cursor=${cursor ? "set" : "none"}`,
+    );
+
     let downloaded = 0;
+    const pageLimit = 100;
+    let pagesProcessed = 0;
+    let scannedTotal = 0;
+    let droppedByProjectFilter = 0;
 
-    while (true) {
-      const rows = await this.cloudClient.fetchChangedSince({
-        cursor,
-        accessibleProjectIds,
-        includeGlobalForUserId: userId,
-        limit: 100,
-      });
-      if (rows.length === 0) break;
-
-      for (const row of rows) {
-        const event = fromCloudActivityRow(row);
-        const record = this.repository.upsertFromCloud({
-          event,
-          cloudId: row.id,
-          instanceId: row.source_instance_id,
-          cloudUpdatedAt: row.updated_at,
+    try {
+      while (true) {
+        const page = await this.cloudClient.fetchChangedSince({
+          cursor,
+          accessibleProjectIds: scope.accessibleQueryIds,
+          includeGlobalForUserId: userId,
+          limit: pageLimit,
         });
-        this.sessionStore.upsertFromCloud(record);
-        downloaded += 1;
-        cursor = { updatedAt: row.updated_at, id: row.id };
+        if (page.scanned === 0) break;
+        scannedTotal += page.scanned;
+        droppedByProjectFilter += Math.max(0, page.scanned - page.rows.length);
+
+        for (const row of page.rows) {
+          // team_id may be NULL for project-scoped SEMA events — do not require it.
+          const event = fromCloudActivityRow(row);
+          event.metadata = remapCloudActivityProjectId(
+            event.metadata ?? {},
+            row.project_id,
+            scope.cloudToLocal,
+          );
+          const record = this.repository.upsertFromCloud({
+            event,
+            cloudId: row.id,
+            instanceId: row.source_instance_id,
+            cloudUpdatedAt: row.updated_at,
+          });
+          this.sessionStore.upsertFromCloud(record);
+          downloaded += 1;
+        }
+
+        // Persist cursor only after the page was processed successfully so an
+        // interrupted sync does not permanently skip the failed page.
+        if (page.pageCursor) {
+          cursor = page.pageCursor;
+          this.settings.set(ACTIVITY_SYNC_CURSOR_KEY, cursor);
+        }
+        pagesProcessed += 1;
+
+        if (page.scanned < pageLimit) break;
       }
 
-      if (rows.length < 100) break;
+      if (droppedByProjectFilter > 0) {
+        this.logActivitySync(
+          `pull.filter_dropped scanned=${scannedTotal} accepted=${downloaded} dropped=${droppedByProjectFilter} aliases=${scope.cloudToLocal.size}`,
+        );
+      }
+
+      this.settings.set(ACTIVITY_SYNC_ALIAS_BACKFILL_KEY, scope.aliasFingerprint);
+      this.settings.set(ACTIVITY_SYNC_LAST_PULL_KEY, new Date().toISOString());
+      this.logActivitySync(
+        `pull.complete downloaded=${downloaded} pages=${pagesProcessed} aliases=${scope.cloudToLocal.size}`,
+      );
+    } catch (error) {
+      this.logActivitySync(
+        `pull.error downloaded=${downloaded} pages=${pagesProcessed} message=${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
     }
 
-    if (cursor) {
-      this.settings.set(ACTIVITY_SYNC_CURSOR_KEY, cursor);
-    }
     if (downloaded > 0) {
       this.onEntriesChanged();
     }
     this.lastPullDownloaded = downloaded;
-    this.settings.set(ACTIVITY_SYNC_LAST_PULL_KEY, new Date().toISOString());
   }
 
   private canUploadRecord(record: ActivityEventRecord): boolean {
@@ -588,6 +694,16 @@ export class ActivitySyncService {
     this.retryTimer = setTimeout(() => {
       void this.syncNow("retry");
     }, delay);
+  }
+
+  /** Coalesce overlapping sync requests into a single follow-up pass. */
+  private scheduleFollowUpSync(reason: string): void {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+    }
+    this.retryTimer = setTimeout(() => {
+      void this.syncNow(`follow-up:${reason}`);
+    }, 1_000);
   }
 
   private emitState(): void {

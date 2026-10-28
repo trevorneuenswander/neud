@@ -25,6 +25,12 @@ test("disk recording model exports formats and collision-safe naming", async () 
   assert.match(source, /h264-mp4/);
   assert.match(source, /NEUD_\$\{project\}_\$\{output\}_\$\{stamp\}/);
   assert.match(source, /24000, denominator: 1001/);
+  const { buildPartialRecordingPath } = require(
+    path.join(desktopRoot, "dist/output/disk-recording-model.js"),
+  );
+  const partial = buildPartialRecordingPath("/tmp/NEUD_Demo_Record_2026-01-01_12-00-00.mp4");
+  assert.equal(partial, "/tmp/NEUD_Demo_Record_2026-01-01_12-00-00.neud-partial.mp4");
+  assert.doesNotMatch(partial, /\.mp4\.neud-partial$/);
 });
 
 test("OutputEngine includes disk adapter and recording session states", () => {
@@ -42,8 +48,12 @@ test("DiskRecordingService uses OffscreenOutputRenderer frames", () => {
   assert.match(service, /OffscreenOutputRenderer/);
   assert.match(service, /appendFrame/);
   assert.match(service, /finalize/);
-  assert.match(service, /\.neud-partial/);
+  assert.match(service, /buildPartialRecordingPath/);
   assert.match(service, /validateDestinationFolder/);
+  const model = read("desktop/src/output/disk-recording-model.ts");
+  assert.match(model, /buildPartialRecordingPath/);
+  // Media Foundation requires a recognized .mp4 suffix on the partial file.
+  assert.match(model, /\.neud-partial\$\{/);
 });
 
 test("native recorder addon builds and lists codecs on macOS", () => {

@@ -8,7 +8,8 @@ import { test } from "node:test";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 function read(relativePath) {
-  return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+  // Normalize CRLF so multi-line indexOf patterns are stable on Windows runners.
+  return fs.readFileSync(path.join(repoRoot, relativePath), "utf8").replace(/\r\n/g, "\n");
 }
 
 test("live scraper snapshots notify display bridge before bag live state processing", () => {

@@ -240,55 +240,63 @@ export async function getVisibleProjects(
     return attachProjectTeamNames(items);
   }
 
-  const { data: memberships, error: membershipError } = await supabase
-    .from("project_members")
-    .select(`access_level, projects (${PROJECT_COLUMNS})`);
+  // RLS on `projects` already includes direct membership and team-assigned
+  // manager access (046). Listing via project_members alone hid team-admin projects.
+  let request = supabase
+    .from("projects")
+    .select(PROJECT_COLUMNS)
+    .order("updated_at", { ascending: false });
 
-  if (membershipError || !memberships) {
+  if (trimmedQuery) {
+    request = request.ilike("name", `%${trimmedQuery}%`);
+  }
+
+  const { data, error } = await request;
+
+  if (error || !data) {
     return [];
   }
 
-  const projects = memberships
-    .map((row) => {
-      const projectData = row.projects as Project | Project[] | null;
-      const project = Array.isArray(projectData) ? projectData[0] : projectData;
+  const projects: ProjectListItem[] = [];
+  for (const project of data as Project[]) {
+    const { data: accessLevel } = await supabase.rpc("get_project_access_level", {
+      p_project_id: project.id,
+    });
+    const membershipAccessLevel =
+      typeof accessLevel === "string"
+        ? accessLevel === "admin"
+          ? "manager"
+          : accessLevel
+        : null;
 
-      if (!project) {
-        return null;
-      }
+    const projectRole = resolveSupabaseProjectRole({
+      platformAdmin: false,
+      profileRole: null,
+      membershipAccessLevel,
+    });
 
-      const projectRole = resolveSupabaseProjectRole({
-        platformAdmin: false,
-        profileRole: null,
-        membershipAccessLevel: row.access_level,
-      });
+    if (
+      !canManageProjectSettings(projectRole) &&
+      !normalizeProjectIsActive(project)
+    ) {
+      continue;
+    }
 
-      if (
-        !canManageProjectSettings(projectRole) &&
-        !normalizeProjectIsActive(project)
-      ) {
-        return null;
-      }
+    const normalizedAccess: ProjectListItem["accessLevel"] =
+      membershipAccessLevel === "manager" ||
+      membershipAccessLevel === "operator" ||
+      membershipAccessLevel === "viewer"
+        ? membershipAccessLevel
+        : canManageProjectSettings(projectRole)
+          ? "manager"
+          : "viewer";
 
-      return {
-        ...project,
-        is_active: normalizeProjectIsActive(project),
-        accessLevel: row.access_level as ProjectListItem["accessLevel"],
-      };
-    })
-    .filter((project): project is ProjectListItem => project !== null)
-    .filter((project) => {
-      if (!trimmedQuery) {
-        return true;
-      }
-
-      return project.name.toLowerCase().includes(trimmedQuery.toLowerCase());
-    })
-    .sort(
-      (left, right) =>
-        new Date(right.updated_at).getTime() -
-        new Date(left.updated_at).getTime(),
-    );
+    projects.push({
+      ...project,
+      is_active: normalizeProjectIsActive(project),
+      accessLevel: normalizedAccess,
+    });
+  }
 
   return attachProjectTeamNames(projects);
 }

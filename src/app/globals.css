@@ -15,14 +15,16 @@
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(120, 128, 140, 0.45);
   --scrollbar-thumb-hover: rgba(120, 128, 140, 0.7);
-  --background: #0b0f14;
-  --sidebar: #10151c;
-  --surface: #151b23;
-  --surface-raised: #1b222c;
-  --border: #27303c;
-  --foreground: #f3f6fa;
-  --muted: #8b98a8;
-  --primary: #3b82f6;
+  /* v0.3.1 color refresh — see docs/themes/v0.3.1-color-refresh.md (rollback: v0.3.0-palette-baseline.md) */
+  --background: #070a12;
+  --sidebar: #0c101c;
+  --surface: #12182a;
+  --surface-raised: #182036;
+  --border: #2a3550;
+  --foreground: #eef2ff;
+  --muted: #8b96b0;
+  --primary: #2f6bff;
+  --accent: #8b7cff;
   --success: #22c55e;
   --warning: #f59e0b;
   --danger: #ef4444;
@@ -53,6 +55,7 @@ html[data-runtime="desktop"][data-platform="linux"] {
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-primary: var(--primary);
+  --color-accent: var(--accent);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);

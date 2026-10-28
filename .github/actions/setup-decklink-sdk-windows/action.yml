@@ -1,0 +1,44 @@
+name: Setup DeckLink SDK (Windows)
+description: Authenticate with Google Cloud WIF, download the private DeckLink SDK from Drive, extract and validate it.
+inputs:
+  workload_identity_provider:
+    description: Full WIF provider resource name
+    required: true
+  service_account:
+    description: Service account email with Drive Viewer on the SDK file
+    required: true
+  drive_file_id:
+    description: Google Drive file id for the DeckLink SDK ZIP
+    required: true
+    default: "1iYubcuA0WzlsLG6jilF2nR7_hC2sx-8A"
+runs:
+  using: composite
+  steps:
+    - name: Authenticate to Google Cloud (WIF)
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+        token_format: access_token
+        access_token_scopes: https://www.googleapis.com/auth/drive.readonly
+        create_credentials_file: false
+
+    - name: Download DeckLink SDK from Google Drive
+      shell: bash
+      env:
+        GOOGLE_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        NEUD_DECKLINK_DRIVE_FILE_ID: ${{ inputs.drive_file_id }}
+        NEUD_DECKLINK_SDK_ZIP: ${{ runner.temp }}/DeckLinkSDK.zip
+      run: node desktop/scripts/ci/download-decklink-sdk-from-drive.mjs
+
+    - name: Extract and validate DeckLink SDK (MIDL headers)
+      shell: bash
+      env:
+        NEUD_DECKLINK_SDK_ZIP: ${{ runner.temp }}/DeckLinkSDK.zip
+        NEUD_DECKLINK_SDK_EXTRACT: ${{ runner.temp }}/DeckLinkSDK-extract
+      run: node desktop/scripts/ci/prepare-windows-decklink-sdk.mjs
+
+    - name: Remove SDK archive from runner temp
+      shell: bash
+      run: rm -f "${{ runner.temp }}/DeckLinkSDK.zip"

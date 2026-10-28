@@ -24,7 +24,7 @@ const geistMono = Geist_Mono({
 });
 
 const siteDescription =
-  "A professional live graphics and data integration platform built for broadcast and live production. Local-first desktop operation with optional online published viewers.";
+  "NEUD — Graphics Without Limits. A professional live graphics and data integration platform built for broadcast and live production. Local-first desktop operation with optional online published viewers.";
 
 export const metadata: Metadata = {
   title: APP_NAME,

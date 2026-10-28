@@ -20,11 +20,21 @@ function readSrc(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-test("login tagline appears once and description does not repeat it", () => {
-  const login = readSrc("src/app/(public)/page.tsx");
+test("login and marketing surfaces use NeudLogo tagline without hardcoding the slogan", () => {
+  const login = readSrc("src/components/auth/DesktopLoginPage.tsx");
+  const marketing = readSrc("src/components/marketing/MarketingHomePage.tsx");
   assert.ok(login.includes("showTagline"));
-  assert.ok(login.includes("Manage project data extraction"));
+  assert.ok(marketing.includes("showTagline"));
   assert.ok(!login.includes("The Ultimate Data Stripper"));
+  assert.ok(!marketing.includes("The Ultimate Data Stripper"));
+  assert.ok(!login.includes("Graphics Without Limits."));
+  assert.ok(!marketing.includes("Graphics Without Limits."));
+});
+
+test("APP_TAGLINE is Graphics Without Limits.", () => {
+  const branding = readSrc("src/lib/branding/app-name.ts");
+  assert.match(branding, /APP_TAGLINE\s*=\s*"Graphics Without Limits\."/);
+  assert.doesNotMatch(branding, /Ultimate Data Stripper/);
 });
 
 test("desktop title bar is rendered outside authenticated portal shell", () => {

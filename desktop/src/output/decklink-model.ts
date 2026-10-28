@@ -19,10 +19,15 @@ export const DECKLINK_FIRST_FRAME_TIMEOUT = "Output did not receive a rendered f
 
 export const EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE =
   "External device support is unavailable on this computer.";
+/** Operator-facing: package was built without the DeckLink SDK (stub .node). */
+export const EXTERNAL_DEVICE_STUB_BUILD =
+  "External device support was not compiled into this NEUD build (DeckLink SDK missing at build time).";
 /** Operator-facing: real addon loaded but Desktop Video runtime / iterator unavailable. */
-export const EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE = "Desktop Video runtime is unavailable.";
+export const EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE =
+  "Desktop Video runtime is unavailable. Install or update Blackmagic Desktop Video and restart NEUD.";
 /** Operator-facing: native .node failed to load (path/ABI). */
-export const EXTERNAL_NATIVE_ADDON_FAILED = "Native external-device helper failed to load.";
+export const EXTERNAL_NATIVE_ADDON_FAILED =
+  "Native external-device helper failed to load. The packaged DeckLink module may be missing or incompatible.";
 export const EXTERNAL_NO_DEVICES = "No external output devices detected.";
 
 /** Map probe/load diagnostics to a short operator-facing message. */
@@ -33,6 +38,7 @@ export function operatorFacingExternalDeviceUnavailable(
   if (!text) return EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE;
   if (
     text === EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE ||
+    text === EXTERNAL_DEVICE_STUB_BUILD ||
     text === EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE ||
     text === EXTERNAL_NATIVE_ADDON_FAILED ||
     text === EXTERNAL_NO_DEVICES
@@ -40,7 +46,7 @@ export function operatorFacingExternalDeviceUnavailable(
     return text;
   }
   if (/stub/i.test(text) || /built without/i.test(text)) {
-    return EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE;
+    return EXTERNAL_DEVICE_STUB_BUILD;
   }
   if (/failed to load|native helper|addon/i.test(text)) {
     return EXTERNAL_NATIVE_ADDON_FAILED;

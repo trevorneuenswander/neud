@@ -9,6 +9,17 @@
 #else
 #include <Windows.h>
 #include <oleauto.h>
+#include "decklink-dispatch-win.h"
+#endif
+
+#if defined(_WIN32)
+using DeckLinkBool = BOOL;
+static constexpr DeckLinkBool kDeckLinkFalse = FALSE;
+static constexpr DeckLinkBool kDeckLinkTrue = TRUE;
+#else
+using DeckLinkBool = bool;
+static constexpr DeckLinkBool kDeckLinkFalse = false;
+static constexpr DeckLinkBool kDeckLinkTrue = true;
 #endif
 
 #include <algorithm>
@@ -289,7 +300,7 @@ std::string CompletionResultName(BMDOutputFrameCompletionResult result) {
 }
 
 bool ModeSupportsPixelFormat(IDeckLinkOutput* output, BMDDisplayMode mode, BMDPixelFormat pixelFormat) {
-  bool supported = false;
+  DeckLinkBool supported = kDeckLinkFalse;
   HRESULT hr = output->DoesSupportVideoMode(
       bmdVideoConnectionUnspecified,
       mode,
@@ -298,7 +309,7 @@ bool ModeSupportsPixelFormat(IDeckLinkOutput* output, BMDDisplayMode mode, BMDPi
       bmdSupportedVideoModeDefault,
       nullptr,
       &supported);
-  return hr == S_OK && supported;
+  return hr == S_OK && supported == kDeckLinkTrue;
 }
 
 bool ModeSupportsBgra(IDeckLinkOutput* output, BMDDisplayMode mode) {
@@ -306,7 +317,7 @@ bool ModeSupportsBgra(IDeckLinkOutput* output, BMDDisplayMode mode) {
 }
 
 bool ModeSupportsKeyingFlag(IDeckLinkOutput* output, BMDDisplayMode mode, BMDPixelFormat pixelFormat) {
-  bool supported = false;
+  DeckLinkBool supported = kDeckLinkFalse;
   HRESULT hr = output->DoesSupportVideoMode(
       bmdVideoConnectionUnspecified,
       mode,
@@ -315,13 +326,13 @@ bool ModeSupportsKeyingFlag(IDeckLinkOutput* output, BMDDisplayMode mode, BMDPix
       bmdSupportedVideoModeKeying,
       nullptr,
       &supported);
-  return hr == S_OK && supported;
+  return hr == S_OK && supported == kDeckLinkTrue;
 }
 
 bool AttrFlag(IDeckLinkProfileAttributes* attributes, BMDDeckLinkAttributeID id) {
   if (!attributes) return false;
-  bool value = false;
-  return attributes->GetFlag(id, &value) == S_OK && value;
+  DeckLinkBool value = kDeckLinkFalse;
+  return attributes->GetFlag(id, &value) == S_OK && value == kDeckLinkTrue;
 }
 
 int64_t AttrInt(IDeckLinkProfileAttributes* attributes, BMDDeckLinkAttributeID id) {
@@ -938,11 +949,11 @@ std::string DeckLinkStartJson(const std::string& endpointId, const std::string& 
     // KeyerOutput sample queries modes with bmdSupportedVideoModeKeying for keying.
     const BMDSupportedVideoModeFlags supportFlags =
         externalKeying ? bmdSupportedVideoModeKeying : bmdSupportedVideoModeDefault;
-    bool supported = false;
+    DeckLinkBool supported = kDeckLinkFalse;
     HRESULT supportHr = output->DoesSupportVideoMode(
         bmdVideoConnectionUnspecified, selectedMode, bmdFormat8BitBGRA, bmdNoVideoOutputConversion,
         supportFlags, nullptr, &supported);
-    if (supportHr != S_OK || !supported) {
+    if (supportHr != S_OK || supported != kDeckLinkTrue) {
       // Fall back to default flag for devices that only advertise keying via attributes.
       if (externalKeying) {
         supportHr = output->DoesSupportVideoMode(bmdVideoConnectionUnspecified, selectedMode, bmdFormat8BitBGRA,
@@ -950,7 +961,7 @@ std::string DeckLinkStartJson(const std::string& endpointId, const std::string& 
                                                  &supported);
       }
     }
-    if (supportHr != S_OK || !supported) {
+    if (supportHr != S_OK || supported != kDeckLinkTrue) {
       selected->Release();
       output->Release();
       device->Release();

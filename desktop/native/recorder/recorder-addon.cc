@@ -187,8 +187,8 @@ Napi::Value Platform(const Napi::CallbackInfo &info) {
   obj.Set("encoder", "avfoundation");
   obj.Set("available", true);
 #elif defined(_WIN32)
-  obj.Set("encoder", "windows-pending");
-  obj.Set("available", false);
+  obj.Set("encoder", "mediafoundation");
+  obj.Set("available", true);
 #else
   obj.Set("encoder", "stub");
   obj.Set("available", false);

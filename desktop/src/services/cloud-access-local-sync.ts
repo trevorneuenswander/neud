@@ -1,5 +1,6 @@
 import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { ProjectTeamAssignmentsRepository } from "../repositories/project-team-assignments-repository";
+import type { TeamsRepository } from "../repositories/teams-repository";
 
 export type CloudAccessLocalSyncDiagnostics = {
   projectTeamAssignmentExists: boolean;
@@ -8,6 +9,7 @@ export type CloudAccessLocalSyncDiagnostics = {
   inheritedManagerCount: number;
   directoryInheritedAccessCount: number;
   staleCacheDetected: boolean;
+  teamIdAliasesApplied: number;
   firstTeamAccessFailureStage:
     | "assignment_not_persisted"
     | "team_membership_not_loaded"
@@ -20,11 +22,44 @@ export type CloudAccessLocalSyncDiagnostics = {
     | "none";
 };
 
+function normalizeTeamKey(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+/**
+ * Map a hosted team UUID onto the local teams row with the same name when the
+ * cloud id is not present locally (e.g. ensureHildrethTeamAdmin created a
+ * separate local HMG team id).
+ */
+export function resolveLocalTeamIdForCloudAssignment(input: {
+  cloudTeamId: string;
+  teams: TeamsRepository;
+  cloudTeams?: Array<{ id?: string; name?: string; slug?: string }>;
+}): { teamId: string; aliased: boolean } {
+  if (input.teams.getById(input.cloudTeamId)) {
+    return { teamId: input.cloudTeamId, aliased: false };
+  }
+  const cloudTeam = (input.cloudTeams ?? []).find((entry) => entry.id === input.cloudTeamId);
+  const cloudName = normalizeTeamKey(cloudTeam?.name);
+  if (cloudName) {
+    const matches = input.teams
+      .listAll()
+      .filter((team) => normalizeTeamKey(team.name) === cloudName);
+    // Ambiguous same-name local teams must not inherit cloud assignments.
+    if (matches.length === 1) {
+      return { teamId: matches[0]!.id, aliased: true };
+    }
+  }
+  return { teamId: input.cloudTeamId, aliased: false };
+}
+
 export function syncCloudProjectTeamAssignmentsToLocal(input: {
   projects: ProjectsRepository;
   projectTeams: ProjectTeamAssignmentsRepository;
+  teams?: TeamsRepository | null;
   cloudProjectTeams: Array<{ projectId?: string; teamId?: string }>;
   cloudProjects?: Array<{ id?: string; slug?: string }>;
+  cloudTeams?: Array<{ id?: string; name?: string; slug?: string }>;
   teamMemberships: Array<{ teamId?: string; userId?: string; role?: string }>;
   actorUserId: string | null;
 }): CloudAccessLocalSyncDiagnostics {
@@ -35,6 +70,7 @@ export function syncCloudProjectTeamAssignmentsToLocal(input: {
     inheritedManagerCount: 0,
     directoryInheritedAccessCount: 0,
     staleCacheDetected: false,
+    teamIdAliasesApplied: 0,
     firstTeamAccessFailureStage: "none",
   };
 
@@ -77,8 +113,20 @@ export function syncCloudProjectTeamAssignmentsToLocal(input: {
     if (!localProjectIds.has(localProjectId)) {
       continue;
     }
+    let localTeamId = pair.teamId;
+    if (input.teams) {
+      const resolved = resolveLocalTeamIdForCloudAssignment({
+        cloudTeamId: pair.teamId,
+        teams: input.teams,
+        cloudTeams: input.cloudTeams,
+      });
+      localTeamId = resolved.teamId;
+      if (resolved.aliased) {
+        diagnostics.teamIdAliasesApplied += 1;
+      }
+    }
     const current = desiredByProject.get(localProjectId) ?? [];
-    current.push(pair.teamId);
+    current.push(localTeamId);
     desiredByProject.set(localProjectId, current);
   }
 
@@ -107,7 +155,15 @@ export function syncCloudProjectTeamAssignmentsToLocal(input: {
         }
       }
     }
-    if (!input.projectTeams.isAssigned(localProjectId, pair.teamId)) {
+    let localTeamId = pair.teamId;
+    if (input.teams) {
+      localTeamId = resolveLocalTeamIdForCloudAssignment({
+        cloudTeamId: pair.teamId,
+        teams: input.teams,
+        cloudTeams: input.cloudTeams,
+      }).teamId;
+    }
+    if (!input.projectTeams.isAssigned(localProjectId, localTeamId)) {
       diagnostics.firstTeamAccessFailureStage = "assignment_not_persisted";
       break;
     }

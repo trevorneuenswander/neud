@@ -39,7 +39,7 @@ test("SEMA labels are calc(28px + 7pt); titles/descriptions unchanged", () => {
 test("SEMA package baseline is v8", () => {
   assert.match(
     read("desktop/src/packages/builtin-package-catalog.ts"),
-    /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*8/,
+    /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*9/,
   );
 });
 

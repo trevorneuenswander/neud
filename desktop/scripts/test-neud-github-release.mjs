@@ -31,14 +31,17 @@ test("hosted web download components use centralized GitHub URL", () => {
   const topBar = read("src/components/portal/HostedPortalTopBar.tsx");
   const settings = read("src/app/portal/settings/page.tsx");
   const login = read("src/app/(public)/login/page.tsx");
+  const releaseSection = read("src/components/downloads/ReleaseDownloadSection.tsx");
 
   assert.match(downloadPage, /getCurrentNeudRelease/);
   assert.match(downloadPage, /ReleaseDownloadSection/);
   assert.match(downloadPage, /Previous versions/);
   assert.match(read("src/lib/releases/neud-releases.ts"), /NEUD_RELEASES/);
-  assert.match(sidebar, /WindowsDownloadLink/);
-  assert.match(topBar, /WindowsDownloadLink/);
-  assert.match(settings, /WindowsDownloadLink/);
+  // Portal CTAs route to /download; actual installer URLs live on the download page.
+  assert.match(sidebar, /href="\/download"/);
+  assert.match(topBar, /href="\/download"/);
+  assert.match(settings, /href="\/download"/);
+  assert.match(releaseSection, /WindowsDownloadLink/);
   assert.match(marketing, /href="\/download"/);
   assert.doesNotMatch(marketing, /macOS packaging is planned for Beta/i);
   assert.match(marketing, /Apple Silicon/i);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -90,16 +90,27 @@ test("activity insert SQL matches table column count", () => {
   );
 });
 
-test("activity insert succeeds against migrated sqlite schema", async () => {
-  const { mkdirSync } = await import("node:fs");
-  const { ActivityEventsRepository } = await import(
-    "../dist/repositories/activity-events-repository.js"
+test("activity insert succeeds against migrated sqlite schema", async (t) => {
+  const { mkdirSync, existsSync } = await import("node:fs");
+  const { pathToFileURL } = await import("node:url");
+  const distRepo = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../dist/repositories/activity-events-repository.js",
   );
+  const distDb = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../dist/database/connection.js",
+  );
+  if (!existsSync(distRepo) || !existsSync(distDb)) {
+    t.skip("requires desktop/dist — run after build:desktop / package:win");
+    return;
+  }
+  const { ActivityEventsRepository } = await import(pathToFileURL(distRepo).href);
   const { openLocalDatabase, closeLocalDatabase } = await import(
-    "../dist/database/connection.js"
+    pathToFileURL(distDb).href
   );
 
-  const suffix = crypto.randomUUID().slice(0, 8);
+  const suffix = randomUUID().slice(0, 8);
   const root = path.join(process.cwd(), `.tmp-activity-insert-${suffix}`);
   const paths = {
     root,
@@ -146,8 +157,8 @@ test("activity insert succeeds against migrated sqlite schema", async () => {
         source: "system",
         severity: "info",
       },
-      cloudId: crypto.randomUUID(),
-      instanceId: crypto.randomUUID(),
+      cloudId: randomUUID(),
+      instanceId: randomUUID(),
     });
     assert.equal(record.type, "data-source.changed");
     assert.equal(repository.listNewestFirst(1)[0]?.message, record.message);
@@ -175,8 +186,11 @@ test("two installation IDs converge through shared cloud id upsert", () => {
 test("compound sync cursor avoids timestamp collisions", () => {
   const client = readSrc("desktop/src/services/activity-sync/cloud-activity-client.ts");
   assert.match(client, /updatedAt === input\.cursor\.updatedAt && id <= input\.cursor\.id/);
+  assert.match(client, /pageCursor/);
+  assert.match(client, /CloudActivityPullPage/);
   const types = readSrc("desktop/src/services/activity-sync/types.ts");
   assert.match(types, /neud\.activitySync\.cursor/);
+  assert.match(types, /neud\.activitySync\.cloudProjectAliasBackfillV1/);
 });
 
 test("activity IPC exposes sync state and manual sync", () => {
