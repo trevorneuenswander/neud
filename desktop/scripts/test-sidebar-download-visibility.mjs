@@ -33,7 +33,7 @@ test("public marketing page keeps Get NEUD CTA", () => {
 test("hosted portal settings page keeps Get NEUD link", () => {
   const settings = read("src/app/portal/settings/page.tsx");
   assert.match(settings, /Get NEUD/);
-  assert.match(settings, /WindowsDownloadLink/);
+  assert.match(settings, /href="\/download"/);
 });
 
 test("download links use centralized GitHub release URL module", () => {
