@@ -6,14 +6,14 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
-| **Current development / pending publish** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, Output type persistence; pending production publish |
+| **Latest published release** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, last-Team-Admin guard, Output type persistence |
+| **Previous published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
 | **Current package.json** | **v0.3.1** | Canonical root + `@neud/desktop` |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → (v0.3.1 pending)
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → v0.3.1
 ```
 
 Expected packaged artifacts for v0.3.1:
@@ -32,9 +32,9 @@ Canonical application version is **`0.3.1`** in root and `@neud/desktop` `packag
 
 ## Alpha v0.3.1
 
-SEMA Google Sheets viewing/live separation, cross-tab Jump, worksheet-aware Highlight, ticker empty-slot fades; Hildreth/Team Admin project and Users and Access authorization; Recording↔Output conversion persistence; hosted portal Team Admin routing and display-list error reporting. Includes all v0.3.0 functionality.
+SEMA Google Sheets viewing/live separation, cross-tab Jump, worksheet-aware Highlight, ticker empty-slot fades; Hildreth/Team Admin project and Users and Access authorization; Recording↔Output conversion persistence; hosted portal Team Admin routing and display-list error reporting; production migration 065 last-Team-Admin protection. Includes all v0.3.0 functionality.
 
-**Production hold points until cleared:** cloud last-Team-Admin RPC migration (`docs/alpha-v0.3.1/065_team_admin_last_admin_guard.DRAFT.sql`); live Hildreth Admin Users and Access confirmation; Broad Arrow hosted display sync verification.
+Canonical SQL: `supabase/migrations/065_team_admin_last_admin_guard.sql` (SHA-256 `a5024b9129f9dbc0c35bec8708692792283feb9adcd09ab5d4b7e631fcb49778`). Applied to production via scoped SQL; see `docs/alpha-v0.3.1/065-production-deployment-report.md`.
 
 ## Alpha v0.3.0
 

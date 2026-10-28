@@ -12,8 +12,8 @@ Example: `Alpha 0.3.0`
 
 ## Published vs current development
 
-- **Latest published release:** v0.3.0 (see [release-milestones.md](./release-milestones.md))
-- **Current version:** v0.3.1 (canonical `package.json` version; publish pending)
+- **Latest published release:** v0.3.1 (see [release-milestones.md](./release-milestones.md))
+- **Current version:** v0.3.1 (canonical `package.json` version)
 
 There is no published v0.1.5. Historical update path: **v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → (v0.3.1 pending)**.
 
