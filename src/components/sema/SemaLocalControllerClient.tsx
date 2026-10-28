@@ -10,6 +10,7 @@ import { SemaSourceStatusPill } from "@/components/sema/SemaSourceStatusPill";
 import {
   applyAuthoritativeSemaSourceMode,
 } from "@/lib/sema/sema-source-mode-client";
+import { SemaHighlightControls } from "@/components/sema/SemaHighlightControls";
 import {
   fetchSemaState,
   postSemaAction,
@@ -88,15 +89,26 @@ export function SemaLocalControllerClient({
 
   const applyState = useCallback(
     (next: SemaControllerState) => {
-      setState(next);
+      const normalized: SemaControllerState = {
+        ...next,
+        highlight: next.highlight ?? {
+          active: false,
+          source: null,
+          label: "HIGHLIGHT",
+          title: "",
+          description: "",
+          sourceRowId: null,
+        },
+      };
+      setState(normalized);
       applyAuthoritativeSemaSourceMode(
         projectSlug,
-        next.sourceMode === "manual" ? "manual" : "google-sheets",
+        normalized.sourceMode === "manual" ? "manual" : "google-sheets",
       );
       if (!manualDirty.current) {
         setManualDraft({
           ...EMPTY_MANUAL,
-          ...next.manual,
+          ...normalized.manual,
         });
       }
     },
@@ -253,6 +265,13 @@ export function SemaLocalControllerClient({
           overwrite Manual Controller values while they are on air.
         </p>
       </div>
+
+      <SemaHighlightControls
+        projectSlug={projectSlug}
+        state={state}
+        canControl={canControl}
+        onState={(next) => applyState(next)}
+      />
     </div>
   );
 }

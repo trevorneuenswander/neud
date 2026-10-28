@@ -37,6 +37,7 @@ import {
   buildActivityPullProjectScope,
   remapCloudActivityProjectId,
   resolveCloudProjectIdForUpload,
+  type ActivityCloudSlugProjectRef,
   type ProjectDirectoryAliasEntry,
 } from "./project-id-aliases";
 
@@ -68,6 +69,7 @@ export class ActivitySyncService {
     | ((projectId: string) => Promise<EnsureHostedProjectForSyncResult>)
     | null = null;
   private listProjectDirectoryAliases: (() => ProjectDirectoryAliasEntry[]) | null = null;
+  private listCloudProjectsBySlug: (() => ActivityCloudSlugProjectRef[]) | null = null;
   private serviceStarted = false;
 
   constructor(
@@ -105,6 +107,26 @@ export class ActivitySyncService {
     provider: () => ProjectDirectoryAliasEntry[],
   ): void {
     this.listProjectDirectoryAliases = provider;
+  }
+
+  /**
+   * Optional hosted project IDs keyed by slug (cloud access directory). Used when
+   * the package directory still exposes builtin: placeholders for SEMA/etc.
+   */
+  setCloudSlugProjectProvider(provider: () => ActivityCloudSlugProjectRef[]): void {
+    this.listCloudProjectsBySlug = provider;
+  }
+
+  private buildPullScope(localAccessible: string[]) {
+    return buildActivityPullProjectScope({
+      accessibleLocalProjectIds: localAccessible,
+      directoryEntries: this.listProjectDirectoryAliases?.() ?? [],
+      localProjects: this.projects.list().map((project) => ({
+        id: project.id,
+        slug: project.slug,
+      })),
+      cloudProjectsBySlug: this.listCloudProjectsBySlug?.() ?? [],
+    });
   }
 
   start(): void {
@@ -439,10 +461,7 @@ export class ActivitySyncService {
     let uploaded = 0;
     const context = this.access.getAuthorizationContext();
     const localAccessible = context?.accessibleProjectIds ?? [];
-    const scope = buildActivityPullProjectScope({
-      accessibleLocalProjectIds: localAccessible,
-      directoryEntries: this.listProjectDirectoryAliases?.() ?? [],
-    });
+    const scope = this.buildPullScope(localAccessible);
 
     for (const record of pending) {
       const activeRecord = record;
@@ -538,11 +557,7 @@ export class ActivitySyncService {
     const context = this.access.getAuthorizationContext();
     const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
     const localAccessible = context?.accessibleProjectIds ?? [];
-    const directoryEntries = this.listProjectDirectoryAliases?.() ?? [];
-    const scope = buildActivityPullProjectScope({
-      accessibleLocalProjectIds: localAccessible,
-      directoryEntries,
-    });
+    const scope = this.buildPullScope(localAccessible);
 
     let cursor = this.getCursor();
     const priorAliasFingerprint = this.settings.get<string>(
@@ -567,6 +582,8 @@ export class ActivitySyncService {
     let downloaded = 0;
     const pageLimit = 100;
     let pagesProcessed = 0;
+    let scannedTotal = 0;
+    let droppedByProjectFilter = 0;
 
     try {
       while (true) {
@@ -577,8 +594,11 @@ export class ActivitySyncService {
           limit: pageLimit,
         });
         if (page.scanned === 0) break;
+        scannedTotal += page.scanned;
+        droppedByProjectFilter += Math.max(0, page.scanned - page.rows.length);
 
         for (const row of page.rows) {
+          // team_id may be NULL for project-scoped SEMA events — do not require it.
           const event = fromCloudActivityRow(row);
           event.metadata = remapCloudActivityProjectId(
             event.metadata ?? {},
@@ -604,6 +624,12 @@ export class ActivitySyncService {
         pagesProcessed += 1;
 
         if (page.scanned < pageLimit) break;
+      }
+
+      if (droppedByProjectFilter > 0) {
+        this.logActivitySync(
+          `pull.filter_dropped scanned=${scannedTotal} accepted=${downloaded} dropped=${droppedByProjectFilter} aliases=${scope.cloudToLocal.size}`,
+        );
       }
 
       this.settings.set(ACTIVITY_SYNC_ALIAS_BACKFILL_KEY, scope.aliasFingerprint);

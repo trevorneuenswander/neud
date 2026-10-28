@@ -40,7 +40,7 @@ test("SEMA Schedule Ticker logo wider; decorative left lines removed", () => {
   assert.doesNotMatch(editable, /\.layer\[data-type="rect"\]::after/);
 
   const catalog = read("desktop/src/packages/builtin-package-catalog.ts");
-  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*8/);
+  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*9/);
 });
 
 test("SEMA project menu exposes on-air source toggle without page navigation", () => {

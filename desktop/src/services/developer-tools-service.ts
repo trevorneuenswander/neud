@@ -52,10 +52,15 @@ import {
 import { validateDisplaySource, validateDisplaySlug } from "./display-code-validation-service";
 import { validateScraperSource } from "./scraper-code-validation-service";
 import type { AuthLicenseManager } from "./auth-license-manager";
+import type { AccessAuthorizationService } from "./access-authorization-service";
 import type { DataSourcesRepository } from "../repositories/data-sources-repository";
 import type { EngineManager } from "./engine-manager";
 import type { LocalProjectMembershipsRepository } from "../repositories/local-project-memberships-repository";
-import { canAccessProject, canManageProjectSettings } from "../projects/project-permissions";
+import {
+  canAccessProject,
+  canManageProjectSettings,
+  type ProjectRole,
+} from "../projects/project-permissions";
 import { getApplicationRole } from "../auth/application-roles";
 import {
   buildRevisionMessage,
@@ -295,15 +300,52 @@ export class DeveloperToolsService {
   ) {}
 
   private videoMedia: VideoMediaStore | null = null;
+  private accessAuthorization: AccessAuthorizationService | null = null;
 
   setVideoMediaStore(store: VideoMediaStore) {
     this.videoMedia = store;
+  }
+
+  setAccessAuthorization(service: AccessAuthorizationService) {
+    this.accessAuthorization = service;
+  }
+
+  private resolveActorRole(userId: string, projectId: string): ProjectRole {
+    if (this.accessAuthorization) {
+      const capabilities = this.accessAuthorization.getProjectCapabilities(userId, projectId);
+      if (capabilities.canEditProjectSettings || capabilities.canEditDisplayCode) {
+        return "admin";
+      }
+      if (capabilities.canOperateDisplays || capabilities.canOperateEngines) {
+        return "operator";
+      }
+      if (capabilities.canViewDisplays || capabilities.canViewProject) {
+        return "viewer";
+      }
+    }
+    const membershipRole = this.memberships.getProjectRole(userId, projectId);
+    return membershipRole ?? getApplicationRole({ role: this.auth.getAuthenticatedUser()?.role });
   }
 
   assertDeveloperToolsAccess(projectId: string) {
     const user = this.auth.getAuthenticatedUser();
     if (!user) {
       throw new Error("Sign in to your NEUD account to continue.");
+    }
+
+    if (this.accessAuthorization) {
+      const capabilities = this.accessAuthorization.getProjectCapabilities(
+        user.userId,
+        projectId,
+      );
+      if (capabilities.canEditDisplayCode || capabilities.canEditProjectSettings) {
+        return {
+          userId: user.userId,
+          displayName: user.displayName ?? user.email ?? "Unknown User",
+          role: this.resolveActorRole(user.userId, projectId),
+        };
+      }
+      throw new Error("Developer Tools are restricted to project owners and admins.");
     }
 
     const membershipRole = this.memberships.getProjectRole(user.userId, projectId);
@@ -319,6 +361,44 @@ export class DeveloperToolsService {
     };
   }
 
+  /** List/read access for Displays page cards — project viewers and above. */
+  private assertCanListDisplays(projectId: string) {
+    const user = this.auth.getAuthenticatedUser();
+    if (!user) {
+      throw new Error("Sign in to your NEUD account to continue.");
+    }
+
+    if (this.accessAuthorization) {
+      const capabilities = this.accessAuthorization.getProjectCapabilities(
+        user.userId,
+        projectId,
+      );
+      if (capabilities.canViewDisplays || capabilities.canViewProject) {
+        return {
+          userId: user.userId,
+          displayName: user.displayName ?? user.email ?? "Unknown User",
+          role: this.resolveActorRole(user.userId, projectId),
+          canRepair:
+            capabilities.canEditDisplayCode || capabilities.canEditProjectSettings,
+        };
+      }
+      throw new Error("You do not have permission to view this project's displays.");
+    }
+
+    const membershipRole = this.memberships.getProjectRole(user.userId, projectId);
+    const role = membershipRole ?? getApplicationRole({ role: user.role });
+    if (!canAccessProject(role, this.projects.getById(projectId) ?? { isActive: true })) {
+      throw new Error("You do not have permission to view this project's displays.");
+    }
+
+    return {
+      userId: user.userId,
+      displayName: user.displayName ?? user.email ?? "Unknown User",
+      role,
+      canRepair: canManageProjectSettings(role),
+    };
+  }
+
   private assertProjectViewAccess(project: {
     id: string;
     is_active?: boolean | number | null;
@@ -327,6 +407,17 @@ export class DeveloperToolsService {
     const user = this.auth.getAuthenticatedUser();
     if (!user) {
       throw new Error("Sign in to your NEUD account to continue.");
+    }
+
+    if (this.accessAuthorization) {
+      const capabilities = this.accessAuthorization.getProjectCapabilities(
+        user.userId,
+        project.id,
+      );
+      if (capabilities.canViewProject || capabilities.canViewDisplays) {
+        return user;
+      }
+      throw new Error("You do not have permission to view this project.");
     }
 
     const membershipRole = this.memberships.getProjectRole(user.userId, project.id);
@@ -656,14 +747,17 @@ export class DeveloperToolsService {
 
   listDisplays(projectSlug: string) {
     const project = this.requireProject(projectSlug);
-    const actor = this.assertDeveloperToolsAccess(project.id);
-    this.migration.ensureProjectMigrated(project.id, actor.userId);
-    this.purgeTombstonedDisplays(project.id);
-    this.repairVideoDisplaySourceTypes(project.id, actor.userId);
-    this.repairEmptyVideoDisplayDescriptions(project.id, actor.userId);
+    const actor = this.assertCanListDisplays(project.id);
+    // Repairs are owner/admin-only; viewers still need the same project display rows.
+    if (actor.canRepair) {
+      this.migration.ensureProjectMigrated(project.id, actor.userId);
+      this.purgeTombstonedDisplays(project.id);
+      this.repairVideoDisplaySourceTypes(project.id, actor.userId);
+      this.repairEmptyVideoDisplayDescriptions(project.id, actor.userId);
+    }
 
-    return this.displays
-      .listByProject(project.id)
+    const rawRows = this.displays.listByProject(project.id);
+    const mapped = rawRows
       .filter((display) => !this.displaySyncHooks.isDeleted?.(display.id))
       .map((display) => {
         const code = this.displayCode.getByDisplayId(display.id);
@@ -698,8 +792,21 @@ export class DeveloperToolsService {
           updatedBy: code?.updatedBy ?? null,
           settings,
         };
-      })
-      .filter((display) => !display.archived);
+      });
+    const active = mapped.filter((display) => !display.archived);
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[Displays][List]", {
+        projectSlug,
+        projectId: project.id,
+        role: actor.role,
+        rawCount: rawRows.length,
+        afterTombstoneAndMap: mapped.length,
+        activeCount: active.length,
+        archivedExcluded: mapped.length - active.length,
+        canRepair: actor.canRepair,
+      });
+    }
+    return active;
   }
 
   /**

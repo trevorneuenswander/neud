@@ -56,6 +56,8 @@ const MIGRATION_FILES = [
   "044_sema_manual_schedule_slots.sql",
   "045_display_video_media.sql",
   "046_video_media_orphan_recovery.sql",
+  "047_sema_ticker_highlight.sql",
+  "048_sema_viewing_worksheet.sql",
 ];
 
 export function runMigrations(db: LocalDatabase, paths: AppPaths): void {

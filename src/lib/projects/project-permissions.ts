@@ -53,6 +53,8 @@ export function resolveSupabaseProjectRole(input: {
 
   switch (input.membershipAccessLevel) {
     case "manager":
+    case "admin":
+      return "admin";
     case "operator":
       return "operator";
     case "viewer":

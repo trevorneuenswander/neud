@@ -323,15 +323,16 @@ export class LocalApiServer {
 
       {
         const semaMatch = url.pathname.match(
-          /^\/api\/projects\/([^/]+)\/sema\/(schedule|sheet|refresh|advance|now|jump|source|manual)$/,
+          /^\/api\/projects\/([^/]+)\/sema\/(schedule|sheet|viewing-sheet|refresh|advance|now|jump|source|manual|highlight|worksheets)$/,
         );
         if (semaMatch) {
           try {
             this.requireAuth();
             const projectSlug = decodeURIComponent(semaMatch[1] ?? "");
             const action = semaMatch[2];
-            const isRead = request.method === "GET" && action === "schedule";
-            if (!isRead && request.method !== "POST") {
+            const isScheduleGet = request.method === "GET" && action === "schedule";
+            const isWorksheetsGet = request.method === "GET" && action === "worksheets";
+            if (!isScheduleGet && !isWorksheetsGet && request.method !== "POST") {
               return sendJson(response, 405, { ok: false, error: "Method not allowed." });
             }
             const project = this.data.getProjectBySlug(projectSlug);
@@ -346,19 +347,66 @@ export class LocalApiServer {
             }
             const projectId = project.id;
 
-            if (isRead) {
+            if (isWorksheetsGet) {
+              this.requireControlAccess();
+              this.data.assertCanConfigureSemaProject(projectId);
+              const worksheetUrl = new URL(request.url ?? "", "http://127.0.0.1");
+              const spreadsheetUrlOrId =
+                worksheetUrl.searchParams.get("spreadsheetUrlOrId") ?? undefined;
+              return sendJson(
+                response,
+                200,
+                await this.data.listSemaWorksheets(projectId, spreadsheetUrlOrId),
+              );
+            }
+            if (isScheduleGet) {
               return sendJson(response, 200, this.data.getSemaScheduleState(projectId));
             }
 
             // Everything below changes what can go on air: require an operator.
             this.requireControlAccess();
-            if (action === "sheet") {
+            if (action === "sheet" || action === "viewing-sheet" || action === "worksheets") {
               this.data.assertCanConfigureSemaProject(projectId);
             } else {
               this.data.assertCanControlSemaProject(projectId);
             }
 
             const body = await readJsonBody(request);
+            if (action === "worksheets") {
+              return sendJson(
+                response,
+                200,
+                await this.data.listSemaWorksheets(
+                  projectId,
+                  typeof body.spreadsheetUrlOrId === "string"
+                    ? body.spreadsheetUrlOrId
+                    : undefined,
+                ),
+              );
+            }
+            if (action === "viewing-sheet") {
+              const worksheetGid =
+                typeof body.worksheetGid === "string" ? body.worksheetGid.trim() : "";
+              if (!worksheetGid) {
+                return sendJson(response, 400, {
+                  ok: false,
+                  error: "worksheetGid is required.",
+                });
+              }
+              return sendJson(
+                response,
+                200,
+                await this.data.setSemaViewingWorksheet(projectId, {
+                  worksheetGid,
+                  worksheetTitle:
+                    typeof body.worksheetTitle === "string"
+                      ? body.worksheetTitle
+                      : body.worksheetTitle === null
+                        ? null
+                        : undefined,
+                }),
+              );
+            }
             if (action === "sheet") {
               const spreadsheetUrlOrId =
                 typeof body.spreadsheetUrlOrId === "string" ? body.spreadsheetUrlOrId : "";
@@ -371,6 +419,12 @@ export class LocalApiServer {
                     typeof body.worksheetGid === "string"
                       ? body.worksheetGid
                       : body.worksheetGid === null
+                        ? null
+                        : undefined,
+                  worksheetTitle:
+                    typeof body.worksheetTitle === "string"
+                      ? body.worksheetTitle
+                      : body.worksheetTitle === null
                         ? null
                         : undefined,
                   pollIntervalMs:
@@ -405,7 +459,18 @@ export class LocalApiServer {
                   error: "rowId or rowIndex is required.",
                 });
               }
-              return sendJson(response, 200, this.data.jumpSemaSchedule(projectId, target));
+              return sendJson(
+                response,
+                200,
+                await this.data.jumpSemaSchedule(projectId, target, {
+                  worksheetGid:
+                    typeof body.worksheetGid === "string"
+                      ? body.worksheetGid
+                      : body.worksheetGid === null
+                        ? null
+                        : undefined,
+                }),
+              );
             }
             if (action === "source") {
               if (body.mode !== "manual" && body.mode !== "google-sheets") {
@@ -439,6 +504,46 @@ export class LocalApiServer {
                   },
                   { takeOnAir: body.takeOnAir !== false },
                 ),
+              );
+            }
+            if (action === "highlight") {
+              if (body.clear === true) {
+                return sendJson(response, 200, this.data.clearSemaHighlight(projectId));
+              }
+              if (body.remove === true) {
+                return sendJson(response, 200, this.data.removeSemaHighlight(projectId));
+              }
+              const source =
+                body.source === "scheduled" || body.source === "custom" ? body.source : null;
+              if (!source) {
+                return sendJson(response, 400, {
+                  ok: false,
+                  error: 'source must be "scheduled" or "custom".',
+                });
+              }
+              const title = typeof body.title === "string" ? body.title.trim() : "";
+              if (!title) {
+                return sendJson(response, 400, {
+                  ok: false,
+                  error: "Highlight title is required.",
+                });
+              }
+              return sendJson(
+                response,
+                200,
+                this.data.setSemaHighlight(projectId, {
+                  source,
+                  label: typeof body.label === "string" ? body.label : undefined,
+                  title,
+                  description:
+                    typeof body.description === "string" ? body.description : undefined,
+                  sourceRowId:
+                    typeof body.sourceRowId === "string"
+                      ? body.sourceRowId
+                      : body.sourceRowId === null
+                        ? null
+                        : undefined,
+                }),
               );
             }
           } catch (error) {
@@ -1114,13 +1219,31 @@ export class LocalApiServer {
             error instanceof Error ? error.message : "Unable to access project.";
           return sendJson(response, 401, { error: message });
         }
-        const access = this.data.getProjectAccessContextBySlug(
-          decodeURIComponent(projectAccessMatch[1]!),
-        );
-        if (!access) {
-          return sendJson(response, 403, { error: "You do not have permission to view this project." });
+        const slug = decodeURIComponent(projectAccessMatch[1]!);
+        const evaluated = await this.data.resolveProjectAccessContextBySlug(slug);
+        if (evaluated.status === "pending") {
+          return sendJson(response, 202, {
+            pending: true,
+            error: "Project authorization is still loading.",
+            code: "PROJECT_ACCESS_PENDING",
+            diagnostics:
+              process.env.NODE_ENV === "production"
+                ? undefined
+                : evaluated.diagnostics,
+          });
         }
-        return sendJson(response, 200, access);
+        if (evaluated.status !== "authorized" || !evaluated.access) {
+          return sendJson(response, 403, {
+            error: "You do not have permission to view this project.",
+            code:
+              evaluated.status === "missing" ? "PROJECT_NOT_FOUND" : "FORBIDDEN",
+            diagnostics:
+              process.env.NODE_ENV === "production"
+                ? undefined
+                : evaluated.diagnostics,
+          });
+        }
+        return sendJson(response, 200, evaluated.access);
       }
 
       const projectAccessUsersMatch = url.pathname.match(

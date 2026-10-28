@@ -7,27 +7,34 @@ This document tracks **product milestones** separately from SQLite migration num
 | Label | Version | Notes |
 | --- | --- | --- |
 | **Latest published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
-| **Current release** | **v0.3.0** | Same as latest published |
+| **Current development / pending publish** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, Output type persistence; pending production publish |
+| **Current package.json** | **v0.3.1** | Canonical root + `@neud/desktop` |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → (v0.3.1 pending)
 ```
 
-Expected packaged artifacts for v0.3.0:
+Expected packaged artifacts for v0.3.1:
 
 ```text
-NEUD-Setup-0.3.0-x64.exe
-NEUD-Setup-0.3.0-x64.exe.blockmap
+NEUD-Setup-0.3.1-x64.exe
+NEUD-Setup-0.3.1-x64.exe.blockmap
 NEUD-Setup-latest-x64.exe
 latest.yml
-NEUD-0.3.0-arm64.dmg
-NEUD-0.3.0-arm64.zip
+NEUD-0.3.1-arm64.dmg
+NEUD-0.3.1-arm64.zip
 latest-mac.yml
 ```
 
-Canonical application version is **`0.3.0`** in root and `@neud/desktop` `package.json`. Apple Silicon only. Intel Macs are not supported.
+Canonical application version is **`0.3.1`** in root and `@neud/desktop` `package.json`. Apple Silicon only. Intel Macs are not supported. Preserve v0.3.0 installer artifacts.
+
+## Alpha v0.3.1
+
+SEMA Google Sheets viewing/live separation, cross-tab Jump, worksheet-aware Highlight, ticker empty-slot fades; Hildreth/Team Admin project and Users and Access authorization; Recording↔Output conversion persistence; hosted portal Team Admin routing and display-list error reporting. Includes all v0.3.0 functionality.
+
+**Production hold points until cleared:** cloud last-Team-Admin RPC migration (`docs/alpha-v0.3.1/065_team_admin_last_admin_guard.DRAFT.sql`); live Hildreth Admin Users and Access confirmation; Broad Arrow hosted display sync verification.
 
 ## Alpha v0.3.0
 

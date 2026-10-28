@@ -1018,9 +1018,29 @@ async function createMainWindow() {
       )
       .map((entry) => ({
         cloudProjectId: entry.cloudProjectId,
-        localProjectId: entry.localProjectId,
+        localProjectId:
+          entry.localProjectId ??
+          projectsRepository.getBySlug(entry.slug)?.id ??
+          null,
+        slug: entry.slug,
       })),
   );
+  activitySyncService.setCloudSlugProjectProvider(() => {
+    try {
+      const cached = cloudAccessCacheRepository.getCachedDirectory()?.directory;
+      const projects = Array.isArray(cached?.projects)
+        ? (cached.projects as Array<{ id?: string; slug?: string }>)
+        : [];
+      return projects
+        .map((project) => ({
+          slug: typeof project.slug === "string" ? project.slug : "",
+          cloudProjectId: typeof project.id === "string" ? project.id : "",
+        }))
+        .filter((project) => project.slug && project.cloudProjectId);
+    } catch {
+      return [];
+    }
+  });
   localDataService.setActivitySync(activitySyncService);
 
   userDirectorySyncService = new SupabaseUserDirectorySyncService(
@@ -1618,6 +1638,7 @@ async function createMainWindow() {
     },
   );
   localApiServer.setDeveloperTools(developerToolsService);
+  developerToolsService.setAccessAuthorization(accessAuthorizationService);
   const videoMediaStore = new VideoMediaStore(localDatabase!, paths);
   developerToolsService.setVideoMediaStore(videoMediaStore);
   registerMediaIpc(developerToolsService);

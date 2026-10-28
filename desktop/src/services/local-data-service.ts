@@ -223,6 +223,29 @@ import {
   type AuctionDayFilter,
 } from "../bag/auction-day-from-lot";
 import type { CloudAccessLocalSyncDiagnostics } from "./cloud-access-local-sync";
+
+export type ProjectAccessDiagnostics = {
+  slug: string;
+  localProjectId: string | null;
+  hostedProjectId: string | null;
+  packageInstalled: boolean;
+  cloudDirectoryReady: boolean;
+  localAssignmentTeamIds: string[];
+  cloudAssignmentTeamIds: string[];
+  teamMemberships: Array<{ teamId: string; role: string; isActive: boolean }>;
+  effectivePlatformRole: string | null;
+  capabilities: {
+    canViewProject: boolean;
+    canEditProjectSettings: boolean;
+    canOperateEngines: boolean;
+  } | null;
+  decision: "authorized" | "denied" | "pending" | "missing";
+  denialReason: string | null;
+  mayNeedCloudDirectory: boolean;
+  routeBranch: string;
+  authUserId: string | null;
+};
+
 import {
   buildPublishedProjectPayload,
   CanonicalRevisionTracker,
@@ -675,20 +698,26 @@ export class LocalDataService {
     return state;
   }
 
-  jumpSemaSchedule(projectId: string, rowIdOrIndex: string | number) {
+  async jumpSemaSchedule(
+    projectId: string,
+    rowIdOrIndex: string | number,
+    options?: { worksheetGid?: string | null },
+  ) {
     if (!this.semaSchedule) {
       throw new Error("SEMA schedule service is unavailable.");
     }
     const before = this.semaSchedule.getState(projectId);
-    // Jump only updates the sheet cache cursor — does not switch on-air source.
-    const state = this.semaSchedule.jump(projectId, rowIdOrIndex);
+    const state = await this.semaSchedule.jump(projectId, rowIdOrIndex, options);
     this.recordActivity({
       type: "manual.override",
       message: "SEMA schedule jumped to a selected row.",
       metadata: {
         projectId,
         rowIdOrIndex,
+        worksheetGid: options?.worksheetGid ?? state.sheet.worksheetGid ?? null,
         sourceMode: before.sourceMode,
+        liveWorksheetChanged:
+          (before.sheet.worksheetGid ?? null) !== (state.sheet.worksheetGid ?? null),
         sheetOnly: true,
       },
     });
@@ -717,9 +746,28 @@ export class LocalDataService {
         projectId,
         spreadsheetId: state.sheet.spreadsheetId || null,
         worksheetGid: state.sheet.worksheetGid ?? null,
+        worksheetTitle: state.sheet.worksheetTitle ?? null,
       },
     });
     return state;
+  }
+
+  async setSemaViewingWorksheet(
+    projectId: string,
+    input: { worksheetGid: string; worksheetTitle?: string | null },
+  ) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    // Viewing-only: no activity noise / no live graphic publication.
+    return this.semaSchedule.setViewingWorksheet(projectId, input);
+  }
+
+  async listSemaWorksheets(projectId: string, spreadsheetUrlOrId?: string) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    return this.semaSchedule.listWorksheets(projectId, spreadsheetUrlOrId);
   }
 
   setSemaSourceMode(projectId: string, mode: "google-sheets" | "manual") {
@@ -764,6 +812,64 @@ export class LocalDataService {
         takeOnAir: options.takeOnAir === true,
         sourceMode: state.sourceMode,
       },
+    });
+    return state;
+  }
+
+  setSemaHighlight(
+    projectId: string,
+    input: {
+      source: "scheduled" | "custom";
+      label?: string;
+      title: string;
+      description?: string;
+      sourceRowId?: string | null;
+    },
+  ) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const state = this.semaSchedule.setHighlight(projectId, input);
+    this.recordActivity({
+      type: "manual.override",
+      message: "SEMA ticker Highlight activated.",
+      metadata: {
+        projectId,
+        highlightSource: input.source,
+        highlightLabel: state.highlight.label,
+        sourceRowId: state.highlight.sourceRowId,
+      },
+    });
+    return state;
+  }
+
+  removeSemaHighlight(projectId: string) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const state = this.semaSchedule.removeHighlight(projectId);
+    this.recordActivity({
+      type: "manual.override",
+      message: "SEMA ticker Highlight removed from air.",
+      metadata: {
+        projectId,
+        highlightSource: state.highlight.source,
+        highlightLabel: state.highlight.label,
+        preserved: true,
+      },
+    });
+    return state;
+  }
+
+  clearSemaHighlight(projectId: string) {
+    if (!this.semaSchedule) {
+      throw new Error("SEMA schedule service is unavailable.");
+    }
+    const state = this.semaSchedule.clearHighlight(projectId);
+    this.recordActivity({
+      type: "manual.override",
+      message: "SEMA ticker Highlight cleared.",
+      metadata: { projectId, preserved: false },
     });
     return state;
   }
@@ -1871,6 +1977,7 @@ export class LocalDataService {
 
   setAccessAuthorization(service: AccessAuthorizationService) {
     this.accessAuthorization = service;
+    service.setCloudDirectoryProvider(() => this.readCloudDirectoryForAuthorization());
   }
 
   setProjectDisplayCodeRepository(repository: ProjectDisplayCodeRepository) {
@@ -2203,6 +2310,11 @@ export class LocalDataService {
               teamId?: string;
             }>,
             cloudProjects: directory.projects as Array<{ id?: string; slug?: string }>,
+            cloudTeams: directory.teams as Array<{
+              id?: string;
+              name?: string;
+              slug?: string;
+            }>,
             teamMemberships: directory.teamMemberships as Array<{
               teamId?: string;
               userId?: string;
@@ -2222,6 +2334,9 @@ export class LocalDataService {
             description?: string | null;
           }>,
         );
+        // Package-directory cloud IDs may have just replaced builtin: placeholders.
+        // Re-run activity sync so SEMA alias fingerprint backfill can recover history.
+        void this.activitySync?.syncNow("package-directory-cloud-ids").catch(() => undefined);
       }
 
       return {
@@ -3489,18 +3604,27 @@ export class LocalDataService {
             })
           : [];
         const install = this.projectPackages?.getInstall(project.id) ?? null;
+        const isPackageInstalled = Boolean(install && install.installState === "installed");
         return {
           ...this.attachProjectCapabilities(portalProject),
           teams,
-          packageState: install
-            ? install.availableVersion != null &&
-              install.availableVersion > install.installedVersion
-              ? "update_available"
-              : "downloaded"
-            : "not_downloaded",
+          packageState: !install || install.installState === "not_downloaded"
+            ? "not_downloaded"
+            : install.installState === "downloading"
+              ? "downloading"
+              : install.installState === "updating"
+                ? "updating"
+                : install.installState === "error"
+                  ? "error"
+                  : install.availableVersion != null &&
+                      install.availableVersion > install.installedVersion
+                    ? "update_available"
+                    : isPackageInstalled
+                      ? "downloaded"
+                      : "not_downloaded",
           installedVersion: install?.installedVersion ?? null,
           availableVersion: install?.availableVersion ?? null,
-          isPackageInstalled: Boolean(install && install.installState === "installed"),
+          isPackageInstalled,
         };
       });
     }
@@ -3512,18 +3636,27 @@ export class LocalDataService {
     }
     return records.map((project) => {
       const install = this.projectPackages?.getInstall(project.id) ?? null;
+      const isPackageInstalled = Boolean(install && install.installState === "installed");
       return {
         ...this.attachProjectCapabilities(toPortalProject(project)),
         teams: [] as Array<{ id: string; name: string }>,
-        packageState: install
-          ? install.availableVersion != null &&
-            install.availableVersion > install.installedVersion
-            ? "update_available"
-            : "downloaded"
-          : "not_downloaded",
+        packageState: !install || install.installState === "not_downloaded"
+          ? "not_downloaded"
+          : install.installState === "downloading"
+            ? "downloading"
+            : install.installState === "updating"
+              ? "updating"
+              : install.installState === "error"
+                ? "error"
+                : install.availableVersion != null &&
+                    install.availableVersion > install.installedVersion
+                  ? "update_available"
+                  : isPackageInstalled
+                    ? "downloaded"
+                    : "not_downloaded",
         installedVersion: install?.installedVersion ?? null,
         availableVersion: install?.availableVersion ?? null,
-        isPackageInstalled: Boolean(install && install.installState === "installed"),
+        isPackageInstalled,
       };
     });
   }
@@ -6600,18 +6733,100 @@ export class LocalDataService {
     return this.auth.canDeleteProject();
   }
 
+  /**
+   * Evaluate project open authorization. Returns null only for hard denial /
+   * missing project (API maps to 403). Use resolveProjectAccessContextBySlug
+   * for a bounded cloud-directory refresh before denying team-assigned access.
+   */
   getProjectAccessContextBySlug(slug: string) {
+    const evaluated = this.evaluateProjectAccessBySlug(slug);
+    if (evaluated.status !== "authorized") {
+      return null;
+    }
+    return evaluated.access;
+  }
+
+  evaluateProjectAccessBySlug(slug: string): {
+    status: "authorized" | "denied" | "pending" | "missing";
+    access: {
+      project: ReturnType<typeof toPortalProject>;
+      capabilities: import("./access-types").ProjectAccessCapabilities;
+      projectRole: ProjectRole;
+      isPlatformAdmin: boolean;
+      canManageSettings: boolean;
+      canManageMembers: boolean;
+    } | null;
+    diagnostics: ProjectAccessDiagnostics;
+  } {
+    const diagnostics = this.buildProjectAccessDiagnostics(slug);
+    this.logProjectAccessDiagnostics(diagnostics);
+
+    if (!diagnostics.localProjectId) {
+      return { status: "missing", access: null, diagnostics };
+    }
+    if (!diagnostics.authUserId || !this.accessAuthorization) {
+      return { status: "denied", access: null, diagnostics };
+    }
+    if (diagnostics.decision === "authorized" && diagnostics.capabilities?.canViewProject) {
+      const access = this.buildAuthorizedProjectAccess(slug);
+      return {
+        status: access ? "authorized" : "denied",
+        access,
+        diagnostics: {
+          ...diagnostics,
+          decision: access ? "authorized" : "denied",
+          denialReason: access ? null : "authorized_build_failed",
+        },
+      };
+    }
+
+    // Incomplete cloud directory: do not treat as permanent denial yet.
+    if (
+      diagnostics.decision === "denied" &&
+      diagnostics.mayNeedCloudDirectory &&
+      !diagnostics.cloudDirectoryReady
+    ) {
+      return {
+        status: "pending",
+        access: null,
+        diagnostics: {
+          ...diagnostics,
+          decision: "pending",
+          denialReason: "cloud_directory_not_ready",
+          routeBranch: "pending_cloud_directory",
+        },
+      };
+    }
+
+    return { status: "denied", access: null, diagnostics };
+  }
+
+  async resolveProjectAccessContextBySlug(slug: string) {
+    let evaluated = this.evaluateProjectAccessBySlug(slug);
+    if (
+      evaluated.status === "pending" ||
+      (evaluated.status === "denied" && evaluated.diagnostics.mayNeedCloudDirectory)
+    ) {
+      try {
+        await this.getCloudAccessDirectory({ forceRefresh: true });
+      } catch {
+        // Keep prior evaluation; pending/denied below.
+      }
+      evaluated = this.evaluateProjectAccessBySlug(slug);
+    }
+    return evaluated;
+  }
+
+  private buildAuthorizedProjectAccess(slug: string) {
     const project = this.projects.getBySlug(slug);
     const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
     if (!project || !userId || !this.accessAuthorization) {
       return null;
     }
-
     const capabilities = this.accessAuthorization.getProjectCapabilities(userId, project.id);
     if (!capabilities.canViewProject) {
       return null;
     }
-
     const context = this.accessAuthorization.getAuthorizationContext(userId);
     let projectRole: ProjectRole = "viewer";
     if (context?.isPlatformOwner) {
@@ -6621,7 +6836,6 @@ export class LocalDataService {
     } else if (capabilities.canOperateEngines) {
       projectRole = "operator";
     }
-
     return {
       project: toPortalProject(project),
       capabilities,
@@ -6630,6 +6844,131 @@ export class LocalDataService {
       canManageSettings: capabilities.canEditProjectSettings,
       canManageMembers: capabilities.canManageProjectUsers,
     };
+  }
+
+  private buildProjectAccessDiagnostics(slug: string): ProjectAccessDiagnostics {
+    const project = this.projects.getBySlug(slug);
+    const userId = this.auth.getAuthenticatedUser()?.userId ?? null;
+    const cloudDirectory = this.readCloudDirectoryForAuthorization();
+    const cloudProject =
+      cloudDirectory?.projects?.find((entry) => entry.slug === slug) ?? null;
+    const install = project ? this.projectPackages?.getInstall(project.id) ?? null : null;
+    const context =
+      userId && this.accessAuthorization
+        ? this.accessAuthorization.getAuthorizationContext(userId)
+        : null;
+    const capabilities =
+      userId && project && this.accessAuthorization
+        ? this.accessAuthorization.getProjectCapabilities(userId, project.id)
+        : null;
+    const localAssignmentTeamIds =
+      project && this.accessAuthorization
+        ? this.accessAuthorization.listLocalProjectTeamIds(project.id)
+        : [];
+    const cloudAssignmentTeamIds =
+      cloudDirectory && cloudProject
+        ? (cloudDirectory.projectTeams ?? [])
+            .filter((entry) => entry.projectId === cloudProject.id)
+            .map((entry) => entry.teamId)
+        : [];
+    const teamMemberships = (context?.teamMemberships ?? []).map((entry) => ({
+      teamId: entry.teamId,
+      role: entry.role,
+      isActive: entry.isActive,
+    }));
+    const packageInstalled = Boolean(install && install.installState === "installed");
+    const cloudDirectoryReady = Boolean(cloudDirectory);
+    const mayNeedCloudDirectory =
+      Boolean(userId) &&
+      Boolean(project) &&
+      !context?.isPlatformOwner &&
+      localAssignmentTeamIds.length === 0;
+
+    let decision: ProjectAccessDiagnostics["decision"] = "denied";
+    let denialReason: string | null = "unknown";
+    let routeBranch = "access_denied";
+
+    if (!project) {
+      decision = "missing";
+      denialReason = "local_project_missing";
+      routeBranch = "missing_local_project";
+    } else if (!userId || !this.accessAuthorization) {
+      decision = "denied";
+      denialReason = "unauthenticated_or_authz_unavailable";
+      routeBranch = "auth_missing";
+    } else if (capabilities?.canViewProject) {
+      decision = "authorized";
+      denialReason = null;
+      routeBranch = "authorized";
+    } else if (!cloudDirectoryReady && mayNeedCloudDirectory) {
+      decision = "pending";
+      denialReason = "cloud_directory_not_ready";
+      routeBranch = "pending_cloud_directory";
+    } else if (!packageInstalled) {
+      decision = "denied";
+      denialReason = "capabilities_deny_view";
+      routeBranch = "capabilities_deny";
+    } else {
+      decision = "denied";
+      denialReason =
+        localAssignmentTeamIds.length === 0 && cloudAssignmentTeamIds.length === 0
+          ? "no_team_assignment_local_or_cloud"
+          : localAssignmentTeamIds.length === 0 && cloudAssignmentTeamIds.length > 0
+            ? "cloud_assignment_present_but_capabilities_deny"
+            : "capabilities_deny_view";
+      routeBranch = "capabilities_deny";
+    }
+
+    return {
+      slug,
+      localProjectId: project?.id ?? null,
+      hostedProjectId: cloudProject?.id ?? null,
+      packageInstalled,
+      cloudDirectoryReady,
+      localAssignmentTeamIds,
+      cloudAssignmentTeamIds,
+      teamMemberships,
+      effectivePlatformRole: context?.platformRole ?? null,
+      capabilities: capabilities
+        ? {
+            canViewProject: capabilities.canViewProject,
+            canEditProjectSettings: capabilities.canEditProjectSettings,
+            canOperateEngines: capabilities.canOperateEngines,
+          }
+        : null,
+      decision,
+      denialReason,
+      mayNeedCloudDirectory,
+      routeBranch,
+      authUserId: userId ? abbreviateUserId(userId) : null,
+    };
+  }
+
+  private logProjectAccessDiagnostics(diagnostics: ProjectAccessDiagnostics) {
+    // Development / unpackaged desktop only — never in packaged production builds.
+    if (process.env.NODE_ENV === "production" || isPackagedDesktopRuntime()) {
+      return;
+    }
+    console.info("[neud-project-access]", {
+      slug: diagnostics.slug,
+      localProjectId: diagnostics.localProjectId
+        ? abbreviateUserId(diagnostics.localProjectId)
+        : null,
+      hostedProjectId: diagnostics.hostedProjectId
+        ? abbreviateUserId(diagnostics.hostedProjectId)
+        : null,
+      packageInstalled: diagnostics.packageInstalled,
+      cloudDirectoryReady: diagnostics.cloudDirectoryReady,
+      localAssignmentCount: diagnostics.localAssignmentTeamIds.length,
+      cloudAssignmentCount: diagnostics.cloudAssignmentTeamIds.length,
+      teamMembershipCount: diagnostics.teamMemberships.length,
+      effectivePlatformRole: diagnostics.effectivePlatformRole,
+      canViewProject: diagnostics.capabilities?.canViewProject ?? false,
+      decision: diagnostics.decision,
+      denialReason: diagnostics.denialReason,
+      routeBranch: diagnostics.routeBranch,
+      authUserId: diagnostics.authUserId,
+    });
   }
 
   convertGenericAdapter(

@@ -14,8 +14,11 @@ import {
 import {
   clampSheetsPollInterval,
   extractSpreadsheetId,
+  extractWorksheetGidFromUrl,
   fetchSemaSheetSchedule,
+  listPublicSpreadsheetWorksheets,
   type GoogleSheetsAdapterConfig,
+  type SpreadsheetWorksheet,
 } from "./google-sheets-adapter";
 
 /**
@@ -55,6 +58,14 @@ type SemaStateRow = {
   last_success_at: string | null;
   last_attempt_at: string | null;
   last_error: string | null;
+  viewing_worksheet_gid: string | null;
+  viewing_worksheet_title: string | null;
+  viewing_rows_json: string | null;
+  viewing_content_hash: string | null;
+  viewing_current_index: number | null;
+  viewing_current_row_id: string | null;
+  viewing_last_success_at: string | null;
+  viewing_last_error: string | null;
   manual_date: string | null;
   manual_time: string | null;
   manual_title: string | null;
@@ -63,6 +74,13 @@ type SemaStateRow = {
   manual_next_description: string | null;
   manual_later_title: string | null;
   manual_later_description: string | null;
+  highlight_active: number | null;
+  highlight_source: string | null;
+  highlight_label: string | null;
+  highlight_title: string | null;
+  highlight_description: string | null;
+  highlight_source_row_id: string | null;
+  highlight_source_worksheet_gid: string | null;
   selection_seq: number;
   state_revision: number;
   updated_at: string;
@@ -79,22 +97,49 @@ export type SemaManualFields = {
   laterDescription: string;
 };
 
+export type SemaHighlightSource = "scheduled" | "custom";
+
+export type SemaHighlightState = {
+  active: boolean;
+  source: SemaHighlightSource | null;
+  label: string;
+  title: string;
+  description: string;
+  /** Stable schedule row id when source is "scheduled"; null for custom text. */
+  sourceRowId: string | null;
+  /** Live worksheet gid the scheduled Highlight row belongs to (null for custom). */
+  sourceWorksheetGid: string | null;
+};
+
+export const DEFAULT_HIGHLIGHT_LABEL = "HIGHLIGHT";
+
 export type SemaPersistedState = {
   projectId: string;
   sourceMode: "google-sheets" | "manual";
-  /** Effective on-air schedule: manual slots in manual mode, otherwise the sheet cache. */
+  /** Effective on-air schedule: manual slots in manual mode, otherwise the live sheet cache. */
   schedule: SemaScheduleState;
   /**
-   * Google Sheet cache + operator position. Always available for Data Source navigation,
-   * even while Manual Controller values are on air.
+   * Viewing worksheet cache for the Data Source table (may differ from live).
+   * Changing this does not publish to graphics.
    */
   sheetSchedule: SemaScheduleState;
+  /** Live worksheet cache that drives NOW/NEXT/LATER when Google Sheets is on air. */
+  liveSchedule: SemaScheduleState;
   sheet: GoogleSheetsAdapterConfig;
+  /** Worksheet currently shown in the Data Source table (viewing-only). */
+  viewing: {
+    worksheetGid: string | null;
+    worksheetTitle: string | null;
+    lastSuccessAt: string | null;
+    lastError: string | null;
+  };
   lastSuccessAt: string | null;
   lastAttemptAt: string | null;
   lastError: string | null;
   manual: SemaManualFields;
-  /** Rows held in the last-known sheet cache (independent of the active source mode). */
+  /** Operator Highlight overlay; replaces on-air LATER without mutating schedule rows. */
+  highlight: SemaHighlightState;
+  /** Rows held in the last-known live sheet cache (independent of the active source mode). */
   cacheRowCount: number;
   /** True when the sheet is the active source but the latest fetch failed (cache is on air). */
   stale: boolean;
@@ -117,8 +162,47 @@ export type SemaChangeReason =
   | "now"
   | "source"
   | "manual"
+  | "highlight"
   | "sheet"
   | "config";
+
+function emptyHighlight(): SemaHighlightState {
+  return {
+    active: false,
+    source: null,
+    label: DEFAULT_HIGHLIGHT_LABEL,
+    title: "",
+    description: "",
+    sourceRowId: null,
+    sourceWorksheetGid: null,
+  };
+}
+
+function readHighlight(row: SemaStateRow): SemaHighlightState {
+  const source =
+    row.highlight_source === "scheduled" || row.highlight_source === "custom"
+      ? row.highlight_source
+      : null;
+  const label =
+    sanitizeManualField(row.highlight_label ?? DEFAULT_HIGHLIGHT_LABEL) ||
+    DEFAULT_HIGHLIGHT_LABEL;
+  return {
+    active: Number(row.highlight_active ?? 0) === 1,
+    source,
+    label: label.toUpperCase(),
+    title: row.highlight_title ?? "",
+    description: row.highlight_description ?? "",
+    sourceRowId: row.highlight_source_row_id?.trim() || null,
+    sourceWorksheetGid: row.highlight_source_worksheet_gid?.trim() || null,
+  };
+}
+
+function sameWorksheetGid(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  return (left ?? null) === (right ?? null);
+}
 
 export type SemaChangeEvent = {
   projectId: string;
@@ -225,11 +309,19 @@ export class SemaScheduleService {
         sourceMode: "google-sheets",
         schedule: emptySchedule,
         sheetSchedule: emptySchedule,
+        liveSchedule: emptySchedule,
         sheet: { ...DEFAULT_SHEET_CONFIG },
+        viewing: {
+          worksheetGid: null,
+          worksheetTitle: null,
+          lastSuccessAt: null,
+          lastError: null,
+        },
         lastSuccessAt: null,
         lastAttemptAt: null,
         lastError: null,
         manual,
+        highlight: emptyHighlight(),
         cacheRowCount: 0,
         stale: false,
         selectionToken: "sel-0",
@@ -239,7 +331,19 @@ export class SemaScheduleService {
     }
 
     const sourceMode = row.source_mode === "manual" ? "manual" : "google-sheets";
-    const cachedRows = parseRows(row.rows_json);
+    const liveRows = parseRows(row.rows_json);
+    const liveGid = row.sheet_worksheet_gid ?? null;
+    const viewingGid = row.viewing_worksheet_gid ?? liveGid;
+    const viewingSharesLive = sameWorksheetGid(viewingGid, liveGid);
+    const viewingRows = viewingSharesLive
+      ? liveRows
+      : parseRows(row.viewing_rows_json ?? "[]");
+    const viewingIndex = viewingSharesLive
+      ? row.current_index
+      : row.viewing_current_index ?? 0;
+    const viewingRowId = viewingSharesLive
+      ? row.current_row_id
+      : row.viewing_current_row_id;
     const manual: SemaManualFields = {
       date: row.manual_date ?? "",
       time: row.manual_time ?? "",
@@ -251,10 +355,18 @@ export class SemaScheduleService {
       laterDescription: row.manual_later_description ?? "",
     };
 
-    const sheetSchedule = buildSemaScheduleState({
-      rows: cachedRows,
+    const liveSchedule = buildSemaScheduleState({
+      rows: liveRows,
       currentIndex: row.current_index,
       currentRowId: row.current_row_id,
+      source: "google-sheets",
+      updatedAt: row.updated_at,
+    });
+
+    const sheetSchedule = buildSemaScheduleState({
+      rows: viewingRows,
+      currentIndex: viewingIndex,
+      currentRowId: viewingRowId,
       source: "google-sheets",
       updatedAt: row.updated_at,
     });
@@ -267,27 +379,39 @@ export class SemaScheduleService {
             source: "manual",
             updatedAt: row.updated_at,
           })
-        : sheetSchedule;
+        : liveSchedule;
 
     return {
       projectId,
       sourceMode,
       schedule,
       sheetSchedule,
+      liveSchedule,
       sheet: {
         spreadsheetId: row.sheet_spreadsheet_id ?? "",
-        worksheetGid: row.sheet_worksheet_gid,
+        worksheetGid: liveGid,
         worksheetTitle: row.sheet_worksheet_title,
         accessMode: row.sheet_access_mode === "api" ? "api" : "public-csv",
         pollIntervalMs: clampSheetsPollInterval(row.poll_interval_ms),
+      },
+      viewing: {
+        worksheetGid: viewingGid,
+        worksheetTitle: viewingSharesLive
+          ? row.sheet_worksheet_title
+          : row.viewing_worksheet_title,
+        lastSuccessAt: viewingSharesLive
+          ? row.last_success_at
+          : row.viewing_last_success_at,
+        lastError: viewingSharesLive ? row.last_error : row.viewing_last_error,
       },
       lastSuccessAt: row.last_success_at,
       lastAttemptAt: row.last_attempt_at,
       lastError: row.last_error,
       manual,
-      cacheRowCount: cachedRows.length,
+      highlight: readHighlight(row),
+      cacheRowCount: liveRows.length,
       stale:
-        sourceMode === "google-sheets" && Boolean(row.last_error) && cachedRows.length > 0,
+        sourceMode === "google-sheets" && Boolean(row.last_error) && liveRows.length > 0,
       selectionToken: `sel-${row.selection_seq}`,
       revision: row.state_revision,
       updatedAt: row.updated_at,
@@ -297,10 +421,22 @@ export class SemaScheduleService {
   /** Minimal payload the Schedule Ticker needs (no full sheet, no config, no credentials). */
   toDisplayPayload(projectId: string): SemaDisplayPayload {
     const state = this.getState(projectId);
+    const highlight = state.highlight;
     const schedule = buildSemaDisplaySchedule({
       state: state.schedule,
       selectionToken: state.selectionToken,
       stale: state.stale,
+      // Audience-facing heading stays LATER; Highlight only replaces title/description.
+      highlightActive: highlight.active,
+      laterLabel: "LATER",
+      highlightRow: highlight.active
+        ? {
+            date: "",
+            time: "",
+            title: highlight.title,
+            description: highlight.description,
+          }
+        : null,
     });
     const contentHash = crypto
       .createHash("sha256")
@@ -404,6 +540,41 @@ export class SemaScheduleService {
     }
   }
 
+  async listWorksheets(projectId: string, spreadsheetUrlOrId?: string): Promise<{
+    worksheets: SpreadsheetWorksheet[];
+    selectedGid: string | null;
+    selectedTitle: string | null;
+    error: string | null;
+  }> {
+    const current = this.getState(projectId);
+    const source =
+      spreadsheetUrlOrId?.trim() ||
+      current.sheet.spreadsheetId ||
+      "";
+    const spreadsheetId = extractSpreadsheetId(source);
+    if (!spreadsheetId) {
+      return {
+        worksheets: [],
+        selectedGid: current.sheet.worksheetGid ?? null,
+        selectedTitle: current.sheet.worksheetTitle ?? null,
+        error: "Configure a Google Sheets URL before listing tabs.",
+      };
+    }
+    const listed = await listPublicSpreadsheetWorksheets(spreadsheetId, this.fetchImpl);
+    return {
+      worksheets: listed.worksheets,
+      selectedGid: current.viewing.worksheetGid ?? current.sheet.worksheetGid ?? null,
+      selectedTitle: current.viewing.worksheetTitle ?? current.sheet.worksheetTitle ?? null,
+      error: listed.error,
+    };
+  }
+
+  /**
+   * Configure spreadsheet URL / poll interval / initial live worksheet.
+   * Does not use the Data Source tab dropdown — that calls setViewingWorksheet.
+   * When a worksheet gid is provided (URL #gid= or explicit), both live and viewing
+   * are aligned so first-time setup still works.
+   */
   configureSheet(
     projectId: string,
     input: {
@@ -417,9 +588,10 @@ export class SemaScheduleService {
     if (!spreadsheetId) {
       throw new Error("Enter a Google Sheets URL or spreadsheet ID.");
     }
+    const gidFromUrl = extractWorksheetGidFromUrl(input.spreadsheetUrlOrId ?? "");
     const worksheetGid =
       input.worksheetGid === undefined
-        ? undefined
+        ? gidFromUrl ?? undefined
         : input.worksheetGid === null || input.worksheetGid.trim() === ""
           ? null
           : input.worksheetGid.trim();
@@ -429,35 +601,134 @@ export class SemaScheduleService {
 
     const current = this.getState(projectId);
     const nextGid = worksheetGid === undefined ? (current.sheet.worksheetGid ?? null) : worksheetGid;
-    const sheetChanged =
-      current.sheet.spreadsheetId !== spreadsheetId ||
-      (current.sheet.worksheetGid ?? null) !== nextGid;
+    const nextTitle =
+      input.worksheetTitle === undefined
+        ? current.sheet.worksheetTitle ?? null
+        : input.worksheetTitle === null || input.worksheetTitle.trim() === ""
+          ? null
+          : input.worksheetTitle.trim();
+    const spreadsheetChanged = current.sheet.spreadsheetId !== spreadsheetId;
+    const worksheetChanged = (current.sheet.worksheetGid ?? null) !== nextGid;
 
     const fields: Record<string, string | number | null> = {
       sheet_spreadsheet_id: spreadsheetId,
       sheet_worksheet_gid: nextGid,
-      sheet_worksheet_title: input.worksheetTitle ?? current.sheet.worksheetTitle ?? null,
+      sheet_worksheet_title: nextTitle,
+      viewing_worksheet_gid: nextGid,
+      viewing_worksheet_title: nextTitle,
       sheet_access_mode: "public-csv",
       poll_interval_ms: clampSheetsPollInterval(
         input.pollIntervalMs ?? current.sheet.pollIntervalMs,
       ),
     };
-    if (sheetChanged) {
-      // A different sheet invalidates the old cache and position.
+    if (spreadsheetChanged) {
+      // A different spreadsheet invalidates the old cache and position.
       fields.rows_json = "[]";
       fields.current_index = 0;
       fields.current_row_id = null;
       fields.content_hash = null;
       fields.last_success_at = null;
       fields.last_error = null;
+      fields.viewing_rows_json = "[]";
+      fields.viewing_current_index = 0;
+      fields.viewing_current_row_id = null;
+      fields.viewing_content_hash = null;
+      fields.viewing_last_success_at = null;
+      fields.viewing_last_error = null;
+    } else if (worksheetChanged) {
+      // Keep the previous live cache until the new live tab refreshes successfully.
+      fields.content_hash = null;
+      fields.last_error = null;
+      fields.viewing_content_hash = null;
+      fields.viewing_last_error = null;
     }
     this.patch(projectId, fields);
 
-    if (sheetChanged && current.sourceMode === "google-sheets") {
+    if (spreadsheetChanged && current.sourceMode === "google-sheets") {
       this.publish(projectId, "config", { newSelection: true });
     }
     if (this.pollingProjects.has(projectId)) {
       this.startPolling(projectId);
+    }
+    return this.getState(projectId);
+  }
+
+  /**
+   * Change the Data Source viewing worksheet only. Never publishes to graphics /
+   * never mutates live NOW/NEXT/LATER / never clears Highlight.
+   */
+  async setViewingWorksheet(
+    projectId: string,
+    input: { worksheetGid: string; worksheetTitle?: string | null },
+  ): Promise<SemaPersistedState> {
+    const gid = input.worksheetGid.trim();
+    if (!/^\d{1,20}$/.test(gid)) {
+      throw new Error("Worksheet gid must be a number (see the #gid= value in the sheet URL).");
+    }
+    const current = this.getState(projectId);
+    if (!current.sheet.spreadsheetId) {
+      throw new Error("Configure a Google Sheets URL before selecting a tab.");
+    }
+    const title =
+      input.worksheetTitle === undefined
+        ? null
+        : input.worksheetTitle === null || input.worksheetTitle.trim() === ""
+          ? null
+          : input.worksheetTitle.trim();
+
+    if (sameWorksheetGid(gid, current.sheet.worksheetGid)) {
+      // Align viewing with live without fetching or publishing.
+      this.patch(projectId, {
+        viewing_worksheet_gid: current.sheet.worksheetGid ?? null,
+        viewing_worksheet_title: title ?? current.sheet.worksheetTitle ?? null,
+        viewing_rows_json: JSON.stringify(current.liveSchedule.rows),
+        viewing_current_index: current.liveSchedule.currentIndex,
+        viewing_current_row_id: current.liveSchedule.currentRowId,
+        viewing_content_hash: null,
+        viewing_last_success_at: current.lastSuccessAt,
+        viewing_last_error: null,
+      });
+      return this.getState(projectId);
+    }
+
+    this.patch(projectId, {
+      viewing_worksheet_gid: gid,
+      viewing_worksheet_title: title,
+      viewing_last_error: null,
+    });
+
+    try {
+      const result = await fetchSemaSheetSchedule(
+        {
+          spreadsheetId: current.sheet.spreadsheetId,
+          worksheetGid: gid,
+          worksheetTitle: title,
+          accessMode: "public-csv",
+          pollIntervalMs: current.sheet.pollIntervalMs,
+        },
+        null,
+        this.fetchImpl,
+      );
+      if (result.error) {
+        this.patch(projectId, {
+          viewing_last_error: result.error,
+          viewing_last_success_at: null,
+        });
+        return this.getState(projectId);
+      }
+      this.patch(projectId, {
+        viewing_rows_json: JSON.stringify(result.rows),
+        viewing_content_hash: result.contentHash,
+        viewing_current_index: 0,
+        viewing_current_row_id: result.rows[0]?.stableRowId ?? null,
+        viewing_last_success_at: result.fetchedAt,
+        viewing_last_error: null,
+        viewing_worksheet_title: title,
+      });
+    } catch (error) {
+      this.patch(projectId, {
+        viewing_last_error: describeFetchError(error),
+      });
     }
     return this.getState(projectId);
   }
@@ -469,6 +740,152 @@ export class SemaScheduleService {
     }
     this.patch(projectId, { source_mode: mode });
     this.publish(projectId, "source", { newSelection: true });
+    return this.getState(projectId);
+  }
+
+  /**
+   * Activate or update the Highlight overlay that replaces on-air LATER.
+   * Does not mutate sheet cache rows or Manual Controller Later fields.
+   */
+  setHighlight(
+    projectId: string,
+    input: {
+      source: SemaHighlightSource;
+      label?: string;
+      title: string;
+      description?: string;
+      sourceRowId?: string | null;
+    },
+  ): SemaPersistedState {
+    const title = sanitizeManualField(input.title);
+    if (!title) {
+      throw new Error("Highlight title is required.");
+    }
+    const description = sanitizeManualField(input.description ?? "");
+    const current = this.getState(projectId);
+    const label =
+      sanitizeManualField(
+        input.label ?? current.highlight.label ?? DEFAULT_HIGHLIGHT_LABEL,
+      ).toUpperCase() || DEFAULT_HIGHLIGHT_LABEL;
+    if (label.length > 40) {
+      throw new Error("Highlight label must be 40 characters or fewer.");
+    }
+    const sourceRowId =
+      input.source === "scheduled"
+        ? sanitizeManualField(input.sourceRowId ?? "").trim() || null
+        : null;
+    const sourceWorksheetGid =
+      input.source === "scheduled"
+        ? current.viewing.worksheetGid ?? current.sheet.worksheetGid ?? null
+        : null;
+    if (input.source === "scheduled" && !sourceRowId) {
+      throw new Error("Select a scheduled event for the Highlight.");
+    }
+    if (input.source === "scheduled" && sourceRowId) {
+      // Only treat NOW/NEXT as conflicts when the viewed worksheet is the live one.
+      if (sameWorksheetGid(sourceWorksheetGid, current.sheet.worksheetGid)) {
+        const live = current.liveSchedule;
+        if (live.next?.stableRowId === sourceRowId) {
+          throw new Error(
+            "That event is already NEXT. Choose a later schedule event for Highlight.",
+          );
+        }
+        if (live.now?.stableRowId === sourceRowId) {
+          throw new Error(
+            "That event is already NOW. Choose a later schedule event for Highlight.",
+          );
+        }
+      }
+    }
+
+    this.patch(projectId, {
+      highlight_active: 1,
+      highlight_source: input.source,
+      highlight_label: label,
+      highlight_title: title,
+      highlight_description: description,
+      highlight_source_row_id: sourceRowId,
+      highlight_source_worksheet_gid: sourceWorksheetGid,
+    });
+    this.publish(projectId, "highlight", { newSelection: false });
+    return this.getState(projectId);
+  }
+
+  /**
+   * Deactivate Highlight on air but keep prepared fields so the operator can
+   * reactivate without re-entering label/title/description/source.
+   */
+  removeHighlight(projectId: string): SemaPersistedState {
+    const current = this.getState(projectId);
+    if (!current.highlight.active) {
+      return current;
+    }
+    this.patch(projectId, {
+      highlight_active: 0,
+    });
+    this.publish(projectId, "highlight", { newSelection: false });
+    return this.getState(projectId);
+  }
+
+  /**
+   * Quietly deactivate a scheduled Highlight when its source row becomes NEXT or NOW.
+   * Preserves prepared fields; does not emit operator activity (caller publishes once).
+   * @returns true when Highlight was deactivated.
+   */
+  private autoRemoveScheduledHighlightIfDue(projectId: string): boolean {
+    const current = this.getState(projectId);
+    const highlight = current.highlight;
+    if (!highlight.active || highlight.source !== "scheduled" || !highlight.sourceRowId) {
+      return false;
+    }
+    // Compare within the live worksheet only — never remove because another tab
+    // happens to reuse a stable row id.
+    if (
+      highlight.sourceWorksheetGid &&
+      !sameWorksheetGid(highlight.sourceWorksheetGid, current.sheet.worksheetGid)
+    ) {
+      return false;
+    }
+    const live = current.liveSchedule;
+    const due =
+      live.next?.stableRowId === highlight.sourceRowId ||
+      live.now?.stableRowId === highlight.sourceRowId;
+    if (!due) {
+      return false;
+    }
+    this.patch(projectId, {
+      highlight_active: 0,
+    });
+    return true;
+  }
+
+  /**
+   * Deactivate Highlight and wipe prepared fields (label reset, source cleared).
+   * Distinct from removeHighlight, which preserves the prepared overlay.
+   */
+  clearHighlight(projectId: string): SemaPersistedState {
+    const current = this.getState(projectId);
+    const alreadyClear =
+      !current.highlight.active &&
+      !current.highlight.title &&
+      !current.highlight.description &&
+      !current.highlight.sourceRowId &&
+      !current.highlight.sourceWorksheetGid &&
+      current.highlight.source == null &&
+      (current.highlight.label === DEFAULT_HIGHLIGHT_LABEL || !current.highlight.label);
+    if (alreadyClear) {
+      return current;
+    }
+    this.patch(projectId, {
+      highlight_active: 0,
+      highlight_source: null,
+      highlight_label: DEFAULT_HIGHLIGHT_LABEL,
+      highlight_title: "",
+      highlight_description: "",
+      highlight_source_row_id: null,
+      highlight_source_worksheet_gid: null,
+    });
+    this.publish(projectId, "highlight", { newSelection: false });
     return this.getState(projectId);
   }
 
@@ -532,34 +949,172 @@ export class SemaScheduleService {
    */
   advance(projectId: string, direction: "next" | "previous"): SemaPersistedState {
     const current = this.getState(projectId);
-    // Always move the Google Sheets cache cursor — never change sourceMode here.
-    const nextSchedule = advanceSemaSchedule(current.sheetSchedule, direction);
-    if (nextSchedule.currentIndex === current.sheetSchedule.currentIndex) {
+    const viewingIsLive = sameWorksheetGid(
+      current.viewing.worksheetGid,
+      current.sheet.worksheetGid,
+    );
+
+    if (!viewingIsLive) {
+      // Browse-only: move the viewing cursor without touching live graphics.
+      const nextViewing = advanceSemaSchedule(current.sheetSchedule, direction);
+      if (nextViewing.currentIndex === current.sheetSchedule.currentIndex) {
+        return current;
+      }
+      this.patch(projectId, {
+        viewing_current_index: nextViewing.currentIndex,
+        viewing_current_row_id: nextViewing.currentRowId,
+      });
+      return this.getState(projectId);
+    }
+
+    const nextSchedule = advanceSemaSchedule(current.liveSchedule, direction);
+    if (nextSchedule.currentIndex === current.liveSchedule.currentIndex) {
       return current;
     }
-    this.savePosition(projectId, nextSchedule);
-    // Publish to on-air displays only when Google Sheets is the selected source.
+    this.saveLivePosition(projectId, nextSchedule);
+    this.autoRemoveScheduledHighlightIfDue(projectId);
     this.publish(projectId, "navigation", {
       newSelection: current.sourceMode === "google-sheets",
     });
     return this.getState(projectId);
   }
 
-  jump(projectId: string, rowIdOrIndex: string | number): SemaPersistedState {
+  /**
+   * Jump to a table row. When the target worksheet differs from live, promote
+   * that worksheet to live atomically, then set NOW/NEXT/LATER from the jump.
+   * Failed validation leaves the previous live schedule untouched.
+   */
+  async jump(
+    projectId: string,
+    rowIdOrIndex: string | number,
+    options?: { worksheetGid?: string | null },
+  ): Promise<SemaPersistedState> {
     const current = this.getState(projectId);
+    const requestedGid =
+      typeof options?.worksheetGid === "string" && options.worksheetGid.trim()
+        ? options.worksheetGid.trim()
+        : current.viewing.worksheetGid ?? current.sheet.worksheetGid ?? null;
+
+    if (requestedGid && !/^\d{1,20}$/.test(requestedGid)) {
+      throw new Error("Worksheet gid must be a number (see the #gid= value in the sheet URL).");
+    }
+
+    const targetIsLive = sameWorksheetGid(requestedGid, current.sheet.worksheetGid);
+
+    // Resolve the schedule used for the jump target without mutating live yet.
+    let targetSchedule = current.sheetSchedule;
+    let targetTitle = current.viewing.worksheetTitle ?? current.sheet.worksheetTitle ?? null;
+
+    if (!targetIsLive) {
+      const viewingMatchesRequest = sameWorksheetGid(
+        requestedGid,
+        current.viewing.worksheetGid,
+      );
+      if (!viewingMatchesRequest || current.sheetSchedule.rows.length === 0) {
+        if (!current.sheet.spreadsheetId || !requestedGid) {
+          throw new Error("Configure a Google Sheet and select a worksheet before Jump.");
+        }
+        let fetched;
+        try {
+          fetched = await fetchSemaSheetSchedule(
+            {
+              spreadsheetId: current.sheet.spreadsheetId,
+              worksheetGid: requestedGid,
+              worksheetTitle: targetTitle,
+              accessMode: "public-csv",
+              pollIntervalMs: current.sheet.pollIntervalMs,
+            },
+            null,
+            this.fetchImpl,
+          );
+        } catch (error) {
+          throw new Error(
+            `Unable to load the target worksheet for Jump. Live schedule unchanged. (${
+              error instanceof Error ? error.message : String(error)
+            })`,
+          );
+        }
+        if (fetched.error) {
+          throw new Error(
+            `Unable to load the target worksheet for Jump. Live schedule unchanged. (${fetched.error})`,
+          );
+        }
+        if (fetched.rows.length === 0) {
+          throw new Error(
+            "The target worksheet has no schedule rows. Live schedule unchanged.",
+          );
+        }
+        targetSchedule = buildSemaScheduleState({
+          rows: fetched.rows,
+          currentIndex: 0,
+          source: "google-sheets",
+          updatedAt: fetched.fetchedAt,
+        });
+        // Persist viewing cache for the fetched tab (still not live).
+        this.patch(projectId, {
+          viewing_worksheet_gid: requestedGid,
+          viewing_worksheet_title: targetTitle,
+          viewing_rows_json: JSON.stringify(fetched.rows),
+          viewing_content_hash: fetched.contentHash,
+          viewing_current_index: 0,
+          viewing_current_row_id: fetched.rows[0]?.stableRowId ?? null,
+          viewing_last_success_at: fetched.fetchedAt,
+          viewing_last_error: null,
+        });
+      } else {
+        targetSchedule = current.sheetSchedule;
+        targetTitle = current.viewing.worksheetTitle ?? targetTitle;
+      }
+    } else {
+      targetSchedule = current.liveSchedule;
+    }
+
     if (typeof rowIdOrIndex === "string") {
-      if (!current.sheetSchedule.rows.some((row) => row.stableRowId === rowIdOrIndex)) {
-        throw new Error("That schedule row is no longer available.");
+      if (!targetSchedule.rows.some((row) => row.stableRowId === rowIdOrIndex)) {
+        throw new Error(
+          "That schedule row is no longer available on the selected worksheet. Live schedule unchanged.",
+        );
       }
     } else if (
       !Number.isInteger(rowIdOrIndex) ||
       rowIdOrIndex < 0 ||
-      rowIdOrIndex >= current.sheetSchedule.rows.length
+      rowIdOrIndex >= targetSchedule.rows.length
     ) {
-      throw new Error("Row index is out of range.");
+      throw new Error("Row index is out of range. Live schedule unchanged.");
     }
-    const nextSchedule = jumpSemaSchedule(current.sheetSchedule, rowIdOrIndex);
-    this.savePosition(projectId, nextSchedule);
+
+    const jumped = jumpSemaSchedule(targetSchedule, rowIdOrIndex);
+
+    if (!targetIsLive) {
+      // Atomic promote: one patch writes live worksheet + position together.
+      this.patch(projectId, {
+        sheet_worksheet_gid: requestedGid,
+        sheet_worksheet_title: targetTitle,
+        rows_json: JSON.stringify(targetSchedule.rows),
+        content_hash: null,
+        current_index: jumped.currentIndex,
+        current_row_id: jumped.currentRowId,
+        last_error: null,
+        last_success_at: this.now().toISOString(),
+        viewing_worksheet_gid: requestedGid,
+        viewing_worksheet_title: targetTitle,
+        viewing_rows_json: JSON.stringify(targetSchedule.rows),
+        viewing_current_index: jumped.currentIndex,
+        viewing_current_row_id: jumped.currentRowId,
+        viewing_last_error: null,
+      });
+      this.autoRemoveScheduledHighlightIfDue(projectId);
+      this.publish(projectId, "navigation", {
+        newSelection: current.sourceMode === "google-sheets",
+      });
+      if (this.pollingProjects.has(projectId)) {
+        this.startPolling(projectId);
+      }
+      return this.getState(projectId);
+    }
+
+    this.saveLivePosition(projectId, jumped);
+    this.autoRemoveScheduledHighlightIfDue(projectId);
     this.publish(projectId, "navigation", {
       newSelection: current.sourceMode === "google-sheets",
     });
@@ -572,10 +1127,13 @@ export class SemaScheduleService {
     return this.getState(projectId);
   }
 
-  private savePosition(projectId: string, schedule: SemaScheduleState): void {
+  private saveLivePosition(projectId: string, schedule: SemaScheduleState): void {
     this.patch(projectId, {
       current_index: schedule.currentIndex,
       current_row_id: schedule.currentRowId,
+      // Keep viewing cursor aligned when viewing the live worksheet.
+      viewing_current_index: schedule.currentIndex,
+      viewing_current_row_id: schedule.currentRowId,
     });
   }
 
@@ -635,7 +1193,9 @@ export class SemaScheduleService {
       return this.recordFailure(projectId, describeFetchError(error), true);
     }
 
-    if (result.error && result.rows.length === 0) {
+    if (result.error) {
+      // Incompatible columns / parse failures must not replace a valid cache
+      // (e.g. after switching to a worksheet that is not a schedule).
       return this.recordFailure(projectId, result.error, false);
     }
 
@@ -658,13 +1218,15 @@ export class SemaScheduleService {
         { touchUpdatedAt: false },
       );
       const wasStale = current.stale;
-      if (wasStale) {
+      // Position may already make a scheduled Highlight due (e.g. after jump before poll).
+      const highlightRemoved = this.autoRemoveScheduledHighlightIfDue(projectId);
+      if (wasStale || highlightRemoved) {
         this.publish(projectId, "sheet", { newSelection: false });
       }
       return {
         state: this.getState(projectId),
         unchanged: true,
-        published: wasStale,
+        published: wasStale || highlightRemoved,
         offline: false,
       };
     }
@@ -686,7 +1248,9 @@ export class SemaScheduleService {
       last_error: null,
     });
 
-    const publishesToDisplay = current.sourceMode === "google-sheets";
+    const highlightRemoved = this.autoRemoveScheduledHighlightIfDue(projectId);
+    const publishesToDisplay =
+      current.sourceMode === "google-sheets" || highlightRemoved;
     if (publishesToDisplay) {
       // Live edit: content swaps in place; selection token is unchanged.
       this.publish(projectId, "sheet", { newSelection: false });

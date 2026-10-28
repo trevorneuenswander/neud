@@ -10,6 +10,23 @@
 export type ProjectDirectoryAliasEntry = {
   cloudProjectId: string;
   localProjectId: string | null;
+  /** Optional slug used to resolve a missing localProjectId / cloud id. */
+  slug?: string | null;
+};
+
+/** Local project identity used to fill gaps when directory localProjectId is null. */
+export type ActivityLocalProjectRef = {
+  id: string;
+  slug: string;
+};
+
+/**
+ * Extra hosted project IDs keyed by slug (e.g. from cloud access directory cache).
+ * Used when the package directory still has a builtin: placeholder.
+ */
+export type ActivityCloudSlugProjectRef = {
+  slug: string;
+  cloudProjectId: string;
 };
 
 export type ActivityPullProjectScope = {
@@ -23,6 +40,9 @@ export type ActivityPullProjectScope = {
   aliasFingerprint: string;
 };
 
+/** Canonical SEMA cloud seed from migration 057 (may differ if slug already existed). */
+export const SEMA_CLOUD_SEED_PROJECT_ID = "5e0a0001-0000-4000-8000-000000000001";
+
 export function isHostedCloudProjectId(id: string): boolean {
   const trimmed = id.trim();
   if (!trimmed) return false;
@@ -32,13 +52,38 @@ export function isHostedCloudProjectId(id: string): boolean {
   );
 }
 
+function registerAlias(
+  cloudToLocal: Map<string, string>,
+  localToCloud: Map<string, string>,
+  queryIds: Set<string>,
+  cloudId: string,
+  localId: string,
+): void {
+  if (!isHostedCloudProjectId(cloudId) || !localId) return;
+  queryIds.add(cloudId);
+  if (cloudId === localId) return;
+  // First mapping wins so package-directory entries beat soft seed fallbacks.
+  if (!cloudToLocal.has(cloudId)) {
+    cloudToLocal.set(cloudId, localId);
+  }
+  if (!localToCloud.has(localId)) {
+    localToCloud.set(localId, cloudId);
+  }
+}
+
 /**
  * Expand local accessible project IDs with hosted cloud IDs from the package
  * directory so pull does not drop peer-device activity for installed packages.
+ *
+ * Also accepts optional local project refs (to fill null directory local IDs)
+ * and cloud slug refs (when directory still has builtin: placeholders).
+ * team_id is intentionally unused — NULL team_id must not exclude rows.
  */
 export function buildActivityPullProjectScope(input: {
   accessibleLocalProjectIds: string[];
   directoryEntries: ProjectDirectoryAliasEntry[];
+  localProjects?: ActivityLocalProjectRef[];
+  cloudProjectsBySlug?: ActivityCloudSlugProjectRef[];
 }): ActivityPullProjectScope {
   const localSet = new Set(
     input.accessibleLocalProjectIds.map((id) => id.trim()).filter(Boolean),
@@ -47,16 +92,44 @@ export function buildActivityPullProjectScope(input: {
   const cloudToLocal = new Map<string, string>();
   const localToCloud = new Map<string, string>();
 
+  const localIdBySlug = new Map<string, string>();
+  for (const project of input.localProjects ?? []) {
+    const id = project.id?.trim() || "";
+    const slug = project.slug?.trim().toLowerCase() || "";
+    if (!id || !slug || !localSet.has(id)) continue;
+    localIdBySlug.set(slug, id);
+  }
+
   for (const entry of input.directoryEntries) {
-    const localId = entry.localProjectId?.trim() || "";
     const cloudId = entry.cloudProjectId?.trim() || "";
-    if (!localId || !localSet.has(localId)) continue;
-    if (!isHostedCloudProjectId(cloudId)) continue;
-    queryIds.add(cloudId);
-    if (cloudId !== localId) {
-      cloudToLocal.set(cloudId, localId);
-      localToCloud.set(localId, cloudId);
+    const slug = entry.slug?.trim().toLowerCase() || "";
+    let localId = entry.localProjectId?.trim() || "";
+    if (!localId && slug) {
+      localId = localIdBySlug.get(slug) ?? "";
     }
+    if (!localId || !localSet.has(localId)) continue;
+    registerAlias(cloudToLocal, localToCloud, queryIds, cloudId, localId);
+  }
+
+  for (const cloud of input.cloudProjectsBySlug ?? []) {
+    const slug = cloud.slug?.trim().toLowerCase() || "";
+    const cloudId = cloud.cloudProjectId?.trim() || "";
+    const localId = localIdBySlug.get(slug) ?? "";
+    if (!slug || !localId) continue;
+    registerAlias(cloudToLocal, localToCloud, queryIds, cloudId, localId);
+  }
+
+  // Soft SEMA seed fallback: only when a local SEMA project is accessible and no
+  // hosted cloud mapping was discovered yet (directory still builtin: / missing).
+  const semaLocalId = localIdBySlug.get("sema");
+  if (semaLocalId && !localToCloud.has(semaLocalId)) {
+    registerAlias(
+      cloudToLocal,
+      localToCloud,
+      queryIds,
+      SEMA_CLOUD_SEED_PROJECT_ID,
+      semaLocalId,
+    );
   }
 
   const aliasFingerprint = [...cloudToLocal.entries()]

@@ -38,24 +38,6 @@ type HostedProjectSummary = {
   onlineDisplayCount: number;
 };
 
-type ProjectMembershipRow = {
-  project_id: string;
-  projects:
-    | {
-        id: string;
-        slug: string;
-        name: string;
-        description: string | null;
-      }
-    | Array<{
-        id: string;
-        slug: string;
-        name: string;
-        description: string | null;
-      }>
-    | null;
-};
-
 function formatActiveDisplayCount(count: number): string {
   if (count === 0) {
     return "No Active Displays";
@@ -66,7 +48,10 @@ function formatActiveDisplayCount(count: number): string {
   return `${count} Active Displays`;
 }
 
-/** Lists hosted portal projects using explicit membership rows only. */
+/**
+ * Lists hosted portal projects visible under RLS.
+ * Includes direct project_members rows and team-assigned manager access (046).
+ */
 export async function getHostedAccessibleProjects(): Promise<HostedAccessibleProject[]> {
   const projectRows = await getHostedAccessibleProjectsWithCounts();
   return projectRows.map(({ id, slug, name, description, activeDisplayCount }) => ({
@@ -88,19 +73,17 @@ export async function getHostedAccessibleProjectsWithCounts(): Promise<HostedAcc
     return [];
   }
 
-  const { data: memberships, error } = await supabase
-    .from("project_members")
-    .select("project_id, projects (id, slug, name, description)")
-    .eq("user_id", user.id);
+  const { data: projectRows, error } = await supabase
+    .from("projects")
+    .select("id, slug, name, description")
+    .order("name", { ascending: true });
 
-  if (error || !memberships) {
+  if (error || !projectRows) {
     return [];
   }
 
   const byId = new Map<string, HostedAccessibleProject>();
-  for (const row of memberships as ProjectMembershipRow[]) {
-    const projectData = row.projects;
-    const project = Array.isArray(projectData) ? projectData[0] : projectData;
+  for (const project of projectRows) {
     if (!project?.id || !project.slug) {
       continue;
     }
@@ -199,9 +182,12 @@ export async function getHostedProjectPortalSummary(slug: string) {
     p_project_id: project.id,
   });
 
-  const { data: displays } = await supabase.rpc("list_project_active_displays", {
-    p_project_id: project.id,
-  });
+  const { data: displays, error: displaysError } = await supabase.rpc(
+    "list_project_active_displays",
+    {
+      p_project_id: project.id,
+    },
+  );
 
   const { data: settings } = await supabase
     .from("project_publishing_settings")
@@ -209,12 +195,28 @@ export async function getHostedProjectPortalSummary(slug: string) {
     .eq("project_id", project.id)
     .maybeSingle();
 
-  const activeDisplays = (displays as HostedActiveDisplay[] | null) ?? [];
+  const activeDisplays = displaysError
+    ? []
+    : ((displays as HostedActiveDisplay[] | null) ?? []);
+
+  if (process.env.NODE_ENV !== "production") {
+    console.debug("[HostedDisplays][ProjectSummary]", {
+      projectId: project.id,
+      projectSlug: project.slug,
+      displayCount: activeDisplays.length,
+      listError: displaysError?.message ?? null,
+      listErrorCode: displaysError?.code ?? null,
+      canOperate: Boolean(canOperate),
+    });
+  }
 
   return {
     project,
     canReorder: Boolean(canOperate),
     displays: activeDisplays,
+    displayListError: displaysError
+      ? displaysError.message || displaysError.code || "list_project_active_displays_failed"
+      : null,
     displayListDiagnostics: {
       totalActiveDisplays: activeDisplays.length,
       onlineViewerEnabledCount: activeDisplays.filter((display) => display.online_viewer_enabled)

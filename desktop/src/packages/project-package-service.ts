@@ -37,7 +37,7 @@ function resolveCardState(input: {
   install: ProjectPackageInstallRecord | null;
   availableVersion: number | null;
 }): ProjectPackageCardState {
-  if (!input.install) {
+  if (!input.install || input.install.installState === "not_downloaded") {
     return "not_downloaded";
   }
   if (input.install.installState === "downloading") {
@@ -48,6 +48,9 @@ function resolveCardState(input: {
   }
   if (input.install.installState === "error") {
     return "error";
+  }
+  if (input.install.installState !== "installed") {
+    return "not_downloaded";
   }
   const available =
     input.availableVersion ??

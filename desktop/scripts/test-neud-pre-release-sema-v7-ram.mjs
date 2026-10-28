@@ -41,7 +41,7 @@ test("root cause: fitField BODY_BASE matches CSS body-size (no 32px override)", 
 
 test("SEMA package baseline is v7", () => {
   const catalog = read("desktop/src/packages/builtin-package-catalog.ts");
-  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*8/);
+  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*9/);
 });
 
 test("hydration publishes when packaged HTML hash changes (update path)", () => {

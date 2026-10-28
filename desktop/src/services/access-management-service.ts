@@ -412,12 +412,10 @@ export class AccessManagementService {
       throw new Error("You do not have permission to manage this team.");
     }
 
-    if (input.role === "admin" && !context.isPlatformOwner) {
-      throw new Error("Only the Owner may assign the Admin role.");
-    }
-
+    // Team Admins may invite operator/viewer/admin (Team Admin) into teams they
+    // administer. They cannot assign NEUD Owner / platform-wide roles.
     if (!context.isPlatformOwner) {
-      if (input.role !== "operator" && input.role !== "viewer") {
+      if (input.role !== "admin" && input.role !== "operator" && input.role !== "viewer") {
         throw new Error("You do not have permission to assign this role.");
       }
     }
@@ -560,8 +558,12 @@ export class AccessManagementService {
       throw new Error("You do not have permission to manage this team.");
     }
 
-    if (input.role === "admin" && !context.isPlatformOwner) {
-      throw new Error("Only the Owner may assign the Admin role.");
+    // Team Admins may promote/demote within their team (including Team Admin).
+    // Platform Owner escalation remains impossible through this API.
+    if (!context.isPlatformOwner) {
+      if (input.role !== "admin" && input.role !== "operator" && input.role !== "viewer") {
+        throw new Error("You do not have permission to assign this role.");
+      }
     }
 
     const targetUser = this.users.getById(input.userId);
@@ -570,6 +572,17 @@ export class AccessManagementService {
     }
     if (targetUser.platformRole === "owner") {
       throw new Error("The Owner account cannot be modified.");
+    }
+
+    const existingMembership = this.teamMemberships.get(input.teamId, input.userId);
+    if (
+      existingMembership?.role === "admin" &&
+      input.role !== "admin" &&
+      this.teams.countAdmins(input.teamId) <= 1
+    ) {
+      throw new Error(
+        "A team must keep at least one Admin. Promote another Admin before demoting the final Admin.",
+      );
     }
 
     this.teamMemberships.upsert({
@@ -645,6 +658,16 @@ export class AccessManagementService {
     const target = this.users.getById(userId);
     if (!target || target.platformRole === "owner") {
       throw new Error("The selected user cannot be modified.");
+    }
+
+    const existingMembership = this.teamMemberships.get(teamId, userId);
+    if (
+      existingMembership?.role === "admin" &&
+      this.teams.countAdmins(teamId) <= 1
+    ) {
+      throw new Error(
+        "A team must keep at least one Admin. Promote another Admin before removing the final Admin.",
+      );
     }
 
     const teamProjectIds = this.projectTeams.getProjectIdsForTeam(teamId);
@@ -1298,14 +1321,17 @@ export class AccessManagementService {
   syncCloudDirectoryProjectTeams(input: {
     projectTeams: Array<{ projectId?: string; teamId?: string }>;
     cloudProjects?: Array<{ id?: string; slug?: string }>;
+    cloudTeams?: Array<{ id?: string; name?: string; slug?: string }>;
     teamMemberships: Array<{ teamId?: string; userId?: string; role?: string }>;
     actorUserId: string | null;
   }): CloudAccessLocalSyncDiagnostics {
     return syncCloudProjectTeamAssignmentsToLocal({
       projects: this.projects,
       projectTeams: this.projectTeams,
+      teams: this.teams,
       cloudProjectTeams: input.projectTeams,
       cloudProjects: input.cloudProjects,
+      cloudTeams: input.cloudTeams,
       teamMemberships: input.teamMemberships,
       actorUserId: input.actorUserId,
     });

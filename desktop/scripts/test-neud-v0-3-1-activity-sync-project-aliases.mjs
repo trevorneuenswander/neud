@@ -47,9 +47,13 @@ test("mismatched SEMA local UUID maps both directions without rewriting ids", as
   const scope = mod.buildActivityPullProjectScope({
     accessibleLocalProjectIds: [SEMA_LOCAL_ID, BA_SHARED_ID],
     directoryEntries: [
-      { cloudProjectId: SEMA_CLOUD_ID, localProjectId: SEMA_LOCAL_ID },
-      { cloudProjectId: BA_SHARED_ID, localProjectId: BA_SHARED_ID },
+      { cloudProjectId: SEMA_CLOUD_ID, localProjectId: SEMA_LOCAL_ID, slug: "sema" },
+      { cloudProjectId: BA_SHARED_ID, localProjectId: BA_SHARED_ID, slug: "broad-arrow-auctions" },
       { cloudProjectId: "builtin:other", localProjectId: "not-accessible" },
+    ],
+    localProjects: [
+      { id: SEMA_LOCAL_ID, slug: "sema" },
+      { id: BA_SHARED_ID, slug: "broad-arrow-auctions" },
     ],
   });
 
@@ -68,6 +72,40 @@ test("mismatched SEMA local UUID maps both directions without rewriting ids", as
     scope.cloudToLocal,
   );
   assert.equal(remapped.projectId, SEMA_LOCAL_ID);
+});
+
+test("null directory localProjectId is resolved via local project slug", async () => {
+  const mod = await loadAliasesModule();
+  assert.ok(mod?.buildActivityPullProjectScope);
+
+  const scope = mod.buildActivityPullProjectScope({
+    accessibleLocalProjectIds: [SEMA_LOCAL_ID],
+    directoryEntries: [{ cloudProjectId: SEMA_CLOUD_ID, localProjectId: null, slug: "sema" }],
+    localProjects: [{ id: SEMA_LOCAL_ID, slug: "sema" }],
+  });
+  assert.equal(scope.cloudToLocal.get(SEMA_CLOUD_ID), SEMA_LOCAL_ID);
+  assert.ok(scope.accessibleQueryIds.includes(SEMA_CLOUD_ID));
+});
+
+test("cloud slug cache and SEMA seed fallback cover builtin: directory gaps", async () => {
+  const mod = await loadAliasesModule();
+  assert.ok(mod?.buildActivityPullProjectScope);
+  assert.equal(mod.SEMA_CLOUD_SEED_PROJECT_ID, SEMA_CLOUD_ID);
+
+  const fromCache = mod.buildActivityPullProjectScope({
+    accessibleLocalProjectIds: [SEMA_LOCAL_ID],
+    directoryEntries: [{ cloudProjectId: "builtin:sema", localProjectId: SEMA_LOCAL_ID, slug: "sema" }],
+    localProjects: [{ id: SEMA_LOCAL_ID, slug: "sema" }],
+    cloudProjectsBySlug: [{ slug: "sema", cloudProjectId: SEMA_CLOUD_ID }],
+  });
+  assert.equal(fromCache.cloudToLocal.get(SEMA_CLOUD_ID), SEMA_LOCAL_ID);
+
+  const fromSeed = mod.buildActivityPullProjectScope({
+    accessibleLocalProjectIds: [SEMA_LOCAL_ID],
+    directoryEntries: [{ cloudProjectId: "builtin:sema", localProjectId: SEMA_LOCAL_ID, slug: "sema" }],
+    localProjects: [{ id: SEMA_LOCAL_ID, slug: "sema" }],
+  });
+  assert.equal(fromSeed.cloudToLocal.get(SEMA_CLOUD_ID), SEMA_LOCAL_ID);
 });
 
 test("new install / aligned SEMA needs no alias; Broad Arrow shared id unchanged", async () => {

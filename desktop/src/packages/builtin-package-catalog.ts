@@ -8,7 +8,7 @@ export const BROAD_ARROW_PACKAGE_KEY = "broad-arrow-auctions";
 export const BROAD_ARROW_PACKAGE_BASELINE_VERSION = 1;
 
 export const SEMA_PACKAGE_KEY = "sema";
-export const SEMA_PACKAGE_BASELINE_VERSION = 8;
+export const SEMA_PACKAGE_BASELINE_VERSION = 9;
 
 export type BuiltinPackageCatalogEntry = {
   projectKey: string;

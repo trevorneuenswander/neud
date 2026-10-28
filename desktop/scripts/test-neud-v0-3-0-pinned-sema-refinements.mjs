@@ -55,11 +55,11 @@ test("SEMA ticker background opacity reduced modestly", () => {
   assert.doesNotMatch(css, /--bar-bg:\s*transparent/);
 });
 
-test("SEMA logo column is 120% of prior width", () => {
+test("SEMA ticker logo column removed for full-width NOW/NEXT/LATER", () => {
   const css = stripComments(read("desktop/src/displays/bundled/sema-schedule-ticker-v1.html"));
-  assert.match(css, /--logo-w:\s*576px/);
-  assert.doesNotMatch(css, /--logo-w:\s*480px/);
-  assert.match(css, /object-fit:\s*contain/);
+  assert.doesNotMatch(css, /--logo-w:/);
+  assert.doesNotMatch(css, /logo-mark/);
+  assert.match(css, /grid-template-columns:\s*1fr\s+1fr\s+1fr/);
 });
 
 test("SEMA fonts increased by requested point deltas", () => {
@@ -79,12 +79,12 @@ test("SEMA NOW/NEXT/LATER share a vertical grid rhythm", () => {
   assert.match(css, /--content-rows:/);
   assert.match(css, /\.section\s*\{[^}]*grid-template-rows:\s*var\(--label-row\)\s+var\(--content-rows\)/s);
   assert.match(css, /\.content\s*\{[^}]*grid-template-rows:\s*var\(--title-row\)\s+var\(--desc-row\)/s);
-  assert.match(css, /grid-template-columns:\s*var\(--logo-w\)\s+1fr\s+1fr\s+1fr/);
+  assert.match(css, /grid-template-columns:\s*1fr\s+1fr\s+1fr/);
 });
 
 test("SEMA package baseline bumped for ticker template delivery", () => {
   const catalog = read("desktop/src/packages/builtin-package-catalog.ts");
-  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*8/);
+  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*9/);
 });
 
 test("ticker overflow/marquee behavior preserved", () => {

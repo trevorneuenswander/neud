@@ -49,7 +49,7 @@ test("SEMA description typography and preserved layout tokens", () => {
 
 test("SEMA package baseline is v7", () => {
   const catalog = read("desktop/src/packages/builtin-package-catalog.ts");
-  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*8/);
+  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*9/);
   const builder = read("desktop/src/packages/sema-package-builder.ts");
   assert.match(builder, /SEMA_PACKAGE_BASELINE_VERSION/);
   assert.match(builder, /packageVersion:\s*SEMA_PACKAGE_BASELINE_VERSION/);

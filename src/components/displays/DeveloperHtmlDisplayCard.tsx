@@ -48,7 +48,6 @@ import { normalizeDisplaySize } from "@/lib/displays/display-size";
 import { shouldUseLocalDataClient } from "@/lib/local/mode";
 import { getDesktopAPI } from "@/lib/desktop/client";
 import type { ProjectDisplaySource } from "@/lib/developer-tools/types";
-
 type PreviewConnectionState = "disconnected" | "connected" | "error";
 
 type DeveloperHtmlDisplayCardProps = {
