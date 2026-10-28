@@ -28,7 +28,8 @@ test("activity sync registers hosted project before upload", () => {
   const activity = read("desktop/src/services/activity-sync/activity-sync-service.ts");
   assert.match(activity, /ensureHostedProjectForSync/);
   assert.match(activity, /push\.registration_failed/);
-  assert.match(activity, /push\.project_realigned/);
+  assert.match(activity, /push\.cloud_project_mapped/);
+  assert.match(activity, /realigned=/);
 });
 
 test("local data service exposes hosted project registration for sync", () => {
