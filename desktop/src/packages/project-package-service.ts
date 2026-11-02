@@ -634,12 +634,24 @@ export class ProjectPackageService {
         "displays",
         "schedule-ticker-editable-v1.html",
       );
+      const installedFullscreenPath = path.join(
+        install.packageRoot,
+        "displays",
+        "schedule-fullscreen-uhd-v1.html",
+      );
+      const freshFullscreenPath = path.join(
+        stagingSource,
+        "displays",
+        "schedule-fullscreen-uhd-v1.html",
+      );
       const installedHasTicker = fs.existsSync(installedTickerPath);
       const freshHasTicker = fs.existsSync(freshTickerPath);
       const installedHasPylon = fs.existsSync(installedPylonPath);
       const freshHasPylon = fs.existsSync(freshPylonPath);
       const installedHasEditable = fs.existsSync(installedEditablePath);
       const freshHasEditable = fs.existsSync(freshEditablePath);
+      const installedHasFullscreen = fs.existsSync(installedFullscreenPath);
+      const freshHasFullscreen = fs.existsSync(freshFullscreenPath);
       const installedHash = install.manifestHash ?? install.manifest?.integrity?.manifestHash ?? null;
       const freshHash = freshManifest.integrity.manifestHash ?? null;
       const tickerMismatch =
@@ -663,13 +675,24 @@ export class ProjectPackageService {
           freshHasEditable &&
           fs.readFileSync(installedEditablePath, "utf8") !==
             fs.readFileSync(freshEditablePath, "utf8"));
-      const htmlMismatch = tickerMismatch || pylonMismatch || editableMismatch;
+      const fullscreenMismatch =
+        !installedHasFullscreen ||
+        !freshHasFullscreen ||
+        (installedHasFullscreen &&
+          freshHasFullscreen &&
+          fs.readFileSync(installedFullscreenPath, "utf8") !==
+            fs.readFileSync(freshFullscreenPath, "utf8"));
+      const htmlMismatch =
+        tickerMismatch || pylonMismatch || editableMismatch || fullscreenMismatch;
       const hashMismatch = Boolean(freshHash && installedHash && freshHash !== installedHash);
       const missingDisplayDef =
         !install.manifest?.displays?.some((display) => display.slug === "schedule-ticker") ||
         !install.manifest?.displays?.some((display) => display.slug === "schedule-pylon") ||
         !install.manifest?.displays?.some(
           (display) => display.slug === "schedule-ticker-editable",
+        ) ||
+        !install.manifest?.displays?.some(
+          (display) => display.slug === "schedule-fullscreen-uhd",
         );
 
       if (!htmlMismatch && !hashMismatch && !missingDisplayDef) {
@@ -1096,6 +1119,15 @@ export class ProjectPackageService {
             "SEMA package is missing the Schedule Ticker Editable display definition.",
           );
         }
+        if (
+          !activated.manifest.displays.some(
+            (display) => display.slug === "schedule-fullscreen-uhd",
+          )
+        ) {
+          throw new ProjectPackageValidationError(
+            "SEMA package is missing the SEMA Fullscreen Schedule display definition.",
+          );
+        }
         const tickerHtmlPath = path.join(
           activated.packageRoot,
           "displays",
@@ -1124,6 +1156,16 @@ export class ProjectPackageService {
         if (!fs.existsSync(editableHtmlPath)) {
           throw new ProjectPackageValidationError(
             "SEMA package is missing Schedule Ticker Editable HTML assets.",
+          );
+        }
+        const fullscreenHtmlPath = path.join(
+          activated.packageRoot,
+          "displays",
+          "schedule-fullscreen-uhd-v1.html",
+        );
+        if (!fs.existsSync(fullscreenHtmlPath)) {
+          throw new ProjectPackageValidationError(
+            "SEMA package is missing SEMA Fullscreen Schedule HTML assets.",
           );
         }
       }

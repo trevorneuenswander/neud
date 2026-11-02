@@ -1749,7 +1749,12 @@ async function createMainWindow() {
     const fatal = options.fatal === true;
     try {
       const results = semaDisplayHydration.ensureHydrated(projectId, manifest);
-      const required = ["schedule-ticker", "schedule-pylon", "schedule-ticker-editable"];
+      const required = [
+        "schedule-ticker",
+        "schedule-pylon",
+        "schedule-ticker-editable",
+        "schedule-fullscreen-uhd",
+      ];
       const missing = required.filter(
         (slug) => !results.some((result) => result.slug === slug && result.displayId),
       );

@@ -100,9 +100,14 @@ test("clean install: downloadPackage(sema) creates all default display rows", as
       storage,
     );
 
+    const required = [
+      "schedule-ticker",
+      "schedule-pylon",
+      "schedule-ticker-editable",
+      "schedule-fullscreen-uhd",
+    ];
     service.setPackageActivatedHandler((projectId, manifest) => {
       const results = hydration.ensureHydrated(projectId, manifest);
-      const required = ["schedule-ticker", "schedule-pylon", "schedule-ticker-editable"];
       const missing = required.filter(
         (slug) => !results.some((result) => result.slug === slug && result.displayId),
       );
@@ -117,26 +122,27 @@ test("clean install: downloadPackage(sema) creates all default display rows", as
     assert.ok(
       fs.existsSync(path.join(install.packageRoot, "displays", "schedule-ticker-editable-v1.html")),
     );
+    assert.ok(
+      fs.existsSync(path.join(install.packageRoot, "displays", "schedule-fullscreen-uhd-v1.html")),
+    );
 
     const keys = service.getInstalledDisplayKeys(install.projectId);
     assert.ok(keys);
-    assert.ok(keys.has("schedule-ticker"));
-    assert.ok(keys.has("schedule-pylon"));
-    assert.ok(keys.has("schedule-ticker-editable"));
+    for (const slug of required) {
+      assert.ok(keys.has(slug), `missing installed key ${slug}`);
+    }
 
     const rows = displays.listByProject(install.projectId);
     const displayKeys = new Set(rows.map((row) => row.displayKey));
-    assert.ok(displayKeys.has("schedule-ticker"));
-    assert.ok(displayKeys.has("schedule-pylon"));
-    assert.ok(displayKeys.has("schedule-ticker-editable"));
+    for (const slug of required) {
+      assert.ok(displayKeys.has(slug), `missing display row ${slug}`);
+    }
 
     // Re-download / hydrate must not duplicate display keys.
     await service.updatePackage("sema");
     const afterUpdate = displays.listByProject(install.projectId);
-    const keyed = afterUpdate.filter((row) =>
-      ["schedule-ticker", "schedule-pylon", "schedule-ticker-editable"].includes(row.displayKey),
-    );
-    assert.equal(keyed.length, 3);
+    const keyed = afterUpdate.filter((row) => required.includes(row.displayKey));
+    assert.equal(keyed.length, required.length);
 
     // Identity mismatch fallback: keys resolve by slug when install PK drifts.
     const project = projects.getById(install.projectId);

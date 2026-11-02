@@ -1,0 +1,13 @@
+{
+  "metrics": {
+    "stageScroll": false,
+    "bodyScroll": false,
+    "nowTitleOverflow": false
+  },
+  "scenes": [
+    "/Users/trevorneuenswander/Documents/neud/docs/alpha-v0.3.2/screenshots/sema-fullscreen-uhd-now-next-later.png",
+    "/Users/trevorneuenswander/Documents/neud/docs/alpha-v0.3.2/screenshots/sema-fullscreen-uhd-highlight-active.png",
+    "/Users/trevorneuenswander/Documents/neud/docs/alpha-v0.3.2/screenshots/sema-fullscreen-uhd-empty-next-later.png",
+    "/Users/trevorneuenswander/Documents/neud/docs/alpha-v0.3.2/screenshots/sema-fullscreen-uhd-stale-offline.png"
+  ]
+}

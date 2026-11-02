@@ -1,6 +1,7 @@
 # SEMA Fullscreen UHD Display — Design Only (v0.3.2)
 
-**Status:** Design proposal only. Do not implement or generate graphics in this milestone.
+**Status:** Implemented in v0.3.2 (Option A vertical stack). Source of truth for runtime is
+`desktop/src/displays/bundled/sema-schedule-fullscreen-uhd-v1.html`.
 
 ## Goal
 
@@ -21,30 +22,29 @@ Add a fourth SEMA package display for a dedicated 3840×2160 fullscreen monitor,
 | Auto-include on install | Add definition to `buildSemaPackageV1` + bundled HTML; `SemaPackageDisplayHydration` already maps `manifest.displays` |
 | Existing ticker unchanged | New slug/runtime key only; do not edit `sema-schedule-ticker-v1.html` |
 
-## Proposed visual layout
+## Approved visual layout — Option A (vertical stack)
 
-Single full-bleed composition (no cards, no dashboard chrome):
+Full-bleed 3840×2160 confidence monitor (no cards, no dashboard chrome):
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  [optional brand mark]                         worksheet title │
-│                                                                │
-│                         NOW                                    │
-│                    ────────────────                            │
-│                 Large title (primary)                          │
-│                 Time · description                             │
-│                                                                │
-│     NEXT (secondary)              LATER / HIGHLIGHT            │
-│     Medium title                  Medium title                 │
-│     Description                   Description                  │
-│                                                                │
+│  [SEMA Live brand]                              status / day   │
+│──────────────────────────────────────────────────────────────│
+│  NOW (~45%)                                                    │
+│  Large title · time · description                              │
+│──────────────────────────────────────────────────────────────│
+│  NEXT (~30%)                                                   │
+│  Large title · time · description                              │
+│──────────────────────────────────────────────────────────────│
+│  LATER / HIGHLIGHT (~25%)                                      │
+│  Readable title · description                                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- Background: solid dark or transparent (OBS-friendly), matching SEMA brand tokens already used by the ticker.
-- NOW occupies ~55–60% of vertical space; NEXT and LATER share the lower band.
-- When Highlight is active, LATER column shows Highlight label + title/description (same semantics as ticker).
-- Safe margins ≥ 80px from edges for monitor bezel / overscan.
+- Background: near-black SEMA Live confidence-monitor palette (existing brand red/magenta accents).
+- Percentages are starting points; flex weights may adjust for readability.
+- When Highlight is active, LATER shows Highlight label + title/description (same semantics as ticker).
+- Safe margins ≈ 96px from edges for monitor bezel / overscan.
 
 ## Technical implementation plan (future)
 

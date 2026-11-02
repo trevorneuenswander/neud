@@ -14,15 +14,20 @@ function read(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-test("v0.3.1 package version is 0.3.1 while public catalog current remains 0.3.0", () => {
+test("development package.json tracks current app version; published catalog current stays at last public release", () => {
   const root = JSON.parse(read("package.json"));
   const desktop = JSON.parse(read("desktop/package.json"));
-  assert.equal(root.version, "0.3.1");
-  assert.equal(desktop.version, "0.3.1");
+  // In-development branches bump package.json ahead of the published catalog entry.
+  assert.equal(root.version, desktop.version);
+  assert.match(root.version, /^\d+\.\d+\.\d+$/);
   const catalog = read("src/lib/releases/neud-releases.ts");
   assert.match(catalog, /version: "0\.3\.0"/);
   assert.match(catalog, /current: true/);
-  assert.doesNotMatch(catalog, /version: "0\.3\.1"/);
+  // Public download catalog must not advertise an unpublished app version as current.
+  assert.doesNotMatch(
+    catalog,
+    new RegExp(`version:\\s*"${root.version.replace(/\./g, "\\.")}"[\\s\\S]*?current:\\s*true`),
+  );
 });
 
 test("color refresh keeps semantic success/warning/danger and documents rollback", () => {
