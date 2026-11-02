@@ -117,20 +117,12 @@ Owner UltraStudio SOP: `docs/alpha-v0.3.2/rc-validation/ultrastudio-physical-val
 | Blocker | Status |
 |---|---|
 | Portal UI test failures | **Resolved** |
-| Windows x64 real-DeckLink RC | **Open** — needs pushed branch + Windows CI (or Windows host) |
-| DeckLink hardware (UltraStudio) | **Open** — Owner tomorrow; SOP ready |
-| Supabase egress in production clients | **Open** — code on branch; not shipped |
-| Notarized signing | Open for public download; not required for closed RC |
+| Windows x64 real-DeckLink RC | **PASS** — Build Windows Development succeeded on `feature/v0.3.2-stability` |
+| DeckLink hardware (UltraStudio) | **PASSED** — Owner confirmed physical Key/Fill |
+| Supabase egress in production clients | Code on branch; ships with v0.3.2 publish |
+| Notarized signing | Open for public download; unsigned CI remains known limitation |
 | Duo/Quad physical | NOT TESTED (do not inherit UltraStudio PASS) |
 
 ### Recommended GO / NO-GO
 
-**NO-GO for publish / tag / download feeds.**
-
-**Conditional GO for closed macOS RC testing** with UltraStudio tomorrow using the SOP.
-
-After UltraStudio physical results + Windows CI real addon artifact: reassess for publish readiness.
-
----
-
-*No commit, push, tag, deploy, or publish performed.*
+Hardware blockers for UltraStudio Key/Fill and Windows real-addon CI are **cleared**. Proceed with remaining software regression, packaging, and publication gates for v0.3.2.

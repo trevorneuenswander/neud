@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=3840, height=2160" />
+    <title>Mic Tally — Three Microphones UHD</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 3840px;
+        height: 2160px;
+        overflow: hidden;
+        background: transparent !important;
+        font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+        color: #f4f4f5;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      /*
+        Top-row compact layout:
+        three equal 1280px zones across 3840; cards 850×250 centered in each zone.
+        Outer margin ≈ 80px; top margin ≈ 60px. Bottom of canvas stays empty/transparent.
+      */
+      .stage {
+        position: relative;
+        width: 3840px;
+        height: 2160px;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+      }
+      .card {
+        position: absolute;
+        top: 60px;
+        width: 850px;
+        height: 250px;
+        border-radius: 28px;
+        background: rgba(18, 18, 22, 0.92);
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 28px;
+        padding: 28px 36px;
+      }
+      .card[data-slot="1"] {
+        left: 215px; /* zone 0–1280 center 640 → card left 640-425 */
+      }
+      .card[data-slot="2"] {
+        left: 1495px; /* zone 1280–2560 center 1920 → 1920-425 */
+      }
+      .card[data-slot="3"] {
+        left: 2775px; /* zone 2560–3840 center 3200 → 3200-425 */
+      }
+      .label {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 48px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        line-height: 1.15;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        word-break: break-word;
+      }
+      .lamp {
+        flex: 0 0 auto;
+        width: 96px;
+        height: 96px;
+        border-radius: 50%;
+        border: 6px solid rgba(255, 255, 255, 0.14);
+        background: #4b5563;
+        box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.35);
+        transition: background 120ms linear, box-shadow 120ms linear, border-color 120ms linear;
+      }
+      .status-text {
+        flex: 0 0 280px;
+        width: 280px;
+        font-size: 34px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        text-align: right;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: clip;
+      }
+      .card[data-status="LIVE"] .lamp {
+        background: #22c55e;
+        border-color: rgba(34, 197, 94, 0.75);
+        box-shadow:
+          0 0 36px rgba(34, 197, 94, 0.55),
+          inset 0 0 18px rgba(255, 255, 255, 0.15);
+      }
+      .card[data-status="LIVE"] .status-text {
+        color: #4ade80;
+      }
+      .card[data-status="MUTED"] .lamp,
+      .card[data-status="FADER_DOWN"] .lamp {
+        background: #ef4444;
+        border-color: rgba(239, 68, 68, 0.75);
+        box-shadow:
+          0 0 36px rgba(239, 68, 68, 0.45),
+          inset 0 0 18px rgba(255, 255, 255, 0.1);
+      }
+      .card[data-status="MUTED"] .status-text,
+      .card[data-status="FADER_DOWN"] .status-text {
+        color: #f87171;
+      }
+      .card[data-status="UNKNOWN"] .lamp {
+        background: #6b7280;
+        border-color: rgba(156, 163, 175, 0.45);
+        box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.35);
+      }
+      .card[data-status="UNKNOWN"] .status-text {
+        color: #d1d5db;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <article class="card" data-slot="1" data-status="UNKNOWN">
+        <div class="label">Input 1</div>
+        <div class="lamp" aria-hidden="true"></div>
+        <div class="status-text">UNKNOWN</div>
+      </article>
+      <article class="card" data-slot="2" data-status="UNKNOWN">
+        <div class="label">Input 2</div>
+        <div class="lamp" aria-hidden="true"></div>
+        <div class="status-text">UNKNOWN</div>
+      </article>
+      <article class="card" data-slot="3" data-status="UNKNOWN">
+        <div class="label">Input 3</div>
+        <div class="lamp" aria-hidden="true"></div>
+        <div class="status-text">UNKNOWN</div>
+      </article>
+    </div>
+    <script>
+      (function () {
+        function statusLabel(status) {
+          if (status === "FADER_DOWN") return "FADER DOWN";
+          return status || "UNKNOWN";
+        }
+
+        function applySlot(card, slot) {
+          if (!card || !slot) return;
+          const status = slot.status || "UNKNOWN";
+          card.dataset.status = status;
+          const label = card.querySelector(".label");
+          const text = card.querySelector(".status-text");
+          if (label) label.textContent = slot.label || ("Input " + (slot.inputChannel || card.dataset.slot));
+          if (text) text.textContent = statusLabel(status);
+        }
+
+        function applyPayload(payload) {
+          if (!payload || !Array.isArray(payload.slots)) return;
+          payload.slots.forEach(function (slot) {
+            var card = document.querySelector('.card[data-slot="' + slot.slot + '"]');
+            applySlot(card, slot);
+          });
+        }
+
+        function boot() {
+          if (!window.NEUDDisplay || typeof window.NEUDDisplay.subscribe !== "function") {
+            setTimeout(boot, 50);
+            return;
+          }
+          window.NEUDDisplay.subscribe(function (data) {
+            var root = data && (data.micTally || data.snapshot || data);
+            if (root && root.slots) {
+              applyPayload(root);
+            } else if (data && data.slots) {
+              applyPayload(data);
+            }
+          });
+        }
+        boot();
+      })();
+    </script>
+  <script>
+document.querySelector('[data-slot="1"]').dataset.status='LIVE';
+document.querySelector('[data-slot="1"] .label').textContent='Host Mic';
+document.querySelector('[data-slot="1"] .status-text').textContent='LIVE';
+document.querySelector('[data-slot="2"]').dataset.status='MUTED';
+document.querySelector('[data-slot="2"] .label').textContent='Guest A';
+document.querySelector('[data-slot="2"] .status-text').textContent='MUTED';
+document.querySelector('[data-slot="3"]').dataset.status='FADER_DOWN';
+document.querySelector('[data-slot="3"] .label').textContent='Guest B With A Very Long Custom Label That Must Wrap';
+document.querySelector('[data-slot="3"] .status-text').textContent='FADER DOWN';
+</script></body>
+</html>

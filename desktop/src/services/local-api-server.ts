@@ -322,6 +322,71 @@ export class LocalApiServer {
       }
 
       {
+        const micTallyMatch = url.pathname.match(
+          /^\/api\/projects\/([^/]+)\/mic-tally\/(state|config|connect|disconnect|reconnect|simulate|repair-displays)$/,
+        );
+        if (micTallyMatch) {
+          try {
+            this.requireAuth();
+            const projectSlug = decodeURIComponent(micTallyMatch[1] ?? "");
+            const action = micTallyMatch[2];
+            const project = this.data.getProjectBySlug(projectSlug);
+            if (!project) {
+              return sendJson(response, 404, { ok: false, error: "Project not found." });
+            }
+            if (project.project_type !== "mic-tally") {
+              return sendJson(response, 404, {
+                ok: false,
+                error: "This project does not use Mic Tally.",
+              });
+            }
+            const micTally = this.data.getMicTally();
+            if (!micTally) {
+              return sendJson(response, 503, { ok: false, error: "Mic Tally service unavailable." });
+            }
+            const projectId = project.id;
+            if (request.method === "GET" && action === "state") {
+              return sendJson(response, 200, micTally.getOperatorState(projectId));
+            }
+            if (request.method !== "POST") {
+              return sendJson(response, 405, { ok: false, error: "Method not allowed." });
+            }
+            this.requireControlAccess();
+            const body = (await readJsonBody(request)) as Record<string, unknown>;
+            if (action === "config") {
+              return sendJson(response, 200, micTally.updateConfig(projectId, body));
+            }
+            if (action === "connect") {
+              return sendJson(response, 200, await micTally.connect(projectId));
+            }
+            if (action === "disconnect") {
+              return sendJson(response, 200, micTally.disconnect(projectId));
+            }
+            if (action === "reconnect") {
+              return sendJson(response, 200, await micTally.reconnect(projectId));
+            }
+            if (action === "simulate") {
+              return sendJson(
+                response,
+                200,
+                micTally.simulate(projectId, body as { type: "enable" }),
+              );
+            }
+            if (action === "repair-displays") {
+              const repaired = this.data.repairMicTallyDisplays(projectId);
+              const state = micTally.getOperatorState(projectId);
+              return sendJson(response, 200, { ...state, displayRepair: repaired });
+            }
+            return sendJson(response, 404, { ok: false, error: "Unknown Mic Tally action." });
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Mic Tally request failed.";
+            return sendJson(response, 400, { ok: false, error: message });
+          }
+        }
+      }
+
+      {
         const semaMatch = url.pathname.match(
           /^\/api\/projects\/([^/]+)\/sema\/(schedule|sheet|viewing-sheet|refresh|advance|now|jump|source|manual|highlight|worksheets)$/,
         );
@@ -3090,7 +3155,8 @@ export class LocalApiServer {
           const bridgeData = isLiveChatOverlay
             ? this.data.getLiveChatDisplayBridgeData(projectId) ??
               this.data.getGenericDisplayBridgeData(projectId)
-            : this.data.getSemaDisplayBridgeData(projectId) ??
+            : this.data.getMicTallyDisplayBridgeData(projectId) ??
+              this.data.getSemaDisplayBridgeData(projectId) ??
               (displaySlug === "stream-ticker"
                 ? this.data.getStreamTickerDisplayBridgeData(projectId)
                 : this.data.getGenericDisplayBridgeData(projectId));

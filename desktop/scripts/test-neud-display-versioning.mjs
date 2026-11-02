@@ -20,15 +20,18 @@ test("display edit page loads versioning and revision history", () => {
 test("description editing is separate from html versioning", () => {
   const client = read("src/components/displays/DisplayEditClient.tsx");
   assert.match(client, /Description/);
-  assert.match(client, /Save Description/);
+  assert.match(client, /Save Details/);
+  assert.match(client, /saveDisplayMetadata/);
   assert.match(client, /draftHtml !== savedBaselineHtml/);
+  assert.match(client, /metadataDirty/);
 });
 
 test("active revision uses description and timestamp", () => {
   const labels = read("src/lib/developer-tools/revision-labels.ts");
   const client = read("src/components/displays/DisplayEditClient.tsx");
   assert.match(labels, /formatRevisionDescription/);
-  assert.match(client, /activeRevisionDescription/);
+  assert.match(client, /activeRevision/);
+  assert.match(client, /formatRevisionCreatedTimestamp|formatRevisionDownloadTimestamp/);
 });
 
 test("duplicate copies refresh rate and defaults to disabled", () => {

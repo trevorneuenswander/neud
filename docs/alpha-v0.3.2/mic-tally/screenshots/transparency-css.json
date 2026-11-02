@@ -1,0 +1,7 @@
+{
+  "note": "CSS requires transparent html/body/stage; Chrome headless PNG may composite on opaque canvas \u2014 verify source CSS and omitBackground workflow in OBS/vMix.",
+  "sourceRequires": [
+    "html/body background transparent",
+    "no full-bleed opaque header"
+  ]
+}

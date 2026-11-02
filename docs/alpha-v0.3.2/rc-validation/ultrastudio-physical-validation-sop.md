@@ -1,6 +1,8 @@
-# UltraStudio physical validation SOP (Owner — tomorrow morning)
+# UltraStudio physical validation SOP
 
-Closed internal RC only. Ad hoc macOS signing. Not notarized. Not published.
+**Status:** **PASSED** — Owner confirmed physical Blackmagic UltraStudio Key/Fill output testing succeeded for v0.3.2.
+
+Closed internal RC only for the original exercise. Ad hoc macOS signing. Not notarized at the time of validation.
 
 ## Before connecting hardware
 

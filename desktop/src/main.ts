@@ -89,6 +89,8 @@ import { ProjectPackageService } from "./packages/project-package-service";
 import { CloudPackagePublisher } from "./packages/cloud-package-publisher";
 import { SemaScheduleService } from "./packages/sema/sema-schedule-service";
 import { SemaPackageDisplayHydration } from "./packages/sema/sema-package-display-hydration";
+import { MicTallyService } from "./packages/mic-tally/mic-tally-service";
+import { MicTallyPackageDisplayHydration } from "./packages/mic-tally/mic-tally-package-display-hydration";
 import { LiveChatService } from "./live-chat/live-chat-service";
 import { LiveChatDisplayHydration } from "./live-chat/live-chat-display-hydration";
 import { ZoomIntegrationService } from "./integrations/zoom/zoom-integration-service";
@@ -289,6 +291,7 @@ writePackagedBootstrapLog("main.module_loaded");
 let mainWindow: BrowserWindow | null = null;
 let localDataService: LocalDataService | null = null;
 let semaScheduleService: SemaScheduleService | null = null;
+let micTallyService: MicTallyService | null = null;
 let activitySyncService: import("./services/activity-sync/activity-sync-service").ActivitySyncService | null =
   null;
 let displaySyncService: DisplaySyncService | null = null;
@@ -517,6 +520,7 @@ async function performGracefulShutdown(): Promise<boolean> {
   videoPlaybackService?.closeAll();
   videoPlaybackService = null;
   semaScheduleService?.stopAllPolling();
+  micTallyService?.shutdown();
   shutdownDisplayPreviewWindows();
   closeAllGraphicEditorWindows();
   closeAllDisplaySettingsWindows();
@@ -972,6 +976,8 @@ async function createMainWindow() {
   localDataService.setSemaSchedule(semaScheduleService);
   // Keep each configured sheet cache fresh (public CSV; unchanged hash = no display update).
   semaScheduleService.startPollingConfiguredProjects();
+  micTallyService = new MicTallyService(localDatabase);
+  localDataService.setMicTally(micTallyService);
   localDataService.setAccessAuthorization(accessAuthorizationService);
 
   pinnedViewerSyncService = new PinnedViewerSyncService(
@@ -1741,6 +1747,40 @@ async function createMainWindow() {
     projectCodeRevisionsRepository,
     projectCodeStorageService,
   );
+  const micTallyDisplayHydration = new MicTallyPackageDisplayHydration(
+    projectPackagesRepository,
+    displaysRepository,
+    projectDisplayCodeRepository,
+    projectCodeRevisionsRepository,
+    projectCodeStorageService,
+  );
+  const hydrateMicTallyDisplays = (
+    projectId: string,
+    manifest: ProjectPackageManifest,
+    options: { fatal?: boolean } = {},
+  ) => {
+    const fatal = options.fatal === true;
+    try {
+      const results = micTallyDisplayHydration.ensureHydrated(projectId, manifest);
+      const missing = results.filter((result) => !result.displayId);
+      if (missing.length > 0) {
+        throw new Error(
+          `Mic Tally display hydration incomplete: ${missing
+            .map((result) => `${result.slug}:${result.reason ?? "no display id"}`)
+            .join("; ")}`,
+        );
+      }
+      console.info(
+        `[desktop] Mic Tally displays hydrated projectId=${projectId} count=${results.length}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (fatal) {
+        throw error instanceof Error ? error : new Error(message);
+      }
+      console.warn(`[desktop] Mic Tally display hydration failed (nonfatal): ${message}`);
+    }
+  };
   const hydrateSemaDisplays = (
     projectId: string,
     manifest: ProjectPackageManifest,
@@ -1826,11 +1866,71 @@ async function createMainWindow() {
   if (installedSemaProject && installedSemaPackage?.manifest) {
     hydrateSemaDisplays(installedSemaProject.id, installedSemaPackage.manifest);
   }
+  // Mic Tally: reconcile unpublished package content, then hydrate/repair displays for
+  // already-installed projects (activation alone is not enough after a first empty install).
+  try {
+    const micIdentity = projectPackageService.reconcileInstallProjectIdentity("mic-tally");
+    if (micIdentity.rebound) {
+      console.info(
+        `[desktop] Mic Tally package install identity rebound reason=${micIdentity.reason} from=${micIdentity.fromProjectId} to=${micIdentity.toProjectId}`,
+      );
+    }
+    const micReconcile = projectPackageService.reconcileDevelopmentBuiltinPackage("mic-tally");
+    if (micReconcile.rebuilt) {
+      console.info(
+        `[desktop] Mic Tally development package reconciled reason=${micReconcile.reason} projectId=${micReconcile.install?.projectId ?? "n/a"}`,
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `[desktop] Mic Tally development package reconcile failed (nonfatal): ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  const repairMicTallyProjectDisplays = (projectId: string) => {
+    const install =
+      projectPackagesRepository.getInstallByProjectId(projectId) ??
+      projectPackagesRepository.getInstallBySlug("mic-tally");
+    if (!install?.manifest) {
+      return { created: 0, updated: 0, unchanged: 0, missing: 1, results: [] };
+    }
+    const results = micTallyDisplayHydration.ensureHydrated(projectId, install.manifest);
+    return {
+      created: results.filter((result) => result.created).length,
+      updated: results.filter((result) => !result.created && result.revisionPublished).length,
+      unchanged: results.filter(
+        (result) => result.displayId && !result.created && !result.revisionPublished,
+      ).length,
+      missing: results.filter((result) => !result.displayId).length,
+      results,
+    };
+  };
+  localDataService.setMicTallyDisplayRepair(repairMicTallyProjectDisplays);
+  for (const project of projectsRepository.list()) {
+    if (project.projectType !== "mic-tally") continue;
+    try {
+      const repaired = repairMicTallyProjectDisplays(project.id);
+      console.info(
+        `[desktop] Mic Tally displays repaired projectId=${project.id} created=${repaired.created} updated=${repaired.updated} unchanged=${repaired.unchanged} missing=${repaired.missing}`,
+      );
+    } catch (error) {
+      console.warn(
+        `[desktop] Mic Tally display repair failed (nonfatal) projectId=${project.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
   projectPackageService.setPackageActivatedHandler((projectId, manifest, meta) => {
     if (manifest.projectSlug === "sema") {
       // Fail install/update when default displays cannot be registered — clean
       // machines must never end up with an "installed" SEMA package and empty Displays.
       hydrateSemaDisplays(projectId, manifest, { fatal: true });
+      return;
+    }
+    if (manifest.projectSlug === "mic-tally") {
+      hydrateMicTallyDisplays(projectId, manifest, { fatal: true });
       return;
     }
     if (

@@ -15,14 +15,14 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
-test("public catalog current is v0.3.1 matching in-tree app version", () => {
+test("public catalog current is v0.3.2 matching in-tree app version", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
   const rootPkg = readJson("package.json");
+  assert.match(catalog, /version: "0\.3\.2"/);
   assert.match(catalog, /version: "0\.3\.1"/);
-  assert.match(catalog, /version: "0\.3\.0"/);
-  assert.equal(rootPkg.version, "0.3.1");
+  assert.equal(rootPkg.version, "0.3.2");
   assert.equal([...catalog.matchAll(/current: true/g)].length, 1);
-  assert.match(catalog, /version: "0\.3\.1"[\s\S]*?current: true/);
+  assert.match(catalog, /version: "0\.3\.2"[\s\S]*?current: true/);
 });
 
 test("v0.2.3 summary covers fresh-install display recovery", () => {
@@ -49,16 +49,17 @@ test("download page renders from shared release metadata", () => {
 
 test("Windows and macOS downloads visible for current release", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
-  assert.match(catalog, /version: "0\.3\.1"[\s\S]*?platforms:[\s\S]*?windows:[\s\S]*?supported: true/);
-  assert.match(catalog, /version: "0\.3\.1"[\s\S]*?macos:[\s\S]*?supported: true/);
+  assert.match(catalog, /version: "0\.3\.2"[\s\S]*?platforms:[\s\S]*?windows:[\s\S]*?supported: true/);
+  assert.match(catalog, /version: "0\.3\.2"[\s\S]*?macos:[\s\S]*?supported: true/);
   assert.match(catalog, /Apple Silicon \(arm64\)/);
   assert.match(catalog, /Intel Macs are not supported/);
-  assert.match(catalog, /getVersionedWindowsDownloadUrl\("0\.3\.1"\)/);
-  assert.match(catalog, /getMacDmgDownloadUrl\("0\.3\.1"\)/);
+  assert.match(catalog, /getVersionedWindowsDownloadUrl\("0\.3\.2"\)/);
+  assert.match(catalog, /getMacDmgDownloadUrl\("0\.3\.2"\)/);
 });
 
 test("previous versions are listed and only one release is current", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
+  assert.match(catalog, /version: "0\.3\.1"/);
   assert.match(catalog, /version: "0\.2\.4"/);
   assert.match(catalog, /version: "0\.2\.3"/);
   assert.match(catalog, /version: "0\.2\.2"/);
@@ -86,16 +87,18 @@ test("v0.2.0 Windows download uses immutable GitHub release asset URL", () => {
 
 test("GitHub release links match version tags", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
+  assert.match(catalog, /getGitHubReleaseTagUrl\("0\.3\.2"\)/);
   assert.match(catalog, /getGitHubReleaseTagUrl\("0\.3\.1"\)/);
   assert.match(catalog, /getGitHubReleaseTagUrl\("0\.3\.0"\)/);
   assert.match(catalog, /getGitHubReleaseTagUrl\("0\.2\.4"\)/);
-  assert.match(catalog, /getGitHubReleaseTagUrl\("0\.2\.3"\)/);
   assert.match(catalog, /releases\/tag\/v\$\{version\}/);
 });
 
 test("GitHub release body formatter shares highlights with website catalog", () => {
   const catalog = read("src/lib/releases/neud-releases.ts");
   assert.match(catalog, /formatGitHubReleaseBody/);
+  assert.match(catalog, /V032_HIGHLIGHTS/);
+  assert.match(catalog, /highlights: \[\.\.\.V032_HIGHLIGHTS\]/);
   assert.match(catalog, /V031_HIGHLIGHTS/);
   assert.match(catalog, /highlights: \[\.\.\.V031_HIGHLIGHTS\]/);
   assert.match(catalog, /V030_HIGHLIGHTS/);
@@ -105,15 +108,18 @@ test("GitHub release body formatter shares highlights with website catalog", () 
 });
 
 test("release notes doc points to authoritative catalog", () => {
-  const current = read("docs/releases/v0.3.1-github-release-notes.md");
-  assert.match(current, /NEUD Alpha 0\.3\.1/);
+  const current = read("docs/releases/v0.3.2-github-release-notes.md");
+  assert.match(current, /NEUD Alpha 0\.3\.2/);
   assert.match(current, /Apple Silicon/);
   assert.match(current, /Intel Macs are not supported/);
-  assert.match(current, /last-Team-Admin/);
-  const prior = read("docs/releases/v0.3.0-github-release-notes.md");
-  assert.match(prior, /NEUD v0\.3\.0|NEUD Alpha 0\.3\.0|Output Engine/);
-  const olderPrior = read("docs/releases/v0.2.4-github-release-notes.md");
-  assert.match(olderPrior, /NEUD v0\.2\.4/);
+  assert.match(current, /Mic Tally/);
+  assert.match(current, /UltraStudio Key\/Fill/);
+  assert.match(current, /PASSED/);
+  const prior = read("docs/releases/v0.3.1-github-release-notes.md");
+  assert.match(prior, /NEUD Alpha 0\.3\.1/);
+  assert.match(prior, /last-Team-Admin/);
+  const olderPrior = read("docs/releases/v0.3.0-github-release-notes.md");
+  assert.match(olderPrior, /NEUD v0\.3\.0|NEUD Alpha 0\.3\.0|Output Engine/);
   const notes = read("docs/releases/v0.2.3-github-release-notes.md");
   assert.match(notes, /fresh installations/);
   assert.match(notes, /Published graphics templates recover/);

@@ -7,6 +7,7 @@ import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { ProjectPackagesRepository } from "../repositories/project-packages-repository";
 import { buildBroadArrowPackageV1 } from "./broad-arrow-package-builder";
 import { buildSemaPackageV1 } from "./sema-package-builder";
+import { buildMicTallyPackageV1 } from "./mic-tally-package-builder";
 import { buildModularPackageV1 } from "./modular-package-builder";
 import {
   BUILTIN_PROJECT_PACKAGE_CATALOG,
@@ -608,6 +609,46 @@ export class ProjectPackageService {
         freshManifest = html
           ? buildSemaPackageV1(stagingSource, html)
           : buildSemaPackageV1(stagingSource);
+      } else if (slug === "mic-tally") {
+        freshManifest = buildMicTallyPackageV1(stagingSource);
+        const installedMicPath = path.join(
+          install.packageRoot,
+          "displays",
+          "mic-tally-three-mics-uhd-v1.html",
+        );
+        const freshMicPath = path.join(
+          stagingSource,
+          "displays",
+          "mic-tally-three-mics-uhd-v1.html",
+        );
+        const installedHash =
+          install.manifestHash ?? install.manifest?.integrity?.manifestHash ?? null;
+        const freshHash = freshManifest.integrity.manifestHash ?? null;
+        const htmlMismatch =
+          !fs.existsSync(installedMicPath) ||
+          !fs.existsSync(freshMicPath) ||
+          fs.readFileSync(installedMicPath, "utf8") !== fs.readFileSync(freshMicPath, "utf8");
+        const hashMismatch = Boolean(freshHash && installedHash && freshHash !== installedHash);
+        const missingDisplayDef = !install.manifest?.displays?.some(
+          (display) => display.slug === "mic-tally-three-mics-uhd",
+        );
+        if (!htmlMismatch && !hashMismatch && !missingDisplayDef) {
+          return { rebuilt: false, reason: "content_current", install };
+        }
+        const rebuilt = this.installBuiltinPackage(slug, {
+          existingProjectId: project?.id ?? install.projectId,
+          isUpdate: true,
+          legacyMigration: false,
+        });
+        return {
+          rebuilt: true,
+          reason: missingDisplayDef
+            ? "missing_display_definition"
+            : htmlMismatch
+              ? "html_content_changed"
+              : "manifest_hash_changed",
+          install: rebuilt,
+        };
       } else {
         return { rebuilt: false, reason: "unsupported_slug", install };
       }
@@ -997,7 +1038,12 @@ export class ProjectPackageService {
         slug: catalog.slug,
         projectType: catalog.projectType,
         description: catalog.description,
-        icon: catalog.projectType === "bag-graphics" ? "bag" : "sema",
+        icon:
+          catalog.projectType === "bag-graphics"
+            ? "bag"
+            : catalog.projectType === "mic-tally"
+              ? "mic"
+              : "sema",
         id: preferredId,
       });
     }
@@ -1040,6 +1086,8 @@ export class ProjectPackageService {
         manifest = html
           ? buildSemaPackageV1(stagingSource, html)
           : buildSemaPackageV1(stagingSource);
+      } else if (slug === "mic-tally") {
+        manifest = buildMicTallyPackageV1(stagingSource);
       } else {
         throw new ProjectPackageValidationError(`No package builder for ${slug}`);
       }
@@ -1098,6 +1146,28 @@ export class ProjectPackageService {
         description: catalog.description,
         updatedAt: new Date().toISOString(),
       });
+
+      if (slug === "mic-tally") {
+        if (
+          !activated.manifest.displays.some(
+            (display) => display.slug === "mic-tally-three-mics-uhd",
+          )
+        ) {
+          throw new ProjectPackageValidationError(
+            "Mic Tally package is missing the Three Microphones UHD display definition.",
+          );
+        }
+        const micHtmlPath = path.join(
+          activated.packageRoot,
+          "displays",
+          "mic-tally-three-mics-uhd-v1.html",
+        );
+        if (!fs.existsSync(micHtmlPath)) {
+          throw new ProjectPackageValidationError(
+            "Mic Tally package is missing Three Microphones UHD HTML assets.",
+          );
+        }
+      }
 
       if (slug === "sema") {
         if (!activated.manifest.displays.some((display) => display.slug === "schedule-ticker")) {

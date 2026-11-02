@@ -234,9 +234,10 @@ export function ProjectNav({
   const supportsBagController =
     capabilityIds.includes("manual-controller") &&
     projectSupportsBagController(projectType);
+  // Do not treat bare "data-source" as SEMA — Mic Tally and other data-source
+  // projects share that capability without the Google Sheet / rundown routes.
   const supportsSema =
     capabilityIds.includes("rundown-schedule") ||
-    capabilityIds.includes("data-source") ||
     projectSupportsSemaWorkflow(projectType);
 
   const capabilityItems = buildCapabilityNavItems(capabilityIds).filter((item) => {

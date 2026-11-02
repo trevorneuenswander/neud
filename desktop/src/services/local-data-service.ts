@@ -467,6 +467,16 @@ export class LocalDataService {
   private semaScheduleUnsubscribe: (() => void) | null = null;
   private semaSchedule: import("../packages/sema/sema-schedule-service").SemaScheduleService | null =
     null;
+  private micTally: import("../packages/mic-tally/mic-tally-service").MicTallyService | null = null;
+  private micTallyDisplayRepair:
+    | ((projectId: string) => {
+        created: number;
+        updated: number;
+        unchanged: number;
+        missing: number;
+        results: Array<{ slug: string; created: boolean; revisionPublished: boolean; reason?: string }>;
+      })
+    | null = null;
   private liveChatService: import("../live-chat/live-chat-service").LiveChatService | null =
     null;
 
@@ -602,6 +612,77 @@ export class LocalDataService {
       ...snapshot,
       enabled: true,
       source: payload.source,
+      revision: payload.revision,
+      contentHash: payload.contentHash,
+      snapshot,
+      projectId,
+    };
+  }
+
+  setMicTally(service: import("../packages/mic-tally/mic-tally-service").MicTallyService) {
+    this.micTally = service;
+    service.setChangeHandler((event) => {
+      this.lastLocalDisplayBroadcastHash.set(event.projectId, event.contentHash);
+      const emittedAtMs = Date.now();
+      this.displayBridgeEvents?.publishDisplayDataChanged(event.projectId, {
+        revision: event.revision,
+        contentHash: event.contentHash,
+        emittedAtMs,
+      });
+    });
+  }
+
+  setMicTallyDisplayRepair(
+    repair: NonNullable<LocalDataService["micTallyDisplayRepair"]> | null,
+  ) {
+    this.micTallyDisplayRepair = repair;
+  }
+
+  getMicTally() {
+    return this.micTally;
+  }
+
+  /**
+   * Idempotent repair for already-installed Mic Tally projects missing bundled displays.
+   * Preserves custom displays and existing revisions (hydration skips unchanged HTML).
+   */
+  repairMicTallyDisplays(projectId: string) {
+    if (!this.micTallyDisplayRepair) {
+      return {
+        created: 0,
+        updated: 0,
+        unchanged: 0,
+        missing: 0,
+        results: [] as Array<{
+          slug: string;
+          created: boolean;
+          revisionPublished: boolean;
+          reason?: string;
+        }>,
+        error: "Mic Tally display repair is unavailable.",
+      };
+    }
+    return this.micTallyDisplayRepair(projectId);
+  }
+
+  getMicTallyDisplayBridgeData(projectId: string): Record<string, unknown> | null {
+    if (!this.micTally) {
+      return null;
+    }
+    const project = this.projects.getById(projectId);
+    if (!project || project.projectType !== "mic-tally") {
+      return null;
+    }
+    const payload = this.micTally.toDisplayPayload(projectId);
+    const snapshot = {
+      micTally: payload,
+      slots: payload.slots,
+      dataSource: "mic-tally",
+      updatedAt: payload.updatedAt,
+    };
+    return {
+      ...snapshot,
+      enabled: true,
       revision: payload.revision,
       contentHash: payload.contentHash,
       snapshot,

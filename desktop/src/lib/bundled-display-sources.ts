@@ -12,6 +12,7 @@ export const BUNDLED_DISPLAY_HTML_FILES = [
   "sema-schedule-pylon-v1.html",
   "sema-schedule-ticker-editable-v1.html",
   "sema-schedule-fullscreen-uhd-v1.html",
+  "mic-tally-three-mics-uhd-v1.html",
   "legacy-pylon-v1.html",
   "auction-ticker-overlay-v1.html",
   "auction-pylon-display-v1.html",

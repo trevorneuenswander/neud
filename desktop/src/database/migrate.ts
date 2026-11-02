@@ -58,6 +58,8 @@ const MIGRATION_FILES = [
   "046_video_media_orphan_recovery.sql",
   "047_sema_ticker_highlight.sql",
   "048_sema_viewing_worksheet.sql",
+  "049_mic_tally_state.sql",
+  "050_mic_tally_connection_health.sql",
 ];
 
 export function runMigrations(db: LocalDatabase, paths: AppPaths): void {
