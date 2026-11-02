@@ -68,6 +68,15 @@ function seedProjectsAndDisplays(db) {
   `);
 }
 
+/** 047/048 ALTER sema_schedule_state; synthetic DBs that skip real 041 still need the table. */
+function seedSemaScheduleState(db) {
+  const sql = fs.readFileSync(
+    path.join(desktopRoot, "src", "database", "migrations", "041_sema_schedule_state.sql"),
+    "utf8",
+  );
+  db.exec(sql);
+}
+
 function seedDisplayMediaAssetsWithoutOrphanColumn(db) {
   db.exec(`
     CREATE TABLE display_media_assets (
@@ -161,6 +170,7 @@ test("v0.3.0-era DB (through 045) gains orphan_recovery_suppressed and preserves
     );
   `);
   seedProjectsAndDisplays(db);
+  seedSemaScheduleState(db);
   seedDisplayMediaAssetsWithoutOrphanColumn(db);
   markMigrationsApplied(db, 45);
 
@@ -229,6 +239,7 @@ test("already-applied 046 is a no-op", async () => {
     );
   `);
   seedProjectsAndDisplays(db);
+  seedSemaScheduleState(db);
   seedDisplayMediaAssetsWithoutOrphanColumn(db);
   db.exec(`
     ALTER TABLE display_media_assets
@@ -270,7 +281,9 @@ test("earlier-alpha DB without 045 applies 045 then 046", async () => {
     );
   `);
   // Minimal stubs so 045/046 FK references do not fail if referenced by later SQL.
+  // 041 table required when the runner continues into 047/048 after 046.
   seedProjectsAndDisplays(db);
+  seedSemaScheduleState(db);
   markMigrationsApplied(db, 44);
 
   // Pre-create tables that migrations 1–44 would have created only as needed for 045.
@@ -322,6 +335,7 @@ test("fresh path: 045 schema + pending 046 via runner", async () => {
     );
   `);
   seedProjectsAndDisplays(db);
+  seedSemaScheduleState(db);
   const migrationsDir = path.join(desktopRoot, "src", "database", "migrations");
   db.exec(fs.readFileSync(path.join(migrationsDir, "045_display_video_media.sql"), "utf8"));
   markMigrationsApplied(db, 45);
