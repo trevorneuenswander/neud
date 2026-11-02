@@ -1,6 +1,6 @@
 {
   "name": "neud",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "NEUD — Graphics Without Limits.",
   "workspaces": [
@@ -166,7 +166,7 @@
     "validate:activity-migration": "node scripts/validate-activity-migration.mjs",
     "audit:legacy-naming": "node scripts/audit-legacy-naming.mjs",
     "package:win": "node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 -- node desktop/scripts/fetch-windows-ffmpeg-lgpl.mjs && node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 -- npm run build:desktop && node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 NEUD_WITH_FFMPEG=1 -- npm run package:win -w @neud/desktop",
-    "package:mac": "npm run build:desktop && npm run package:mac -w @neud/desktop",
+    "package:mac": "node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 -- npm run build:desktop && node desktop/scripts/run-with-env.mjs NEUD_REQUIRE_REAL_DECKLINK=1 -- npm run package:mac -w @neud/desktop",
     "dist:win": "npm run package:win",
     "verify:bundled-browser": "node desktop/scripts/verify-bundled-browser.mjs",
     "verify:mac-bundled-browser": "node desktop/scripts/verify-bundled-browser.mjs",

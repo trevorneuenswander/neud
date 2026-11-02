@@ -410,19 +410,41 @@ export class ActivitySyncService {
       }
       this.lastPushUploaded = uploadedTotal;
 
-      await this.pullRemote();
-      if (uploadedTotal > 0 && this.repository.countBySyncStatus("failed") === 0) {
-        this.lastSyncError = null;
-      } else if (this.repository.countBySyncStatus("failed") > 0) {
-        const failed = this.repository.listUnsynced(1).find((row) => row.syncStatus === "failed");
-        this.lastSyncError = failed?.syncError ?? this.lastSyncError;
+      // Periodic idle: skip pull when nothing pending and a recent pull succeeded.
+      // Realtime + event-recorded reasons still pull immediately.
+      const pending = this.repository.countBySyncStatus("pending");
+      const failed = this.repository.countBySyncStatus("failed");
+      const lastPullAt = this.settings.get<string | null>(ACTIVITY_SYNC_LAST_PULL_KEY, null);
+      const lastPullAgeMs = lastPullAt ? Date.now() - Date.parse(lastPullAt) : Number.POSITIVE_INFINITY;
+      const skipIdlePull =
+        reason === "periodic" &&
+        uploadedTotal === 0 &&
+        pending === 0 &&
+        failed === 0 &&
+        Number.isFinite(lastPullAgeMs) &&
+        lastPullAgeMs < 3 * 60_000;
+
+      if (skipIdlePull) {
+        this.logActivitySync(
+          `sync.complete reason=${reason} push=0 pull=skipped-idle lastPullAgeMs=${Math.round(lastPullAgeMs)}`,
+        );
       } else {
-        this.lastSyncError = null;
+        await this.pullRemote();
+        if (uploadedTotal > 0 && failed === 0) {
+          this.lastSyncError = null;
+        } else if (this.repository.countBySyncStatus("failed") > 0) {
+          const failedRow = this.repository
+            .listUnsynced(1)
+            .find((row) => row.syncStatus === "failed");
+          this.lastSyncError = failedRow?.syncError ?? this.lastSyncError;
+        } else {
+          this.lastSyncError = null;
+        }
+        console.debug(`[ActivitySync] completed reason=${reason}`);
+        this.logActivitySync(
+          `sync.complete reason=${reason} push=${uploadedTotal} pull=${this.lastPullDownloaded} pending=${this.repository.countBySyncStatus("pending")} failed=${this.repository.countBySyncStatus("failed")}`,
+        );
       }
-      console.debug(`[ActivitySync] completed reason=${reason}`);
-      this.logActivitySync(
-        `sync.complete reason=${reason} push=${uploadedTotal} pull=${this.lastPullDownloaded} pending=${this.repository.countBySyncStatus("pending")} failed=${this.repository.countBySyncStatus("failed")}`,
-      );
     } catch (error) {
       this.lastSyncError = error instanceof Error ? error.message : String(error);
       console.warn("[ActivitySync] failed:", this.lastSyncError);

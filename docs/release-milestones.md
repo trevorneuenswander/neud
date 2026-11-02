@@ -7,8 +7,9 @@ This document tracks **product milestones** separately from SQLite migration num
 | Label | Version | Notes |
 | --- | --- | --- |
 | **Latest published release** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, last-Team-Admin guard, Output type persistence |
+| **In development** | **v0.3.2** | Stability: DeckLink macOS real addon, SEMA package displays, Activity noise, Supabase egress |
 | **Previous published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
-| **Current package.json** | **v0.3.1** | Canonical root + `@neud/desktop` |
+| **Current package.json** | **v0.3.2** | Canonical root + `@neud/desktop` (publish pending) |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
@@ -28,7 +29,11 @@ NEUD-0.3.1-arm64.zip
 latest-mac.yml
 ```
 
-Canonical application version is **`0.3.1`** in root and `@neud/desktop` `package.json`. Apple Silicon only. Intel Macs are not supported. Preserve v0.3.0 installer artifacts.
+Canonical **published** application version remains **`0.3.1`**. Development branch targets **`0.3.2`**. Apple Silicon only. Intel Macs are not supported. Preserve v0.3.1 installer artifacts and the `v0.3.1` tag.
+
+## Alpha v0.3.2 (in development)
+
+Stability and packaging: macOS DeckLink real-addon CI parity, SEMA clean-install display hydration, routine SEMA Activity suppression, Supabase egress reductions (selective display-revision HTML pull), login performance bar gated off auth routes. SEMA fullscreen UHD is design-only.
 
 ## Alpha v0.3.1
 

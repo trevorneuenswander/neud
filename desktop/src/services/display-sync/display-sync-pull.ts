@@ -448,9 +448,45 @@ async function reconcileCloudDisplay(
   let cloudRevisions: CloudDisplayRevisionRow[] = [];
   let revisionPageCount = 0;
   try {
-    const fetched = await ctx.cloudClient.fetchAllRevisionsForDisplays(sourceDisplayIds);
-    cloudRevisions = fetched.revisions;
+    // Two-phase pull: metadata (no HTML) first, then bodies only for revisions
+    // that are missing locally or whose content_hash is unknown/unverified.
+    // Production measured ~82KB avg html_content; full SELECT * on every 60s sync
+    // was the dominant Free-plan egress source (~86k historical calls).
+    const fetched = await ctx.cloudClient.fetchRevisionMetadataForDisplays(sourceDisplayIds);
     revisionPageCount = fetched.pageCount;
+    const needBodies: string[] = [];
+    for (const revision of fetched.revisions) {
+      const localById = ctx.revisions.getById(revision.id);
+      const localBundle = localById
+        ? ctx.storage.readDisplayRevision(projectId, displayId, revision.id)
+        : null;
+      const hash = (revision.content_hash ?? "").trim();
+      const localHashMatch =
+        Boolean(hash) &&
+        (localById?.sourceHash === hash ||
+          Boolean(
+            ctx.revisions.findByResourceAndSourceHash({
+              projectId,
+              resourceType: "display",
+              resourceId: displayId,
+              sourceHash: hash,
+            }),
+          ));
+      const hasLocalHtml = Boolean(localBundle?.html?.trim());
+      if (!localById || !hasLocalHtml || !localHashMatch) {
+        needBodies.push(revision.id);
+      }
+    }
+    const bodies =
+      needBodies.length > 0
+        ? await ctx.cloudClient.fetchRevisionBodiesByIds(needBodies)
+        : [];
+    const bodyById = new Map(bodies.map((row) => [row.id, row]));
+    cloudRevisions = fetched.revisions.map((row) => bodyById.get(row.id) ?? row);
+    logPull(
+      ctx.paths,
+      `pull.revisions.selective displayId=${displayId} metadata=${fetched.revisions.length} bodiesFetched=${bodies.length}`,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logPull(ctx.paths, `pull.revisions.error displayId=${displayId} message=${message}`);

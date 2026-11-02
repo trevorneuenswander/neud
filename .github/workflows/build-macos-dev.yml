@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   build-macos-dev:
@@ -22,6 +23,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       NEUD_USE_LOCAL_DATA: "1"
       NEXT_PUBLIC_NEUD_USE_LOCAL_DATA: "1"
+      NEUD_REQUIRE_REAL_DECKLINK: "1"
       NODE_OPTIONS: --max-old-space-size=8192
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
@@ -35,6 +37,21 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+
+      - name: Require Google build service account variable
+        run: |
+          if [ -z "${{ vars.NEUD_GCP_BUILD_SERVICE_ACCOUNT }}" ]; then
+            echo "Missing repository variable NEUD_GCP_BUILD_SERVICE_ACCOUNT."
+            echo "See docs/output-engine/decklink-macos-release.md."
+            exit 1
+          fi
+
+      - name: Install Blackmagic DeckLink SDK from private Google Drive
+        uses: ./.github/actions/setup-decklink-sdk-macos
+        with:
+          workload_identity_provider: projects/241025226693/locations/global/workloadIdentityPools/neud-github-actions/providers/github-actions
+          service_account: ${{ vars.NEUD_GCP_BUILD_SERVICE_ACCOUNT }}
+          drive_file_id: 1iYubcuA0WzlsLG6jilF2nR7_hC2sx-8A
 
       - name: Install dependencies
         run: npm ci

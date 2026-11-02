@@ -136,7 +136,16 @@ export class ProjectPackageService {
   }
 
   getInstalledDisplayKeys(projectId: string): Set<string> | null {
-    const install = this.packages.getInstallByProjectId(projectId);
+    let install = this.packages.getInstallByProjectId(projectId);
+    // Pass 6 / clean-install: install row may still be keyed to a prior local id
+    // after cloud identity realignment. Fall back by project slug so SEMA
+    // Displays do not disappear while reconcile catches up.
+    if (!install?.manifest) {
+      const project = this.projects.getById(projectId);
+      if (project?.slug) {
+        install = this.packages.getInstallBySlug(project.slug);
+      }
+    }
     if (!install?.manifest) {
       return null;
     }
@@ -1123,10 +1132,24 @@ export class ProjectPackageService {
         void this.onFirstInstallHooks(project.id, activated.manifest);
       }
       if (this.onPackageActivated) {
-        void this.onPackageActivated(project.id, activated.manifest, {
+        // SEMA hydration is synchronous and must be allowed to fail the install.
+        // Do not wrap in void/try here — callers that need nonfatal behavior catch locally.
+        const activatedResult = this.onPackageActivated(project.id, activated.manifest, {
           isUpdate: options.isUpdate,
           legacyMigration: options.legacyMigration,
         });
+        if (
+          activatedResult &&
+          typeof (activatedResult as Promise<void>).then === "function"
+        ) {
+          void (activatedResult as Promise<void>).catch((error) => {
+            console.warn(
+              `[packages] Package activation handler failed (async): ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
+        }
       }
 
       this.emit({

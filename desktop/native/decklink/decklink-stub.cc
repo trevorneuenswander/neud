@@ -4,7 +4,8 @@ DeckLinkAvailability DeckLinkProbe() {
   return {
       false,
       "",
-      // Diagnostics: stub binary. Operator UI maps this to EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE.
+      // Diagnostics: stub binary. Operator UI maps this to EXTERNAL_DEVICE_STUB_BUILD
+      // ("DeckLink SDK missing at build time"), not Desktop Video / driver failure.
       "NEUD DeckLink stub addon (built without Blackmagic SDK).",
   };
 }

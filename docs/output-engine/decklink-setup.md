@@ -29,7 +29,7 @@ Expected locations:
 
 Without `NEUD_DECKLINK_SDK`, ordinary desktop builds may compile a stub for local development. The stub reports the SDK as unavailable. Unit tests use a mock scheduler and do not need a card.
 
-**Windows release packaging must not ship a stub.** Set `NEUD_REQUIRE_REAL_DECKLINK=1` (already set by `npm run package:win` and the Release Windows workflow). Missing SDK or a stub addon fails the packaging job. See [decklink-windows-release.md](./decklink-windows-release.md).
+**Windows and macOS release packaging must not ship a stub.** Set `NEUD_REQUIRE_REAL_DECKLINK=1` (already set by `npm run package:win`, `npm run package:mac`, and the Release Windows / Release macOS workflows). Missing SDK or a stub addon fails the packaging job. See [decklink-windows-release.md](./decklink-windows-release.md) and [decklink-macos-release.md](./decklink-macos-release.md).
 
 Do not commit the Blackmagic SDK into this repository. Desktop Video is a machine prerequisite, not an app resource.
 
@@ -50,7 +50,8 @@ The offscreen renderer reads Chromium’s paint buffer via `NativeImage.toBitmap
 ## Troubleshooting
 
 - No Blackmagic DeckLink outputs detected: Desktop Video is installed, but no output endpoint was enumerated. Check the Desktop Video setup application and the cable.
-- DeckLink is unavailable: the stub addon loaded, or the driver is missing. Install Desktop Video and restart NEUD.
+- “External device support was not compiled into this NEUD build (DeckLink SDK missing at build time)”: the packaged addon is a **stub** (SDK absent when that installer was built). Install Desktop Video will not fix this — use a gated Windows/macOS package that ships a real addon. See [decklink-macos-release.md](./decklink-macos-release.md) / [decklink-windows-release.md](./decklink-windows-release.md).
+- “Desktop Video runtime is unavailable…”: a **real** addon loaded, but Blackmagic Desktop Video is missing or broken. Install/update Desktop Video and restart NEUD.
 - Configured DeckLink video mode is no longer available: the saved mode is not on that output anymore. Edit the route and choose a current mode.
 - BGRA 8-bit is not supported: the selected mode failed `DoesSupportVideoMode` for Fill BGRA. Do not switch to YUV automatically; pick another mode or card.
 - Device removed: the endpoint disappeared. The route stays saved. Start it again after the device returns. NEUD does not move the route to another output.

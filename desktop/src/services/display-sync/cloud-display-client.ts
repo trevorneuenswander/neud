@@ -74,6 +74,10 @@ export type CloudDisplayIdentityRow = {
 
 const DISPLAY_REVISION_PAGE_SIZE = 500;
 
+/** Metadata-only projection — excludes html_content (avg ~80KB/row in production). */
+export const DISPLAY_REVISION_METADATA_COLUMNS =
+  "id, display_id, project_id, version_number, content_hash, version_note, created_at, created_by_user_id, restored_from_revision_id, sync_version, source_instance_id";
+
 export class CloudDisplayClient {
   constructor(private readonly cloud: AuthenticatedCloudCoordinator) {}
 
@@ -257,7 +261,11 @@ export class CloudDisplayClient {
     return (data ?? []) as CloudDisplayIdentityRow[];
   }
 
-  async fetchAllRevisionsForDisplays(displayIds: string[]): Promise<{
+  /**
+   * Fetch revision metadata without html_content. Callers that need bodies for
+   * unknown/changed hashes should follow with {@link fetchRevisionBodiesByIds}.
+   */
+  async fetchRevisionMetadataForDisplays(displayIds: string[]): Promise<{
     revisions: CloudDisplayRevisionRow[];
     pageCount: number;
   }> {
@@ -276,7 +284,7 @@ export class CloudDisplayClient {
       const to = from + DISPLAY_REVISION_PAGE_SIZE - 1;
       const { data, error } = await supabase
         .from("display_revisions")
-        .select("*")
+        .select(DISPLAY_REVISION_METADATA_COLUMNS)
         .in("display_id", uniqueIds)
         .order("version_number", { ascending: true })
         .range(from, to);
@@ -285,9 +293,14 @@ export class CloudDisplayClient {
       }
 
       pageCount += 1;
-      const rows = (data ?? []) as CloudDisplayRevisionRow[];
+      const rows = (data ?? []) as Array<Omit<CloudDisplayRevisionRow, "html_content"> & {
+        html_content?: string;
+      }>;
       for (const row of rows) {
-        merged.set(row.id, row);
+        merged.set(row.id, {
+          ...row,
+          html_content: typeof row.html_content === "string" ? row.html_content : "",
+        });
       }
 
       if (rows.length < DISPLAY_REVISION_PAGE_SIZE) {
@@ -304,6 +317,51 @@ export class CloudDisplayClient {
     });
 
     return { revisions, pageCount };
+  }
+
+  async fetchRevisionBodiesByIds(revisionIds: string[]): Promise<CloudDisplayRevisionRow[]> {
+    const uniqueIds = [...new Set(revisionIds.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const supabase = await this.client();
+    const merged = new Map<string, CloudDisplayRevisionRow>();
+    const chunkSize = 50;
+    for (let offset = 0; offset < uniqueIds.length; offset += chunkSize) {
+      const chunk = uniqueIds.slice(offset, offset + chunkSize);
+      const { data, error } = await supabase
+        .from("display_revisions")
+        .select("*")
+        .in("id", chunk);
+      if (error) {
+        throw new Error(error.message);
+      }
+      for (const row of (data ?? []) as CloudDisplayRevisionRow[]) {
+        merged.set(row.id, row);
+      }
+    }
+    return [...merged.values()];
+  }
+
+  /**
+   * @deprecated Prefer metadata + selective body fetch. Kept for callers that
+   * still need a single-shot full download (imports full html_content).
+   */
+  async fetchAllRevisionsForDisplays(displayIds: string[]): Promise<{
+    revisions: CloudDisplayRevisionRow[];
+    pageCount: number;
+  }> {
+    const metadata = await this.fetchRevisionMetadataForDisplays(displayIds);
+    if (metadata.revisions.length === 0) {
+      return metadata;
+    }
+    const bodies = await this.fetchRevisionBodiesByIds(metadata.revisions.map((row) => row.id));
+    const byId = new Map(bodies.map((row) => [row.id, row]));
+    return {
+      pageCount: metadata.pageCount + Math.max(1, Math.ceil(bodies.length / 50)),
+      revisions: metadata.revisions.map((row) => byId.get(row.id) ?? row),
+    };
   }
 
   async countRevisionsForDisplay(displayId: string): Promise<number> {

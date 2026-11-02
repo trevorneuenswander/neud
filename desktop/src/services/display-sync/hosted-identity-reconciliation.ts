@@ -18,10 +18,16 @@ async function getSupabaseClient(
   return cloud.getClient();
 }
 
+/** Process-lifetime success cache — register RPC is idempotent; avoid ~1 call/display/sync. */
+const registeredHostedProjectIds = new Set<string>();
+
 async function registerHostedProject(
   supabase: SupabaseClient,
   project: { id: string; slug: string; name: string; projectType: string },
 ): Promise<{ ok: boolean; code?: string; message?: string }> {
+  if (registeredHostedProjectIds.has(project.id)) {
+    return { ok: true, code: "cached" };
+  }
   const { data, error } = await supabase.rpc("register_hosted_project_for_desktop", {
     p_project_id: project.id,
     p_slug: project.slug,
@@ -32,8 +38,12 @@ async function registerHostedProject(
     return { ok: false, code: error.code ?? "rpc_error", message: error.message };
   }
   const payload = (data ?? { ok: false }) as { ok?: boolean; code?: string; message?: string };
+  const ok = Boolean(payload.ok);
+  if (ok) {
+    registeredHostedProjectIds.add(project.id);
+  }
   return {
-    ok: Boolean(payload.ok),
+    ok,
     code: payload.code,
     message: payload.message,
   };

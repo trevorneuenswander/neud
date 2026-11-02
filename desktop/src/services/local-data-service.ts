@@ -66,6 +66,7 @@ import {
   type LiveDisplayLatencyTrace,
 } from "./live-display-latency-diagnostics";
 import { appendLiveDisplayPipelineLog } from "./live-display-pipeline-log";
+import { appendSemaOpsLog } from "./runtime-diagnostics-log";
 import { LOCAL_CONTROLLER_WAITING_STATUS } from "../displays/resolve-local-controller-display-data";
 import { sanitizePylonFeedPayload, type PylonFeedPayload } from "../displays/pylon-data";
 import {
@@ -682,19 +683,11 @@ export class LocalDataService {
     // PREV/NEXT only move the Google Sheets cache position — they must not change
     // the authoritative on-air source (top-menu toggle owns that).
     const state = this.semaSchedule.advance(projectId, direction);
-    this.recordActivity({
-      type: "manual.override",
-      message:
-        direction === "previous"
-          ? "SEMA schedule moved to the previous row."
-          : "SEMA schedule moved to the next row.",
-      metadata: {
-        projectId,
-        direction,
-        sourceMode: before.sourceMode,
-        sheetOnly: true,
-      },
-    });
+    // Routine schedule navigation — local ops log only (not Activity / not cloud sync).
+    appendSemaOpsLog(
+      this.paths,
+      `advance direction=${direction} projectId=${projectId} sourceMode=${before.sourceMode}`,
+    );
     return state;
   }
 
@@ -708,19 +701,10 @@ export class LocalDataService {
     }
     const before = this.semaSchedule.getState(projectId);
     const state = await this.semaSchedule.jump(projectId, rowIdOrIndex, options);
-    this.recordActivity({
-      type: "manual.override",
-      message: "SEMA schedule jumped to a selected row.",
-      metadata: {
-        projectId,
-        rowIdOrIndex,
-        worksheetGid: options?.worksheetGid ?? state.sheet.worksheetGid ?? null,
-        sourceMode: before.sourceMode,
-        liveWorksheetChanged:
-          (before.sheet.worksheetGid ?? null) !== (state.sheet.worksheetGid ?? null),
-        sheetOnly: true,
-      },
-    });
+    appendSemaOpsLog(
+      this.paths,
+      `jump projectId=${projectId} row=${String(rowIdOrIndex)} sourceMode=${before.sourceMode} worksheetGid=${options?.worksheetGid ?? state.sheet.worksheetGid ?? "null"}`,
+    );
     return state;
   }
 
@@ -804,15 +788,10 @@ export class LocalDataService {
       throw new Error("SEMA schedule service is unavailable.");
     }
     const state = this.semaSchedule.setManualFields(projectId, fields, options);
-    this.recordActivity({
-      type: "manual.override",
-      message: "SEMA Manual Controller Now / Next / Later values saved.",
-      metadata: {
-        projectId,
-        takeOnAir: options.takeOnAir === true,
-        sourceMode: state.sourceMode,
-      },
-    });
+    appendSemaOpsLog(
+      this.paths,
+      `manual-fields-saved projectId=${projectId} takeOnAir=${options.takeOnAir === true} sourceMode=${state.sourceMode}`,
+    );
     return state;
   }
 
@@ -830,16 +809,10 @@ export class LocalDataService {
       throw new Error("SEMA schedule service is unavailable.");
     }
     const state = this.semaSchedule.setHighlight(projectId, input);
-    this.recordActivity({
-      type: "manual.override",
-      message: "SEMA ticker Highlight activated.",
-      metadata: {
-        projectId,
-        highlightSource: input.source,
-        highlightLabel: state.highlight.label,
-        sourceRowId: state.highlight.sourceRowId,
-      },
-    });
+    appendSemaOpsLog(
+      this.paths,
+      `highlight-activated projectId=${projectId} source=${input.source} label=${state.highlight.label}`,
+    );
     return state;
   }
 
@@ -848,16 +821,10 @@ export class LocalDataService {
       throw new Error("SEMA schedule service is unavailable.");
     }
     const state = this.semaSchedule.removeHighlight(projectId);
-    this.recordActivity({
-      type: "manual.override",
-      message: "SEMA ticker Highlight removed from air.",
-      metadata: {
-        projectId,
-        highlightSource: state.highlight.source,
-        highlightLabel: state.highlight.label,
-        preserved: true,
-      },
-    });
+    appendSemaOpsLog(
+      this.paths,
+      `highlight-removed projectId=${projectId} label=${state.highlight.label}`,
+    );
     return state;
   }
 
@@ -866,11 +833,7 @@ export class LocalDataService {
       throw new Error("SEMA schedule service is unavailable.");
     }
     const state = this.semaSchedule.clearHighlight(projectId);
-    this.recordActivity({
-      type: "manual.override",
-      message: "SEMA ticker Highlight cleared.",
-      metadata: { projectId, preserved: false },
-    });
+    appendSemaOpsLog(this.paths, `highlight-cleared projectId=${projectId}`);
     return state;
   }
 

@@ -186,11 +186,28 @@ export function findReleaseRoots(desktopRoot) {
     candidates.push(winUnpacked);
   }
 
+  // electron-builder mac arm64 dir target
+  for (const macDir of ["mac-arm64", "mac"]) {
+    const candidate = path.join(releaseRoot, macDir);
+    if (
+      fs.existsSync(path.join(candidate, "NEUD.app")) ||
+      fs.existsSync(path.join(candidate, "NEUD.app", "Contents"))
+    ) {
+      candidates.push(candidate);
+    }
+  }
+
   if (fs.existsSync(releaseRoot)) {
     for (const entry of fs.readdirSync(releaseRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const fullPath = path.join(releaseRoot, entry.name);
       if (fullPath.endsWith("win-unpacked") || entry.name.includes("unpacked")) {
+        candidates.push(fullPath);
+      }
+      if (
+        (entry.name === "mac-arm64" || entry.name === "mac") &&
+        fs.existsSync(path.join(fullPath, "NEUD.app"))
+      ) {
         candidates.push(fullPath);
       }
     }

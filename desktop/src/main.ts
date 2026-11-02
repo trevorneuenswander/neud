@@ -1741,18 +1741,36 @@ async function createMainWindow() {
     projectCodeRevisionsRepository,
     projectCodeStorageService,
   );
-  const hydrateSemaDisplays = (projectId: string, manifest: ProjectPackageManifest) => {
+  const hydrateSemaDisplays = (
+    projectId: string,
+    manifest: ProjectPackageManifest,
+    options: { fatal?: boolean } = {},
+  ) => {
+    const fatal = options.fatal === true;
     try {
       const results = semaDisplayHydration.ensureHydrated(projectId, manifest);
+      const required = ["schedule-ticker", "schedule-pylon", "schedule-ticker-editable"];
+      const missing = required.filter(
+        (slug) => !results.some((result) => result.slug === slug && result.displayId),
+      );
+      if (missing.length > 0) {
+        const detail = results
+          .filter((result) => missing.includes(result.slug))
+          .map((result) => `${result.slug}:${result.reason ?? "no display id"}`)
+          .join("; ");
+        throw new Error(
+          `SEMA display hydration incomplete for ${missing.join(", ")}${detail ? ` (${detail})` : ""}`,
+        );
+      }
       console.info(
         `[desktop] SEMA displays hydrated created=${results.filter((r) => r.created).length} revisions=${results.filter((r) => r.revisionPublished).length} projectId=${projectId}`,
       );
     } catch (error) {
-      console.warn(
-        `[desktop] SEMA display hydration failed (nonfatal): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      if (fatal) {
+        throw error instanceof Error ? error : new Error(message);
+      }
+      console.warn(`[desktop] SEMA display hydration failed (nonfatal): ${message}`);
     }
   };
   const hydrateLiveChatDisplays = (projectId: string, manifest: ProjectPackageManifest) => {
@@ -1797,14 +1815,17 @@ async function createMainWindow() {
   }
   const installedSemaProject = projectsRepository.getBySlug("sema");
   const installedSemaPackage = installedSemaProject
-    ? projectPackagesRepository.getInstallByProjectId(installedSemaProject.id)
+    ? projectPackagesRepository.getInstallByProjectId(installedSemaProject.id) ??
+      projectPackagesRepository.getInstallBySlug("sema")
     : null;
   if (installedSemaProject && installedSemaPackage?.manifest) {
     hydrateSemaDisplays(installedSemaProject.id, installedSemaPackage.manifest);
   }
   projectPackageService.setPackageActivatedHandler((projectId, manifest, meta) => {
     if (manifest.projectSlug === "sema") {
-      hydrateSemaDisplays(projectId, manifest);
+      // Fail install/update when default displays cannot be registered — clean
+      // machines must never end up with an "installed" SEMA package and empty Displays.
+      hydrateSemaDisplays(projectId, manifest, { fatal: true });
       return;
     }
     if (

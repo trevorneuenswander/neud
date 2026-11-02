@@ -85,7 +85,10 @@ export class SemaPackageDisplayHydration {
     if (manifest.projectSlug !== "sema") {
       return [];
     }
-    const install = this.packages.getInstallByProjectId(projectId);
+    let install = this.packages.getInstallByProjectId(projectId);
+    if (!install?.packageRoot && manifest.projectSlug) {
+      install = this.packages.getInstallBySlug(manifest.projectSlug);
+    }
     if (!install?.packageRoot) {
       return [];
     }
