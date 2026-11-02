@@ -33,12 +33,11 @@
 
       /* Standardized type — one size per role across NOW/NEXT/LATER.
          IMPORTANT: fitField() applies inline font-size from TITLE_BASE/BODY_BASE.
-         Keep those JS constants in sync with these CSS variables. */
+         Keep those JS constants in sync with these CSS variables.
+         Font size never shrinks; overflow uses marquee instead. */
       --label-size: calc(28px + 7pt);
       --title-size: 57px;
       --body-size: 52px;
-      --title-min: 28px;
-      --body-min: 24px;
       /* Shared fixed rows — identical baselines across NOW / NEXT / LATER */
       --label-row: calc(var(--label-size) * 1.15 + 10px);
       --title-row: calc(var(--title-size) * var(--line-title) + 0.06em);
@@ -320,12 +319,47 @@
       /* Must match --title-size / --body-size (inline styles override CSS). */
       var TITLE_BASE = 57;
       var BODY_BASE = 52;
-      var TITLE_MIN = 28;
-      var BODY_MIN = 24;
-      var SHRINK_STEP = 2;
-      var OVERFLOW_EPS = 1.5;
-      var MARQUEE_PX_PER_SEC = 48;
+      /* Overflow gate — match Broad Arrow / legacy ticker tolerance. */
+      var OVERFLOW_TOLERANCE_PX = 2;
+      /* Broad Arrow marquee kinematics (legacy-ticker-marquee.js defaults). */
+      var MARQUEE_PX_PER_SEC = 40;
+      var MARQUEE_EASE_SEC = 1;
+      var MARQUEE_PAUSE_MS = 4000;
       var MARQUEE_GAP_PX = 96;
+      var MEASURE_EPS = 0.5;
+      /**
+       * Build marker for revision verification. Verbose diag only when
+       * ?neudDiag=1 or localStorage.neudDiag=1 — off by default.
+       */
+      var NEUD_BUILD_ID = "sema-ticker-v0.3.3-hl-stable-1";
+      var NEUD_DOC_INSTANCE = Math.random().toString(36).slice(2, 10);
+      var NEUD_INIT_AT = Date.now();
+      var NEUD_PAYLOAD_SEQ = 0;
+
+      function diagEnabled() {
+        try {
+          if (/(?:^|[?&])neudDiag=1(?:&|$)/.test(String(location.search || ""))) return true;
+          if (window.localStorage && window.localStorage.getItem("neudDiag") === "1") return true;
+        } catch (_err) {}
+        return false;
+      }
+
+      function diag(eventName, detail) {
+        if (!diagEnabled()) return;
+        var payload = detail && typeof detail === "object" ? detail : {};
+        console.info(
+          "[neud-sema-ticker]",
+          eventName,
+          Object.assign(
+            {
+              build: NEUD_BUILD_ID,
+              doc: NEUD_DOC_INSTANCE,
+              initAt: NEUD_INIT_AT,
+            },
+            payload,
+          ),
+        );
+      }
 
       var current = { now: null, next: null, later: null };
       var currentLaterLabel = null;
@@ -335,8 +369,14 @@
       /** Whether NEXT/LATER labels are currently shown (NOW always stays visible). */
       var slotLabelVisible = { next: true, later: true };
 
-      /** @type {WeakMap<Element, { epoch: number, rafId: number|null }>} */
+      /**
+       * Per-field marquee controllers. Unchanged fields must keep epoch/RAF/phase
+       * across highlight toggles and schedule polls (see fitField no-op).
+       * @type {WeakMap<Element, { epoch: number, rafId: number|null, phase: string, startedAt: number, mode: string, value: string, sizePx: number, viewport: number }>}
+       */
       var marqueeLoops = new WeakMap();
+      /** @type {WeakMap<Element, { slot: string, value: string, sizePx: number, viewport: number, mode: string }>} */
+      var fieldStates = new WeakMap();
 
       function textOf(row, key) {
         if (!row || typeof row !== "object") return "";
@@ -412,24 +452,51 @@
       function getLoop(field) {
         var loop = marqueeLoops.get(field);
         if (!loop) {
-          loop = { epoch: 0, rafId: null };
+          loop = {
+            epoch: 0,
+            rafId: null,
+            phase: "idle",
+            startedAt: 0,
+            mode: "idle",
+            value: "",
+            sizePx: 0,
+            viewport: 0,
+          };
           marqueeLoops.set(field, loop);
         }
         return loop;
       }
 
-      function stopMarquee(field) {
+      function stopMarquee(field, options) {
+        options = options || {};
         var loop = marqueeLoops.get(field);
         if (!loop) return;
+        var prevEpoch = loop.epoch;
         loop.epoch += 1;
+        loop.phase = "idle";
+        loop.mode = "idle";
         if (loop.rafId != null) {
           cancelAnimationFrame(loop.rafId);
           loop.rafId = null;
         }
-        var track = field.querySelector(".field-track");
-        if (track) {
-          track.style.transform = "translate3d(0,0,0)";
+        if (options.resetTransform !== false) {
+          var track = field.querySelector(".field-track");
+          if (track) {
+            track.style.transform = "translate3d(0,0,0)";
+          }
         }
+        diag("marquee-stop", {
+          reason: options.reason || "stopMarquee",
+          kind: field.getAttribute("data-kind") || "",
+          slot: (fieldStates.get(field) && fieldStates.get(field).slot) || "",
+          epochFrom: prevEpoch,
+          epochTo: loop.epoch,
+        });
+      }
+
+      function marqueeIsActive(field) {
+        var loop = marqueeLoops.get(field);
+        return Boolean(loop && loop.rafId != null && loop.mode === "marquee");
       }
 
       function clearTrackExtras(track) {
@@ -453,14 +520,11 @@
       /**
        * Standardized sizes — same title/body for NOW, NEXT, and LATER.
        * Labels use CSS --label-size only (never set via inline style / fitField).
+       * Font size is fixed; long copy marquees instead of shrinking.
        */
 
       function baseFontSize(_slot, kind) {
         return kind === "title" ? TITLE_BASE : BODY_BASE;
-      }
-
-      function minFontSize(kind) {
-        return kind === "title" ? TITLE_MIN : BODY_MIN;
       }
 
       function applyFontSize(texts, sizePx) {
@@ -469,49 +533,136 @@
         }
       }
 
+      function computeLoopKinematics(loopWidth) {
+        var safeLoopWidth = Math.max(loopWidth, 1e-6);
+        var acceleration = MARQUEE_PX_PER_SEC / MARQUEE_EASE_SEC;
+        var defaultEaseDistance = 0.5 * acceleration * MARQUEE_EASE_SEC * MARQUEE_EASE_SEC;
+        var maxEaseDistance = safeLoopWidth / 2;
+        var easeDistance = Math.min(defaultEaseDistance, maxEaseDistance);
+        var cruiseDistance = Math.max(0, safeLoopWidth - 2 * easeDistance);
+        var cruiseSec = cruiseDistance / MARQUEE_PX_PER_SEC;
+        var totalSec = MARQUEE_EASE_SEC + cruiseSec + MARQUEE_EASE_SEC;
+        return {
+          loopWidth: safeLoopWidth,
+          easeDistance: easeDistance,
+          cruiseDistance: cruiseDistance,
+          cruiseSec: cruiseSec,
+          totalSec: totalSec,
+          totalMs: totalSec * 1000,
+          acceleration: acceleration,
+        };
+      }
+
+      function distanceAt(ms, kinematics) {
+        var seconds = ms / 1000;
+        var V = MARQUEE_PX_PER_SEC;
+        var EASE_SEC = MARQUEE_EASE_SEC;
+        var acceleration = kinematics.acceleration;
+        var easeDistance = kinematics.easeDistance;
+        var cruiseDistance = kinematics.cruiseDistance;
+        var cruiseSec = kinematics.cruiseSec;
+        var totalSec = kinematics.totalSec;
+        var loopWidth = kinematics.loopWidth;
+        var distance = 0;
+        if (seconds <= 0) {
+          distance = 0;
+        } else if (seconds <= EASE_SEC) {
+          distance = 0.5 * acceleration * seconds * seconds;
+        } else if (seconds <= EASE_SEC + cruiseSec) {
+          distance = easeDistance + V * (seconds - EASE_SEC);
+        } else if (seconds <= totalSec) {
+          var tail = seconds - (EASE_SEC + cruiseSec);
+          distance = easeDistance + cruiseDistance + (V * tail - 0.5 * acceleration * tail * tail);
+        } else {
+          distance = loopWidth;
+        }
+        return Math.min(Math.max(distance, 0), loopWidth);
+      }
+
       /**
-       * Fit pipeline: normal size → shrink-to-fit → marquee only if still overflowing.
-       * Short text remains completely still (no RAF, no animation).
+       * Fit pipeline: fixed original font size → static if it fits → eased marquee on overflow.
+       * Identical text + size + viewport + mode does NOT restart an in-flight marquee —
+       * critical when later highlight swaps trigger remasure of unrelated NOW/NEXT fields.
        */
-      function fitField(field, slot, value) {
+      function fitField(field, slot, value, options) {
+        options = options || {};
+        var force = options.force === true;
         var kind = field.getAttribute("data-kind") || "title";
         var track = field.querySelector(".field-track");
         if (!track) return;
 
-        stopMarquee(field);
+        var base = baseFontSize(slot, kind);
+        var viewport = field.clientWidth;
+        var prev = fieldStates.get(field);
+
+        if (!value) {
+          stopMarquee(field);
+          clearTrackExtras(track);
+          var emptyPrimary = setPrimaryText(track, "");
+          emptyPrimary.style.fontSize = "";
+          track.style.transform = "translate3d(0,0,0)";
+          fieldStates.set(field, {
+            slot: slot,
+            value: "",
+            sizePx: 0,
+            viewport: viewport,
+            mode: "empty",
+          });
+          return;
+        }
+
+        if (
+          !force &&
+          prev &&
+          prev.value === value &&
+          prev.slot === slot &&
+          prev.sizePx === base &&
+          Math.abs((prev.viewport || 0) - viewport) <= MEASURE_EPS
+        ) {
+          if (prev.mode === "static") {
+            diag("fitField-noop", { reason: "unchanged-static", slot: slot, kind: kind });
+            return;
+          }
+          if (prev.mode === "marquee" && marqueeIsActive(field)) {
+            diag("fitField-noop", { reason: "unchanged-marquee", slot: slot, kind: kind });
+            return;
+          }
+        }
+
+        stopMarquee(field, { reason: force ? "fitField-force" : "fitField-remeasure" });
         clearTrackExtras(track);
         var primary = setPrimaryText(track, value);
         track.style.transform = "translate3d(0,0,0)";
-
-        if (!value) {
-          primary.style.fontSize = "";
-          return;
-        }
-
-        var base = baseFontSize(slot, kind);
-        var min = minFontSize(kind);
         applyFontSize([primary], base);
 
-        var viewport = field.clientWidth;
-        if (viewport <= 0) return;
-
-        // Shrink-to-fit
-        var size = base;
-        while (primary.scrollWidth > viewport + OVERFLOW_EPS && size > min) {
-          size = Math.max(min, size - SHRINK_STEP);
-          applyFontSize([primary], size);
-        }
-
-        // Fits after shrink — stay static
-        if (primary.scrollWidth <= viewport + OVERFLOW_EPS) {
+        if (viewport <= 0) {
+          fieldStates.set(field, {
+            slot: slot,
+            value: value,
+            sizePx: base,
+            viewport: viewport,
+            mode: "pending",
+          });
           return;
         }
 
-        // Still overflowing at min → single marquee loop
-        startMarquee(field, primary, value, size);
+        var textWidth = Math.max(primary.scrollWidth || 0, primary.offsetWidth || 0);
+        var overflowPx = Math.max(0, textWidth - viewport);
+        if (overflowPx <= OVERFLOW_TOLERANCE_PX) {
+          fieldStates.set(field, {
+            slot: slot,
+            value: value,
+            sizePx: base,
+            viewport: viewport,
+            mode: "static",
+          });
+          return;
+        }
+
+        startMarquee(field, primary, value, base, viewport, slot);
       }
 
-      function startMarquee(field, primary, value, sizePx) {
+      function startMarquee(field, primary, value, sizePx, viewport, slot) {
         var track = field.querySelector(".field-track");
         if (!track) return;
 
@@ -539,41 +690,105 @@
           loop.rafId = null;
         }
 
-        // Measure after layout
-        var primaryWidth = primary.scrollWidth;
+        var primaryWidth = Math.max(primary.scrollWidth || 0, primary.offsetWidth || 0);
         var loopDistance = primaryWidth + MARQUEE_GAP_PX;
-        if (loopDistance <= 0) return;
+        if (loopDistance <= MEASURE_EPS) return;
 
-        var offset = 0;
-        var lastTs = 0;
+        var kinematics = computeLoopKinematics(loopDistance);
+        loop.phase = "prepause";
+        loop.startedAt = 0;
+        loop.mode = "marquee";
+        loop.value = value;
+        loop.sizePx = sizePx;
+        loop.viewport = viewport;
 
-        function tick(ts) {
+        fieldStates.set(field, {
+          slot: slot,
+          value: value,
+          sizePx: sizePx,
+          viewport: viewport,
+          mode: "marquee",
+        });
+
+        function tick(now) {
           if (epoch !== loop.epoch) {
             loop.rafId = null;
             return;
           }
-          if (!lastTs) lastTs = ts;
-          var dt = Math.min(48, ts - lastTs) / 1000;
-          lastTs = ts;
-          offset += MARQUEE_PX_PER_SEC * dt;
-          if (offset >= loopDistance) {
-            offset = offset % loopDistance;
+          if (!loop.startedAt) loop.startedAt = now;
+
+          if (loop.phase === "prepause") {
+            track.style.transform = "translate3d(0,0,0)";
+            if (now - loop.startedAt >= MARQUEE_PAUSE_MS) {
+              loop.phase = "scroll";
+              loop.startedAt = now;
+            }
+            loop.rafId = requestAnimationFrame(tick);
+            return;
           }
-          track.style.transform = "translate3d(" + (-offset) + "px,0,0)";
+
+          var elapsed = now - loop.startedAt;
+          if (elapsed >= kinematics.totalMs - 0.1) {
+            // Seamless reset onto the cloned copy, then hold at the start.
+            track.style.transform = "translate3d(0,0,0)";
+            loop.phase = "prepause";
+            loop.startedAt = now;
+            loop.rafId = requestAnimationFrame(tick);
+            return;
+          }
+
+          var distance = distanceAt(elapsed, kinematics);
+          track.style.transform = "translate3d(" + (-distance) + "px,0,0)";
           loop.rafId = requestAnimationFrame(tick);
         }
 
         loop.rafId = requestAnimationFrame(tick);
       }
 
-      function applySlotContent(slot, row) {
+      function remasureAllFields(options) {
+        options = options || {};
+        SLOTS.forEach(function (slot) {
+          var group = document.querySelector('[data-group="' + slot + '"]');
+          if (!group) return;
+          ["title", "description"].forEach(function (kind) {
+            var field = group.querySelector('[data-field="' + kind + '"]');
+            if (!field) return;
+            var state = fieldStates.get(field);
+            if (!state) return;
+            fitField(field, state.slot || slot, state.value, options);
+          });
+        });
+      }
+
+      function scheduleStableRemeasure() {
+        function afterFonts(next) {
+          if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+            document.fonts.ready.then(next).catch(next);
+          } else {
+            next();
+          }
+        }
+        afterFonts(function () {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              // force:false — unchanged marquees keep epoch/phase/transform.
+              remasureAllFields({ force: false });
+            });
+          });
+        });
+      }
+
+      function applySlotContent(slot, row, options) {
+        options = options || {};
         var group = document.querySelector('[data-group="' + slot + '"]');
         if (!group) return;
         var titleField = group.querySelector('[data-field="title"]');
         var descField = group.querySelector('[data-field="description"]');
         // Title + Event/Description only — never date/time
-        if (titleField) fitField(titleField, slot, textOf(row, "title"));
-        if (descField) fitField(descField, slot, textOf(row, "description"));
+        if (titleField) fitField(titleField, slot, textOf(row, "title"), options);
+        if (descField) fitField(descField, slot, textOf(row, "description"), options);
+        // Font/layout remasure is identity-preserving for unrelated fields.
+        scheduleStableRemeasure();
       }
 
       function runAdvance(slot, row, epoch) {
@@ -586,7 +801,8 @@
 
         window.setTimeout(function () {
           if (epoch !== advanceEpoch) return;
-          applySlotContent(slot, row);
+          // Content for this slot changed — force remount of its fields only.
+          applySlotContent(slot, row, { force: true });
           group.classList.add("is-enter");
           group.classList.remove("is-exit");
           requestAnimationFrame(function () {
@@ -604,7 +820,7 @@
         group.classList.remove("is-exit", "is-enter");
         group.classList.add("is-crossfade");
         window.setTimeout(function () {
-          applySlotContent(slot, row);
+          applySlotContent(slot, row, { force: true });
           requestAnimationFrame(function () {
             group.classList.remove("is-crossfade");
           });
@@ -652,12 +868,35 @@
         var highlightToggled =
           currentHighlightActive != null &&
           currentHighlightActive !== nextHighlightActive;
+        var contentChanged = SLOTS.some(function (slot) {
+          return !rowsEqual(current[slot], nextState[slot]);
+        });
+        NEUD_PAYLOAD_SEQ += 1;
+        diag("render", {
+          seq: NEUD_PAYLOAD_SEQ,
+          highlightToggled: highlightToggled,
+          nextHighlightActive: nextHighlightActive,
+          contentChanged: contentChanged,
+          advanced: advanced,
+          indexToken: indexToken,
+        });
 
+        // Highlight chrome only — never rebuilds field DOM / marquees.
         applyLaterLabel(schedule);
 
         // Empty-state label fades for NEXT / LATER (Highlight keeps LATER visible).
         syncSlotEmptyState("next", nextState.next, nextHighlightActive);
         syncSlotEmptyState("later", nextState.later, nextHighlightActive);
+
+        // Highlight-only payload: preserve every in-flight marquee phase.
+        if (highlightToggled && !contentChanged && !advanced) {
+          diag("render-highlight-chrome-only", { seq: NEUD_PAYLOAD_SEQ });
+          currentHighlightActive = nextHighlightActive;
+          if (indexToken != null) {
+            currentIndexToken = indexToken;
+          }
+          return;
+        }
 
         if (advanced) {
           advanceEpoch += 1;
@@ -696,11 +935,11 @@
               return;
             }
             if (prev == null && next != null && currentIndexToken == null) {
-              applySlotContent(slot, next);
+              applySlotContent(slot, next, { force: true });
               return;
             }
-            // Highlight activate / remove / content edit uses the same exit→enter
-            // advance animation as NOW/NEXT (label dissolves separately above).
+            // Later content changed while highlight is involved — animate later only.
+            // Unrelated NOW/NEXT slots are skipped above via rowsEqual; remasure is no-op.
             if (slot === "later" && (highlightToggled || nextHighlightActive || currentHighlightActive)) {
               runAdvance(slot, next, contentEpoch);
               return;
@@ -713,7 +952,7 @@
             if (prev != null) {
               runCrossfade(slot, next);
             } else {
-              applySlotContent(slot, next);
+              applySlotContent(slot, next, { force: true });
             }
           });
         }
@@ -742,11 +981,65 @@
       }
 
       bindNeud();
+      scheduleStableRemeasure();
+      if (typeof ResizeObserver === "function") {
+        var stageEl = document.getElementById("stage");
+        if (stageEl) {
+          var resizeTimer = null;
+          var observer = new ResizeObserver(function () {
+            if (resizeTimer != null) window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(function () {
+              remasureAllFields({ force: false });
+            }, 80);
+          });
+          observer.observe(stageEl);
+        }
+      } else {
+        window.addEventListener("resize", function () {
+          scheduleStableRemeasure();
+        });
+      }
+
       window.__SEMA_SCHEDULE_TICKER__ = {
         render: render,
         stopMarquee: stopMarquee,
         fitField: fitField,
+        remasureAllFields: remasureAllFields,
+        marqueeIsActive: marqueeIsActive,
+        getFieldState: function (field) {
+          return fieldStates.get(field) || null;
+        },
+        getLoopState: function (field) {
+          var loop = marqueeLoops.get(field);
+          if (!loop) return null;
+          return {
+            phase: loop.phase,
+            mode: loop.mode,
+            startedAt: loop.startedAt,
+            epoch: loop.epoch,
+            value: loop.value,
+            sizePx: loop.sizePx,
+            viewport: loop.viewport,
+            hasRaf: loop.rafId != null,
+          };
+        },
+        getBuildInfo: function () {
+          return {
+            buildId: NEUD_BUILD_ID,
+            docInstance: NEUD_DOC_INSTANCE,
+            initAt: NEUD_INIT_AT,
+            payloadSeq: NEUD_PAYLOAD_SEQ,
+          };
+        },
+        TITLE_BASE: TITLE_BASE,
+        BODY_BASE: BODY_BASE,
+        MARQUEE_PX_PER_SEC: MARQUEE_PX_PER_SEC,
+        MARQUEE_EASE_SEC: MARQUEE_EASE_SEC,
+        MARQUEE_PAUSE_MS: MARQUEE_PAUSE_MS,
+        OVERFLOW_TOLERANCE_PX: OVERFLOW_TOLERANCE_PX,
+        NEUD_BUILD_ID: NEUD_BUILD_ID,
       };
+      diag("init", { href: String(location.href || "") });
     })();
   </script>
 </body>

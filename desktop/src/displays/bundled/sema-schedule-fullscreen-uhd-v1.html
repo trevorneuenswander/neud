@@ -44,11 +44,7 @@
       --later-title: 108px;
       --later-body: 66px;
 
-      --title-min-now: 84px;
-      --title-min-next: 64px;
-      --title-min-later: 56px;
-      --body-min: 40px;
-
+      /* Font size never shrinks; overflow uses marquee instead. */
       --line-title: 1.12;
       --line-body: 1.22;
     }
@@ -292,19 +288,25 @@
       "use strict";
 
       var SLOTS = ["now", "next", "later"];
+      /* Per-slot typography — do NOT use ticker 57/52 sizes. */
       var TITLE_BASE = { now: 196, next: 128, later: 108 };
       var BODY_BASE = { now: 90, next: 74, later: 66 };
-      var TITLE_MIN = { now: 84, next: 64, later: 56 };
-      var BODY_MIN = 40;
-      var SHRINK_STEP = 4;
-      var OVERFLOW_EPS = 2;
-      var MARQUEE_PX_PER_SEC = 42;
+      var OVERFLOW_TOLERANCE_PX = 2;
+      var MEASURE_EPS = 0.5;
+      /* Fullscreen marquee travel — slightly faster than ticker (40px/s). */
+      var MARQUEE_PX_PER_SEC = 50;
+      var MARQUEE_EASE_SEC = 1;
+      var MARQUEE_PAUSE_MS = 4000;
       var MARQUEE_GAP_PX = 120;
+      var NEUD_BUILD_ID = "sema-fullscreen-v0.3.3-marquee-50";
 
       var current = { now: null, next: null, later: null };
       var currentHighlightActive = null;
       var slotLabelVisible = { next: true, later: true };
+      /** @type {WeakMap<Element, { epoch: number, rafId: number|null, phase: string, startedAt: number, kinematics: object|null, value: string, sizePx: number, viewport: number, mode: string }>} */
       var marqueeLoops = new WeakMap();
+      /** @type {WeakMap<Element, { slot: string, value: string, sizePx: number, viewport: number, mode: string }>} */
+      var fieldStates = new WeakMap();
 
       function textOf(row, key) {
         if (!row || typeof row !== "object") return "";
@@ -346,22 +348,38 @@
       function getLoop(field) {
         var loop = marqueeLoops.get(field);
         if (!loop) {
-          loop = { epoch: 0, rafId: null };
+          loop = {
+            epoch: 0,
+            rafId: null,
+            phase: "idle",
+            startedAt: 0,
+            kinematics: null,
+            value: "",
+            sizePx: 0,
+            viewport: 0,
+            mode: "idle",
+          };
           marqueeLoops.set(field, loop);
         }
         return loop;
       }
 
-      function stopMarquee(field) {
+      function stopMarquee(field, options) {
+        options = options || {};
         var loop = marqueeLoops.get(field);
         if (!loop) return;
         loop.epoch += 1;
+        loop.phase = "idle";
+        loop.kinematics = null;
+        loop.mode = "idle";
         if (loop.rafId != null) {
           cancelAnimationFrame(loop.rafId);
           loop.rafId = null;
         }
-        var track = field.querySelector(".field-track");
-        if (track) track.style.transform = "translate3d(0,0,0)";
+        if (options.resetTransform !== false) {
+          var track = field.querySelector(".field-track");
+          if (track) track.style.transform = "translate3d(0,0,0)";
+        }
       }
 
       function clearTrackExtras(track) {
@@ -388,41 +406,140 @@
         }
       }
 
-      function fitField(field, slot, value) {
+      function baseFontSize(slot, kind) {
+        return kind === "title" ? TITLE_BASE[slot] : BODY_BASE[slot];
+      }
+
+      function computeLoopKinematics(loopWidth) {
+        var safeLoopWidth = Math.max(loopWidth, 1e-6);
+        var acceleration = MARQUEE_PX_PER_SEC / MARQUEE_EASE_SEC;
+        var defaultEaseDistance = 0.5 * acceleration * MARQUEE_EASE_SEC * MARQUEE_EASE_SEC;
+        var maxEaseDistance = safeLoopWidth / 2;
+        var easeDistance = Math.min(defaultEaseDistance, maxEaseDistance);
+        var cruiseDistance = Math.max(0, safeLoopWidth - 2 * easeDistance);
+        var cruiseSec = cruiseDistance / MARQUEE_PX_PER_SEC;
+        var totalSec = MARQUEE_EASE_SEC + cruiseSec + MARQUEE_EASE_SEC;
+        return {
+          loopWidth: safeLoopWidth,
+          easeDistance: easeDistance,
+          cruiseDistance: cruiseDistance,
+          cruiseSec: cruiseSec,
+          totalSec: totalSec,
+          totalMs: totalSec * 1000,
+          acceleration: acceleration,
+        };
+      }
+
+      function distanceAt(ms, kinematics) {
+        var seconds = ms / 1000;
+        var V = MARQUEE_PX_PER_SEC;
+        var EASE_SEC = MARQUEE_EASE_SEC;
+        var acceleration = kinematics.acceleration;
+        var easeDistance = kinematics.easeDistance;
+        var cruiseDistance = kinematics.cruiseDistance;
+        var cruiseSec = kinematics.cruiseSec;
+        var totalSec = kinematics.totalSec;
+        var loopWidth = kinematics.loopWidth;
+        var distance = 0;
+        if (seconds <= 0) {
+          distance = 0;
+        } else if (seconds <= EASE_SEC) {
+          distance = 0.5 * acceleration * seconds * seconds;
+        } else if (seconds <= EASE_SEC + cruiseSec) {
+          distance = easeDistance + V * (seconds - EASE_SEC);
+        } else if (seconds <= totalSec) {
+          var tail = seconds - (EASE_SEC + cruiseSec);
+          distance = easeDistance + cruiseDistance + (V * tail - 0.5 * acceleration * tail * tail);
+        } else {
+          distance = loopWidth;
+        }
+        return Math.min(Math.max(distance, 0), loopWidth);
+      }
+
+      function marqueeIsActive(field) {
+        var loop = marqueeLoops.get(field);
+        return Boolean(loop && loop.rafId != null && loop.mode === "marquee");
+      }
+
+      /**
+       * Fixed original font size → static if it fits → eased marquee on overflow.
+       * Identical text + viewport + mode does not restart an in-flight marquee
+       * (highlight / poll refreshes must leave unrelated fields alone).
+       */
+      function fitField(field, slot, value, options) {
+        options = options || {};
+        var force = options.force === true;
         var kind = field.getAttribute("data-kind") || "title";
         var track = field.querySelector(".field-track");
         if (!track) return;
+
+        var base = baseFontSize(slot, kind);
+        var viewport = field.clientWidth;
+        var prev = fieldStates.get(field);
+
+        if (!value) {
+          stopMarquee(field);
+          clearTrackExtras(track);
+          var emptyPrimary = setPrimaryText(track, "");
+          emptyPrimary.style.fontSize = "";
+          track.style.transform = "translate3d(0,0,0)";
+          fieldStates.set(field, {
+            slot: slot,
+            value: "",
+            sizePx: 0,
+            viewport: viewport,
+            mode: "empty",
+          });
+          return;
+        }
+
+        // Preserve in-flight marquee / static layout when identity is unchanged.
+        if (
+          !force &&
+          prev &&
+          prev.value === value &&
+          prev.slot === slot &&
+          prev.sizePx === base &&
+          Math.abs((prev.viewport || 0) - viewport) <= MEASURE_EPS
+        ) {
+          if (prev.mode === "static") return;
+          if (prev.mode === "marquee" && marqueeIsActive(field)) return;
+        }
 
         stopMarquee(field);
         clearTrackExtras(track);
         var primary = setPrimaryText(track, value);
         track.style.transform = "translate3d(0,0,0)";
-
-        if (!value) {
-          primary.style.fontSize = "";
-          return;
-        }
-
-        var base = kind === "title" ? TITLE_BASE[slot] : BODY_BASE[slot];
-        var min = kind === "title" ? TITLE_MIN[slot] : BODY_MIN;
         applyFontSize([primary], base);
 
-        var viewport = field.clientWidth;
-        if (viewport <= 0) return;
-
-        var size = base;
-        while (primary.scrollWidth > viewport + OVERFLOW_EPS && size > min) {
-          size = Math.max(min, size - SHRINK_STEP);
-          applyFontSize([primary], size);
-        }
-
-        if (primary.scrollWidth <= viewport + OVERFLOW_EPS) {
+        if (viewport <= 0) {
+          fieldStates.set(field, {
+            slot: slot,
+            value: value,
+            sizePx: base,
+            viewport: viewport,
+            mode: "pending",
+          });
           return;
         }
-        startMarquee(field, primary, value, size);
+
+        var textWidth = Math.max(primary.scrollWidth || 0, primary.offsetWidth || 0);
+        var overflowPx = Math.max(0, textWidth - viewport);
+        if (overflowPx <= OVERFLOW_TOLERANCE_PX) {
+          fieldStates.set(field, {
+            slot: slot,
+            value: value,
+            sizePx: base,
+            viewport: viewport,
+            mode: "static",
+          });
+          return;
+        }
+
+        startMarquee(field, primary, value, base, viewport, slot);
       }
 
-      function startMarquee(field, primary, value, sizePx) {
+      function startMarquee(field, primary, value, sizePx, viewport, slot) {
         var track = field.querySelector(".field-track");
         if (!track) return;
 
@@ -450,37 +567,69 @@
           loop.rafId = null;
         }
 
-        var primaryWidth = primary.scrollWidth;
+        var primaryWidth = Math.max(primary.scrollWidth || 0, primary.offsetWidth || 0);
         var loopDistance = primaryWidth + MARQUEE_GAP_PX;
-        if (loopDistance <= 0) return;
+        if (loopDistance <= MEASURE_EPS) return;
 
-        var offset = 0;
-        var lastTs = 0;
+        var kinematics = computeLoopKinematics(loopDistance);
+        loop.phase = "prepause";
+        loop.startedAt = 0;
+        loop.kinematics = kinematics;
+        loop.value = value;
+        loop.sizePx = sizePx;
+        loop.viewport = viewport;
+        loop.mode = "marquee";
 
-        function tick(ts) {
+        fieldStates.set(field, {
+          slot: slot,
+          value: value,
+          sizePx: sizePx,
+          viewport: viewport,
+          mode: "marquee",
+        });
+
+        function tick(now) {
           if (epoch !== loop.epoch) {
             loop.rafId = null;
             return;
           }
-          if (!lastTs) lastTs = ts;
-          var dt = Math.min(48, ts - lastTs) / 1000;
-          lastTs = ts;
-          offset += MARQUEE_PX_PER_SEC * dt;
-          if (offset >= loopDistance) offset = offset % loopDistance;
-          track.style.transform = "translate3d(" + (-offset) + "px,0,0)";
+          if (!loop.startedAt) loop.startedAt = now;
+
+          if (loop.phase === "prepause") {
+            track.style.transform = "translate3d(0,0,0)";
+            if (now - loop.startedAt >= MARQUEE_PAUSE_MS) {
+              loop.phase = "scroll";
+              loop.startedAt = now;
+            }
+            loop.rafId = requestAnimationFrame(tick);
+            return;
+          }
+
+          var elapsed = now - loop.startedAt;
+          if (elapsed >= kinematics.totalMs - 0.1) {
+            track.style.transform = "translate3d(0,0,0)";
+            loop.phase = "prepause";
+            loop.startedAt = now;
+            loop.rafId = requestAnimationFrame(tick);
+            return;
+          }
+
+          var distance = distanceAt(elapsed, kinematics);
+          track.style.transform = "translate3d(" + (-distance) + "px,0,0)";
           loop.rafId = requestAnimationFrame(tick);
         }
 
         loop.rafId = requestAnimationFrame(tick);
       }
 
-      function applySlotContent(slot, row) {
+      function applySlotContent(slot, row, options) {
+        options = options || {};
         var group = document.querySelector('[data-group="' + slot + '"]');
         if (!group) return;
         var titleField = group.querySelector('[data-field="title"]');
         var descField = group.querySelector('[data-field="description"]');
-        if (titleField) fitField(titleField, slot, textOf(row, "title"));
-        if (descField) fitField(descField, slot, textOf(row, "description"));
+        if (titleField) fitField(titleField, slot, textOf(row, "title"), options);
+        if (descField) fitField(descField, slot, textOf(row, "description"), options);
 
         if (slot === "now") {
           var timeEl = document.querySelector('[data-slot="now"] [data-field="time"]');
@@ -497,7 +646,7 @@
         if (!group) return;
         group.classList.add("is-crossfade");
         window.setTimeout(function () {
-          applySlotContent(slot, row);
+          applySlotContent(slot, row, { force: true });
           requestAnimationFrame(function () {
             group.classList.remove("is-crossfade");
           });
@@ -512,7 +661,39 @@
         } else {
           section.removeAttribute("data-highlight");
         }
-        // Audience-facing heading stays LATER (Highlight only swaps title/description).
+        // Highlight is visual only — never rebuilds field DOM / marquees.
+      }
+
+      function remasureAllFields(options) {
+        options = options || {};
+        SLOTS.forEach(function (slot) {
+          var group = document.querySelector('[data-group="' + slot + '"]');
+          if (!group) return;
+          ["title", "description"].forEach(function (kind) {
+            var field = group.querySelector('[data-field="' + kind + '"]');
+            if (!field) return;
+            var state = fieldStates.get(field);
+            if (!state) return;
+            fitField(field, state.slot || slot, state.value, options);
+          });
+        });
+      }
+
+      function scheduleStableRemeasure() {
+        function afterFonts(next) {
+          if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+            document.fonts.ready.then(next).catch(next);
+          } else {
+            next();
+          }
+        }
+        afterFonts(function () {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              remasureAllFields({ force: false });
+            });
+          });
+        });
       }
 
       function render(payload) {
@@ -523,11 +704,22 @@
           later: schedule.later || schedule.LATER || null,
         };
         var nextHighlightActive = schedule.highlightActive === true;
+        var highlightChanged =
+          currentHighlightActive !== null && currentHighlightActive !== nextHighlightActive;
+        var contentChanged = SLOTS.some(function (slot) {
+          return !rowsEqual(current[slot], nextState[slot]);
+        });
 
+        // Highlight chrome only — never restart marquees on unchanged event text.
         applyLaterHighlight(schedule);
 
         syncSlotEmptyState("next", nextState.next, nextHighlightActive);
         syncSlotEmptyState("later", nextState.later, nextHighlightActive);
+
+        if (highlightChanged && !contentChanged) {
+          currentHighlightActive = nextHighlightActive;
+          return;
+        }
 
         SLOTS.forEach(function (slot) {
           var prev = current[slot];
@@ -541,7 +733,7 @@
             return;
           }
           if (prev == null) {
-            applySlotContent(slot, next);
+            applySlotContent(slot, next, { force: true });
           } else {
             runCrossfade(slot, next);
           }
@@ -568,10 +760,58 @@
       }
 
       bindNeud();
+      scheduleStableRemeasure();
+      if (typeof ResizeObserver === "function") {
+        var stageEl = document.getElementById("stage");
+        if (stageEl) {
+          var resizeTimer = null;
+          var observer = new ResizeObserver(function () {
+            if (resizeTimer != null) window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(function () {
+              remasureAllFields({ force: false });
+            }, 80);
+          });
+          observer.observe(stageEl);
+        }
+      } else {
+        window.addEventListener("resize", function () {
+          scheduleStableRemeasure();
+        });
+      }
+
       window.__SEMA_SCHEDULE_FULLSCREEN_UHD__ = {
         render: render,
         stopMarquee: stopMarquee,
         fitField: fitField,
+        remasureAllFields: remasureAllFields,
+        marqueeIsActive: marqueeIsActive,
+        getFieldState: function (field) {
+          return fieldStates.get(field) || null;
+        },
+        getLoopState: function (field) {
+          var loop = marqueeLoops.get(field);
+          if (!loop) return null;
+          return {
+            phase: loop.phase,
+            mode: loop.mode,
+            startedAt: loop.startedAt,
+            epoch: loop.epoch,
+            value: loop.value,
+            sizePx: loop.sizePx,
+            viewport: loop.viewport,
+            hasRaf: loop.rafId != null,
+          };
+        },
+        TITLE_BASE: TITLE_BASE,
+        BODY_BASE: BODY_BASE,
+        MARQUEE_PX_PER_SEC: MARQUEE_PX_PER_SEC,
+        MARQUEE_EASE_SEC: MARQUEE_EASE_SEC,
+        MARQUEE_PAUSE_MS: MARQUEE_PAUSE_MS,
+        OVERFLOW_TOLERANCE_PX: OVERFLOW_TOLERANCE_PX,
+        NEUD_BUILD_ID: NEUD_BUILD_ID,
+        getBuildInfo: function () {
+          return { buildId: NEUD_BUILD_ID };
+        },
       };
     })();
   </script>

@@ -14,6 +14,8 @@ export const DECKLINK_ENABLE_FAILED = "Unable to enable video output";
 export const DECKLINK_PLAYBACK_FAILED = "Scheduled playback failed";
 export const DECKLINK_UNDERRUN = "Output timing underrun";
 export const DECKLINK_DEVICE_REMOVED = "Device removed";
+export const DECKLINK_OUTPUT_STOPPED_UNEXPECTEDLY =
+  "External output stopped unexpectedly. Physical playback is no longer running.";
 export const DECKLINK_NO_DEVICES = "No external output devices detected.";
 export const DECKLINK_FIRST_FRAME_TIMEOUT = "Output did not receive a rendered frame";
 

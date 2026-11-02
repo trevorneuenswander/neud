@@ -18,6 +18,47 @@ import {
 /** @deprecated Prefer per-display identity from the package definition. Kept for ticker compat. */
 export const SEMA_DISPLAY_IMPORT_KEY = "sema-schedule-ticker-v1";
 
+/**
+ * Prior packaged SEMA Schedule Ticker HTML hashes that may be auto-upgraded
+ * to the current package HTML. Custom / edited ticker displays (any other hash)
+ * are left alone — matching Mic Tally safe-upgrade behavior.
+ *
+ * v0.3.2 / SEMA baseline v10 ticker (shrink-to-fit then continuous marquee):
+ * 9a86a7fb874f4aaae16a4520c754856ec72c556b42742a32948b9168a474449e
+ *
+ * v0.3.3-dev intermediate (fixed 57/52 + BA marquee, but fitField always
+ * stopMarquee — highlight remasure still restarted unrelated fields):
+ * bede95a1314ba30531340e5757aa2d35da9220adb3a80ed10d171ff6c536edd6
+ *
+ * Without listing that intermediate hash, stock SEMA installs that already
+ * auto-upgraded once during v0.3.3 development stay stuck on the buggy
+ * revision while BrowserWindow tests (which load bundled HTML directly) pass.
+ */
+export const SEMA_SCHEDULE_TICKER_PREVIOUS_PACKAGED_SOURCE_HASHES: ReadonlySet<string> = new Set([
+  // v0.3.2 SEMA v10 ticker — shrink-to-fit + continuous RAF marquee
+  "9a86a7fb874f4aaae16a4520c754856ec72c556b42742a32948b9168a474449e",
+  // v0.3.3-dev intermediate — fixed fonts + marquee, missing fitField no-op
+  "bede95a1314ba30531340e5757aa2d35da9220adb3a80ed10d171ff6c536edd6",
+]);
+
+/**
+ * Prior packaged SEMA Fullscreen Schedule UHD HTML hashes eligible for auto-upgrade.
+ * Custom / edited fullscreen displays (any other hash) are left alone.
+ *
+ * v0.3.2 / SEMA baseline v10 fullscreen (shrink-to-fit then continuous marquee):
+ * b5ad9fad25d4acaa5c927d221f3f0e0ed3cf14e0321e6d0c219fa3af0edbfb6d
+ *
+ * v0.3.3-dev highlight-stable fullscreen at 40px/s (before 50px/s speed bump):
+ * 48da36be144a047bf3786e0766d297a69a67923a485770c2a54a5a09c07a8891
+ */
+export const SEMA_SCHEDULE_FULLSCREEN_UHD_PREVIOUS_PACKAGED_SOURCE_HASHES: ReadonlySet<string> =
+  new Set([
+    // v0.3.2 SEMA v10 fullscreen UHD — shrink-to-fit + continuous RAF marquee
+    "b5ad9fad25d4acaa5c927d221f3f0e0ed3cf14e0321e6d0c219fa3af0edbfb6d",
+    // v0.3.3-dev highlight-stable fullscreen @ 40px/s
+    "48da36be144a047bf3786e0766d297a69a67923a485770c2a54a5a09c07a8891",
+  ]);
+
 export type SemaDisplayHydrationResult = {
   slug: string;
   created: boolean;
@@ -169,6 +210,40 @@ export class SemaPackageDisplayHydration {
             revisionPublished: false,
             displayId: existing.displayId,
             reason: "Display already published with the packaged HTML.",
+          };
+        }
+        // Schedule Ticker / Fullscreen UHD: only auto-upgrade known prior packaged HTML.
+        // Operator-customized HTML is preserved.
+        if (definition.slug === "schedule-ticker" || definition.slug === "schedule-fullscreen-uhd") {
+          const priorHashes =
+            definition.slug === "schedule-ticker"
+              ? SEMA_SCHEDULE_TICKER_PREVIOUS_PACKAGED_SOURCE_HASHES
+              : SEMA_SCHEDULE_FULLSCREEN_UHD_PREVIOUS_PACKAGED_SOURCE_HASHES;
+          const label =
+            definition.slug === "schedule-ticker"
+              ? "SEMA Schedule Ticker"
+              : "SEMA Fullscreen Schedule UHD";
+          if (publishedHash && priorHashes.has(publishedHash)) {
+            this.publishRevision(projectId, existing.displayId, definition.slug, bundle, {
+              sourceHash,
+              actorUserId,
+              changeNote: `Updated ${label} from project package (bundled revision).`,
+              identity,
+            });
+            return {
+              slug: definition.slug,
+              created: false,
+              revisionPublished: true,
+              displayId: existing.displayId,
+              reason: `Upgraded from prior packaged ${label} HTML.`,
+            };
+          }
+          return {
+            slug: definition.slug,
+            created: false,
+            revisionPublished: false,
+            displayId: existing.displayId,
+            reason: `Display already registered; leaving published ${label} content unchanged.`,
           };
         }
         this.publishRevision(projectId, existing.displayId, definition.slug, bundle, {

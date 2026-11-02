@@ -324,6 +324,93 @@ test("two live routes cannot share one decklink endpoint", async () => {
   assert.match(busy.error, /DeckLink Duo 2 Port 1 is already in use by Program/);
 });
 
+test("two independent UltraStudio-style endpoints can be LIVE simultaneously", async () => {
+  const endpoints = [
+    {
+      persistentId: "ultrastudio-a",
+      modelName: "UltraStudio Monitor 3G",
+      endpointName: "Output",
+      endpointIndex: 0,
+      available: true,
+      modes: [mode5994],
+    },
+    {
+      persistentId: "ultrastudio-b",
+      modelName: "UltraStudio HD Mini",
+      endpointName: "Output",
+      endpointIndex: 0,
+      available: true,
+      modes: [mode5994, mode25],
+    },
+  ];
+  const { engine, decklink, renderer } = harness(endpoints);
+  const routeA = engine.create({
+    name: "Feed A",
+    projectId: "project-1",
+    displayId: "display-1",
+    deviceId: "decklink:ultrastudio-a:0",
+    displayModeId: "1080p5994",
+  });
+  const routeB = engine.create({
+    name: "Feed B",
+    projectId: "project-1",
+    displayId: "display-1",
+    deviceId: "decklink:ultrastudio-b:0",
+    displayModeId: "1080p25",
+  });
+  assert.equal((await engine.start(routeA.id)).ok, true);
+  assert.equal((await engine.start(routeB.id)).ok, true);
+  const views = engine.list();
+  assert.equal(views.find((entry) => entry.id === routeA.id).session.status, "live");
+  assert.equal(views.find((entry) => entry.id === routeB.id).session.status, "live");
+  assert.deepEqual(decklink.playbackStartedFor, [routeA.id, routeB.id]);
+
+  engine.stop(routeA.id);
+  assert.equal(engine.list().find((entry) => entry.id === routeA.id).session.status, "stopped");
+  assert.equal(engine.list().find((entry) => entry.id === routeB.id).session.status, "live");
+  assert.ok(renderer.closed.includes(routeA.id));
+  assert.equal(renderer.closed.includes(routeB.id), false);
+
+  assert.equal((await engine.start(routeA.id)).ok, true);
+  assert.equal(engine.list().find((entry) => entry.id === routeA.id).session.status, "live");
+  assert.equal(engine.list().find((entry) => entry.id === routeB.id).session.status, "live");
+});
+
+test("native DeckLink addon keeps independent sessions per endpoint", () => {
+  const deck = fs.readFileSync(path.join(repoRoot, "desktop/native/decklink/decklink-sdk.cc"), "utf8");
+  const api = fs.readFileSync(path.join(repoRoot, "desktop/native/decklink/decklink-api.h"), "utf8");
+  const port = fs.readFileSync(path.join(repoRoot, "desktop/src/output/native-decklink-port.ts"), "utf8");
+  assert.match(deck, /std::unordered_map<std::string, std::unique_ptr<OutputSession>> gSessions/);
+  assert.match(deck, /DestroySessionLocked\(endpointId\)/);
+  assert.match(deck, /activeSessionCount/);
+  assert.doesNotMatch(deck, /ReleaseOutputLocked\(\);\s*ResetCountersLocked\(\);/);
+  assert.match(api, /DeckLinkPushFrame\(const std::string& endpointId/);
+  assert.match(api, /DeckLinkStop\(const std::string& endpointId\)/);
+  assert.match(api, /DeckLinkMetricsJson\(const std::string& endpointId\)/);
+  assert.match(port, /activeByRoute/);
+  assert.match(port, /routeByEndpoint/);
+  assert.match(port, /addon\.pushFrame\(endpointId/);
+  assert.match(port, /addon\.stop\(active\.endpointId\)/);
+  assert.match(port, /addon\.metrics\(active\.endpointId\)/);
+});
+
+test("LIVE status clears when native playback stops unexpectedly", async () => {
+  const { engine, decklink } = harness(duoEndpoints());
+  const route = engine.create({
+    name: "Program",
+    projectId: "project-1",
+    displayId: "display-1",
+    deviceId: "decklink:duo-persistent:0",
+    displayModeId: "1080p5994",
+  });
+  assert.equal((await engine.start(route.id)).ok, true);
+  // Simulate native session disappearing without engine.stop (cross-device bug symptom).
+  decklink.stop(route.id);
+  const after = engine.list().find((entry) => entry.id === route.id);
+  assert.equal(after.session.status, "error");
+  assert.match(after.session.lastError, /stopped unexpectedly|External output stopped/i);
+});
+
 test("stopAll covers decklink sessions for shutdown and sign-out", async () => {
   const { engine, renderer } = harness(duoEndpoints());
   const route = engine.create({
@@ -415,7 +502,7 @@ test("sdk 16 mac string and video-buffer contracts", () => {
   );
   assert.match(deck, /frameDuration/);
   assert.match(deck, /frameTimescale/);
-  assert.match(deck, /StartScheduledPlayback\(0, gTimeScale, 1\.0\)/);
+  assert.match(deck, /StartScheduledPlayback\(0, s->timeScale, 1\.0\)/);
   assert.doesNotMatch(deck, /setInterval/);
   assert.doesNotMatch(deck, /completedFrame->GetBytes/);
   assert.doesNotMatch(deck, /frame->GetBytes\(/);
@@ -510,10 +597,10 @@ test("underrun is recorded without dropping the route", async () => {
 
 test("preroll schedule path assigns output before ScheduleVideoFrame and keeps mode raster", () => {
   const deck = fs.readFileSync(path.join(repoRoot, "desktop/native/decklink/decklink-sdk.cc"), "utf8");
-  assert.match(deck, /gOutput = output;/);
-  assert.match(deck, /ScheduleFilledFrame\(output, frame, index\)/);
-  assert.match(deck, /gModeWidth/);
-  assert.match(deck, /gRendererWidth/);
+  assert.match(deck, /s->output = output;/);
+  assert.match(deck, /ScheduleFilledFrame\(s, output, frame, index\)/);
+  assert.match(deck, /modeWidth/);
+  assert.match(deck, /rendererWidth/);
   assert.match(deck, /FitCompositeFill/);
   assert.match(deck, /hresultHex/);
   assert.match(deck, /E_INVALIDARG/);
@@ -521,13 +608,13 @@ test("preroll schedule path assigns output before ScheduleVideoFrame and keeps m
   assert.match(deck, /E_OUTOFMEMORY/);
   assert.match(deck, /prerollDisplayTimes/);
   assert.match(deck, /bufferAccessEnded/);
-  assert.match(deck, /gOwnedFrames/);
+  assert.match(deck, /ownedFrames/);
   assert.match(deck, /EndAccess\(bmdBufferAccessWrite\)/);
-  assert.match(deck, /CreateVideoFrame\(gModeWidth, gModeHeight, gRowBytes, bmdFormat8BitBGRA/);
+  assert.match(deck, /CreateVideoFrame\(s->modeWidth, s->modeHeight, s->rowBytes, bmdFormat8BitBGRA/);
   assert.match(deck, /validateFrameForMode|DeckLinkValidateFrameForModeJson/);
   // pushFrame must not overwrite mode dimensions used by CreateVideoFrame
-  assert.doesNotMatch(deck, /gModeWidth = width;/);
-  assert.match(deck, /gRendererWidth = width;/);
+  assert.doesNotMatch(deck, /modeWidth = width;/);
+  assert.match(deck, /rendererWidth = width;/);
 });
 
 test("exact 720p59.94 preroll timestamps are 0\/1001\/2002 with duration 1001 timescale 60000", () => {
@@ -732,7 +819,7 @@ test("operator ui copy and diagnostics contracts", () => {
   assert.doesNotMatch(ui, /59\.94 fps \(display only\)/);
   const deck = fs.readFileSync(path.join(repoRoot, "desktop/native/decklink/decklink-sdk.cc"), "utf8");
   assert.match(deck, /bmdColorspaceRec601/);
-  assert.match(deck, /gModeWidth == 720/);
+  assert.match(deck, /s->modeWidth == 720/);
   const model = fs.readFileSync(path.join(repoRoot, "desktop/src/output/decklink-model.ts"), "utf8");
   assert.match(model, /Blackmagic DeckLink is unavailable/);
   assert.match(model, /formatExternalPortLabel/);

@@ -18,12 +18,12 @@ std::string DeckLinkStartJson(const std::string&, const std::string&, int, bool)
   return "{\"ok\":false,\"code\":\"sdk-unavailable\",\"error\":\"Blackmagic DeckLink is unavailable. Install Blackmagic Desktop Video and restart NEUD.\"}";
 }
 
-void DeckLinkPushFrame(const uint8_t*, size_t, int, int) {}
+void DeckLinkPushFrame(const std::string&, const uint8_t*, size_t, int, int) {}
 
-void DeckLinkStop() {}
+void DeckLinkStop(const std::string&) {}
 
-std::string DeckLinkMetricsJson() {
-  return "{\"scheduledFrames\":0,\"completedFrames\":0,\"droppedFrames\":0,\"lateFrames\":0,\"underruns\":0,\"compiledSdkVersion\":\"\",\"stub\":true}";
+std::string DeckLinkMetricsJson(const std::string&) {
+  return "{\"scheduledFrames\":0,\"completedFrames\":0,\"droppedFrames\":0,\"lateFrames\":0,\"underruns\":0,\"compiledSdkVersion\":\"\",\"stub\":true,\"playbackStarted\":false,\"outputEnabled\":false,\"activeSessionCount\":0}";
 }
 
 std::string DeckLinkAdapterInfoJson() {

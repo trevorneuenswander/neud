@@ -546,13 +546,13 @@ export function OutputManager() {
     setRoutes((await api.output.listRoutes()) as RouteView[]);
   }
 
-  function closeRouteModal() {
+  const closeRouteModal = useCallback(() => {
     setFormMode(null);
     setEditingId(null);
     setForm(emptyForm());
     setError(null);
     setSaving(false);
-  }
+  }, []);
 
   async function openAddModal() {
     const api = getDesktopAPI();
@@ -690,6 +690,7 @@ export function OutputManager() {
         <label className="grid gap-1 text-sm">
           Name
           <input
+            data-testid="output-route-name"
             className={FIELD_CLASS}
             value={form.name}
             onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}

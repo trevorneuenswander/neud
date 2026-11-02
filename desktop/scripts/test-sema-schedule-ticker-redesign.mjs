@@ -98,6 +98,8 @@ test("overflow-gated marquee helpers remain present", () => {
   assert.match(html, /function startMarquee/);
   assert.match(html, /MARQUEE_PX_PER_SEC/);
   assert.match(html, /TITLE_BASE|BODY_BASE/);
+  assert.match(html, /MARQUEE_EASE_SEC|computeLoopKinematics/);
+  assert.doesNotMatch(html, /TITLE_MIN|SHRINK_STEP/);
 });
 
 test("NEUDDisplay subscribe / message bridge remains wired", () => {
