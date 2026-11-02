@@ -57,3 +57,11 @@ export function appendAuthRefreshLog(
 ): void {
   appendLogLine(path.join(paths.logs, "auth-refresh.log"), message);
 }
+
+/** Routine SEMA operator actions — local diagnostics only (not Activity / not cloud sync). */
+export function appendSemaOpsLog(
+  paths: AppPaths,
+  message: string,
+): void {
+  appendLogLine(path.join(paths.logs, "sema-ops.log"), message);
+}

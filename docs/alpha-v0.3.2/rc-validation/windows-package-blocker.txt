@@ -1,0 +1,1 @@
+Windows x64 RC packaging blocked on darwin host: DeckLink MIDL headers require win32; electron-builder win from mac would still ship wrong-arch/stub risk under NEUD_REQUIRE_REAL_DECKLINK=1.

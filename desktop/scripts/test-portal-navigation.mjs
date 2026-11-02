@@ -39,7 +39,11 @@ test("members is absent from project navigation surfaces", () => {
 
   assert.ok(!projectNav.includes("/members"));
   assert.ok(!navigation.includes("/members"));
-  assert.ok(!overview.includes("Members"));
+  // Avoid false positives from canManageMembers — assert no Members nav/label surface.
+  assert.doesNotMatch(projectNav, /label:\s*"Members"/);
+  assert.doesNotMatch(overview, />\s*Members\s*</);
+  assert.doesNotMatch(overview, /href=.*\/members/);
+  assert.ok(overview.includes("UsersWithAccessSection"));
   assert.equal(
     existsSync(path.join(repoRoot, "src/app/(portal)/projects/[slug]/members/page.tsx")),
     false,

@@ -221,6 +221,8 @@ export function defaultCapabilitiesForProjectType(
       return ["webpage-scraper", "manual-controller"];
     case "sema-schedule":
       return ["data-source", "rundown-schedule", "manual-controller"];
+    case "mic-tally":
+      return ["data-source"];
     case "webpage-scraper":
       return ["webpage-scraper"];
     case "json-ingest":

@@ -62,7 +62,7 @@ test("SEMA typography preserves label/title tokens (body size owned by v6 suite)
 
 test("SEMA package baseline is at least v5", () => {
   const catalog = read("desktop/src/packages/builtin-package-catalog.ts");
-  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*[5-9]/);
+  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*(?:[5-9]|10)/);
 });
 
 test("GPU metrics path is wired (full coverage in sema-v6-system-gpu suite)", () => {

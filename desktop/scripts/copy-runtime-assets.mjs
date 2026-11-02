@@ -223,6 +223,18 @@ function copyDisplayBridgeAssets() {
     fs.copyFileSync(path.join(bundledSourceDir, file), path.join(bundledTargetDir, file));
   }
 
+  // SEMA (and future) package builders resolve logos from dist/displays/bundled/assets.
+  const bundledAssetsSource = path.join(bundledSourceDir, "assets");
+  const bundledAssetsTarget = path.join(bundledTargetDir, "assets");
+  if (fs.existsSync(bundledAssetsSource)) {
+    fs.mkdirSync(bundledAssetsTarget, { recursive: true });
+    for (const file of fs.readdirSync(bundledAssetsSource)) {
+      const fromPath = path.join(bundledAssetsSource, file);
+      if (!fs.statSync(fromPath).isFile()) continue;
+      fs.copyFileSync(fromPath, path.join(bundledAssetsTarget, file));
+    }
+  }
+
   console.log(`Copied legacy display bridges and bundled HTML to ${targetDir}`);
 }
 

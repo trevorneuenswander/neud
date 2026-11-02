@@ -33,6 +33,21 @@ function isGraphicEditorRoute(pathname: string | null) {
   return Boolean(pathname?.startsWith("/editor"));
 }
 
+/** Public auth surfaces — keep chrome minimal (no performance bar). */
+function isPublicAuthRoute(pathname: string | null) {
+  if (!pathname) {
+    return false;
+  }
+  return (
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/request-access" ||
+    pathname === "/forgot-password" ||
+    pathname.startsWith("/auth/")
+  );
+}
+
 function useShellRuntime(initialRuntime: "desktop" | "hosted"): "desktop" | "hosted" {
   const [runtime, setRuntime] = useState(initialRuntime);
 
@@ -93,7 +108,7 @@ export function DesktopAppShell({ children, initialRuntime }: DesktopAppShellPro
     );
   }
 
-  const showPerfBar = desktopActive;
+  const showPerfBar = desktopActive && !isPublicAuthRoute(pathname);
 
   return (
     <div

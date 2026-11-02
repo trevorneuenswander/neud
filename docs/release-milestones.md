@@ -6,29 +6,39 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, last-Team-Admin guard, Output type persistence |
-| **Previous published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
-| **Current package.json** | **v0.3.1** | Canonical root + `@neud/desktop` |
+| **Latest published release** | **v0.3.2** | Mic Tally (SQ-5), UltraStudio Key/Fill hardware PASS, SEMA UHD/hydration, DeckLink packaging stability |
+| **Previous published release** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, last-Team-Admin guard, Output type persistence |
+| **Prior published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
+| **Current package.json** | **v0.3.2** | Canonical root + `@neud/desktop` |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → v0.3.1
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → v0.3.1 → v0.3.2
 ```
 
-Expected packaged artifacts for v0.3.1:
+Expected packaged artifacts for v0.3.2:
 
 ```text
-NEUD-Setup-0.3.1-x64.exe
-NEUD-Setup-0.3.1-x64.exe.blockmap
+NEUD-Setup-0.3.2-x64.exe
+NEUD-Setup-0.3.2-x64.exe.blockmap
 NEUD-Setup-latest-x64.exe
 latest.yml
-NEUD-0.3.1-arm64.dmg
-NEUD-0.3.1-arm64.zip
+NEUD-0.3.2-arm64.dmg
+NEUD-0.3.2-arm64.zip
 latest-mac.yml
 ```
 
-Canonical application version is **`0.3.1`** in root and `@neud/desktop` `package.json`. Apple Silicon only. Intel Macs are not supported. Preserve v0.3.0 installer artifacts.
+Canonical **published** application version is **`0.3.2`**. Apple Silicon only. Intel Macs are not supported. Preserve prior installer artifacts and tags (`v0.3.1`, `v0.3.0`, …).
+
+## Alpha v0.3.2
+
+Mic Tally (Allen & Heath SQ-5 MIDI-over-TCP, transparent UHD three-mic graphic, connection health/reconnect), Blackmagic UltraStudio Key/Fill physical validation, DeckLink real-addon packaging parity, SEMA fullscreen UHD schedule display, SEMA clean-install display hydration, routine SEMA Activity suppression, Supabase egress reductions, and migration/fixture stability. Includes all v0.3.1 functionality.
+
+**Hardware validation (Owner confirmed):**
+
+- Blackmagic UltraStudio Key/Fill — **PASSED**
+- Allen & Heath SQ-5 Mic Tally — **PASSED**
 
 ## Alpha v0.3.1
 

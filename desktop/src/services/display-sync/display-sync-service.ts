@@ -338,9 +338,12 @@ export class DisplaySyncService {
     this.persistRuntimeStatus();
 
     void this.refreshOnlineState();
+    // Was 60s; Free-plan egress audit showed periodic full syncs dominated API
+    // call volume. 3 minutes still keeps multi-machine display sync timely while
+    // Realtime/queue debounce covers active edits.
     this.periodicTimer = setInterval(() => {
       void this.syncNow("periodic");
-    }, 60_000);
+    }, 180_000);
     this.replayDeferredSyncIfNeeded();
     void this.syncNow("startup");
   }

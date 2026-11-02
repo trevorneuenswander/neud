@@ -8,7 +8,10 @@ export const BROAD_ARROW_PACKAGE_KEY = "broad-arrow-auctions";
 export const BROAD_ARROW_PACKAGE_BASELINE_VERSION = 1;
 
 export const SEMA_PACKAGE_KEY = "sema";
-export const SEMA_PACKAGE_BASELINE_VERSION = 9;
+export const SEMA_PACKAGE_BASELINE_VERSION = 10;
+
+export const MIC_TALLY_PACKAGE_KEY = "mic-tally";
+export const MIC_TALLY_PACKAGE_BASELINE_VERSION = 1;
 
 export type BuiltinPackageCatalogEntry = {
   projectKey: string;
@@ -40,6 +43,16 @@ export const BUILTIN_PROJECT_PACKAGE_CATALOG: BuiltinPackageCatalogEntry[] = [
     availableVersion: SEMA_PACKAGE_BASELINE_VERSION,
     description:
       "SEMA schedule graphics driven by Google Sheets with local controller backup.",
+    legacyAutoMigrate: false,
+  },
+  {
+    projectKey: MIC_TALLY_PACKAGE_KEY,
+    slug: "mic-tally",
+    name: "Mic Tally",
+    projectType: "mic-tally",
+    availableVersion: MIC_TALLY_PACKAGE_BASELINE_VERSION,
+    description:
+      "Microphone tally graphics driven by Allen & Heath SQ-5 MIDI-over-TCP mute and fader status.",
     legacyAutoMigrate: false,
   },
 ];

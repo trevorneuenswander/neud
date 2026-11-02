@@ -25,11 +25,16 @@ function resolveAddonPaths() {
   if (requirePackaged) {
     const unpacked =
       process.env.NEUD_UNPACKED_ROOT?.trim() || findReleaseRoots(desktopRoot)[0] || null;
-    assert.ok(unpacked, "win-unpacked root not found; build package:win first or set NEUD_UNPACKED_ROOT.");
+    assert.ok(
+      unpacked,
+      "Packaged root not found; build package:win/package:mac first or set NEUD_UNPACKED_ROOT.",
+    );
+    const resourcesRoot = fs.existsSync(path.join(unpacked, "NEUD.app", "Contents", "Resources"))
+      ? path.join(unpacked, "NEUD.app", "Contents", "Resources")
+      : path.join(unpacked, "resources");
     paths.push({
       addon: path.join(
-        unpacked,
-        "resources",
+        resourcesRoot,
         "app.asar.unpacked",
         "dist",
         "platform",
@@ -37,8 +42,7 @@ function resolveAddonPaths() {
         "neud_decklink.node",
       ),
       meta: path.join(
-        unpacked,
-        "resources",
+        resourcesRoot,
         "app.asar.unpacked",
         "dist",
         "platform",
@@ -58,7 +62,7 @@ for (const entry of resolveAddonPaths()) {
   assert.equal(
     meta.stub,
     false,
-    `DeckLink addon is a stub (${entry.label}). Windows release installers must ship a real SDK build.`,
+    `DeckLink addon is a stub (${entry.label}). Release installers must ship a real SDK build.`,
   );
   assert.ok(
     isRealDeckLinkAddonBinary(entry.addon),

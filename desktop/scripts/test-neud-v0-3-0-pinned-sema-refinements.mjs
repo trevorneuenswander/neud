@@ -84,7 +84,7 @@ test("SEMA NOW/NEXT/LATER share a vertical grid rhythm", () => {
 
 test("SEMA package baseline bumped for ticker template delivery", () => {
   const catalog = read("desktop/src/packages/builtin-package-catalog.ts");
-  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*9/);
+  assert.match(catalog, /SEMA_PACKAGE_BASELINE_VERSION\s*=\s*10/);
 });
 
 test("ticker overflow/marquee behavior preserved", () => {

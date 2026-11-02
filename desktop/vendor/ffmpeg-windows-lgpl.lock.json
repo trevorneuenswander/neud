@@ -5,7 +5,7 @@
   "artifact": "ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip",
   "downloadUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip",
   "checksumsUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256",
-  "sha256": "092b5e24b2247a93aac5307507feee412c7dc8548d6aa94e8ccaaef3a3b1adb5",
+  "sha256": "ef8da9db3cb771bc6ae7835c6bf51c4543d0d0e852873d13aaac637fbd457853",
   "variant": "lgpl-shared",
   "abiLabel": "n8.1",
   "requiredLibraries": ["avcodec", "avformat", "avutil", "swscale"],

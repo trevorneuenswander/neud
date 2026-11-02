@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=3840, height=2160, initial-scale=1.0" />
+  <title>SEMA Fullscreen Schedule</title>
+  <style>
+    :root {
+      --frame-w: 3840px;
+      --frame-h: 2160px;
+      --safe: 88px;
+      --gutter: 56px;
+
+      /* SEMA Live — near-black confidence monitor */
+      --bg: #08080a;
+      --panel: rgba(14, 14, 18, 0.96);
+      --panel-edge: rgba(220, 30, 40, 0.45);
+      --text: rgba(248, 248, 250, 0.96);
+      --text-muted: rgba(210, 212, 220, 0.74);
+
+      --sema-red: #DC1E28;
+      --live-magenta: #E020F0;
+
+      --now-accent: #3DDC84;
+      --next-accent: #5BA8FF;
+      --later-accent: #F0A030;
+      --highlight-accent: #E020F0;
+
+      /* Option A vertical stack — full canvas after header removal */
+      --now-flex: 0.45;
+      --next-flex: 0.30;
+      --later-flex: 0.25;
+
+      --now-label: 72px;
+      --now-title: 196px;
+      --now-body: 90px;
+      --now-meta: 56px;
+
+      --next-label: 60px;
+      --next-title: 128px;
+      --next-body: 74px;
+
+      --later-label: 54px;
+      --later-title: 108px;
+      --later-body: 66px;
+
+      --title-min-now: 84px;
+      --title-min-next: 64px;
+      --title-min-later: 56px;
+      --body-min: 40px;
+
+      --line-title: 1.12;
+      --line-body: 1.22;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: var(--frame-w);
+      height: var(--frame-h);
+      overflow: hidden;
+      background: var(--bg);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .stage {
+      width: var(--frame-w);
+      height: var(--frame-h);
+      padding: var(--safe);
+      display: flex;
+      flex-direction: column;
+      background:
+        radial-gradient(1200px 700px at 12% -10%, rgba(220, 30, 40, 0.12), transparent 60%),
+        radial-gradient(900px 600px at 90% 110%, rgba(224, 32, 240, 0.08), transparent 55%),
+        var(--bg);
+      overflow: hidden;
+    }
+
+    .stack {
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: var(--gutter);
+    }
+
+    .section {
+      position: relative;
+      min-height: 0;
+      min-width: 0;
+      background: var(--panel);
+      border: 1px solid var(--panel-edge);
+      border-left-width: 12px;
+      padding: 56px 72px 64px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .section[data-slot="now"] {
+      flex: var(--now-flex) 1 0;
+      border-left-color: var(--now-accent);
+    }
+    .section[data-slot="next"] {
+      flex: var(--next-flex) 1 0;
+      border-left-color: var(--next-accent);
+    }
+    .section[data-slot="later"] {
+      flex: var(--later-flex) 1 0;
+      border-left-color: var(--later-accent);
+    }
+    .section[data-slot="later"][data-highlight="1"] {
+      border-left-color: var(--highlight-accent);
+      box-shadow: inset 0 0 0 1px rgba(224, 32, 240, 0.18);
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 22px;
+      font-weight: 900;
+      font-style: italic;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      transform: skewX(-4deg);
+      transform-origin: left center;
+      flex-shrink: 0;
+      margin-bottom: 24px;
+      transition: opacity 180ms ease;
+    }
+
+    .label::before {
+      content: "";
+      width: 20px;
+      height: 20px;
+      background: currentColor;
+      clip-path: polygon(0 0, 100% 15%, 85% 100%, 0 100%);
+      flex-shrink: 0;
+    }
+
+    .section[data-slot="now"] .label {
+      font-size: var(--now-label);
+      color: var(--now-accent);
+    }
+    .section[data-slot="next"] .label {
+      font-size: var(--next-label);
+      color: var(--next-accent);
+    }
+    .section[data-slot="later"] .label {
+      font-size: var(--later-label);
+      color: var(--later-accent);
+    }
+    .section[data-slot="later"][data-highlight="1"] .label {
+      color: var(--highlight-accent);
+    }
+
+    .meta-time {
+      margin-left: 28px;
+      font-style: normal;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      transform: skewX(4deg);
+      font-size: var(--now-meta);
+    }
+
+    .content {
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 22px;
+      opacity: 1;
+      transition: opacity 160ms ease;
+    }
+
+    .content.is-crossfade { opacity: 0; }
+
+    .section.is-slot-empty .content {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .section.is-slot-empty .label {
+      opacity: 0.28;
+    }
+
+    .field {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .field-track {
+      display: inline-flex;
+      align-items: baseline;
+      white-space: nowrap;
+      will-change: transform;
+      transform: translate3d(0, 0, 0);
+    }
+
+    .field-text {
+      display: inline-block;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .field-gap {
+      display: inline-block;
+      width: 120px;
+      flex-shrink: 0;
+    }
+
+    .field[data-kind="title"] .field-text {
+      font-weight: 800;
+      line-height: var(--line-title);
+      padding-bottom: 0.04em;
+    }
+    .field[data-kind="description"] .field-text {
+      font-weight: 400;
+      color: var(--text-muted);
+      line-height: var(--line-body);
+      padding-bottom: 0.06em;
+    }
+
+    .section[data-slot="now"] .field[data-kind="title"] .field-text { font-size: var(--now-title); }
+    .section[data-slot="now"] .field[data-kind="description"] .field-text { font-size: var(--now-body); }
+    .section[data-slot="next"] .field[data-kind="title"] .field-text { font-size: var(--next-title); }
+    .section[data-slot="next"] .field[data-kind="description"] .field-text { font-size: var(--next-body); }
+    .section[data-slot="later"] .field[data-kind="title"] .field-text { font-size: var(--later-title); }
+    .section[data-slot="later"] .field[data-kind="description"] .field-text { font-size: var(--later-body); }
+
+    .stage, .section, .field, .content { scrollbar-width: none; }
+    .stage::-webkit-scrollbar,
+    .section::-webkit-scrollbar,
+    .field::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage" data-display="schedule-fullscreen-uhd" data-frame="3840x2160">
+    <div class="stack" role="region" aria-label="SEMA Fullscreen Schedule">
+      <section class="section" data-slot="now">
+        <div class="label">
+          NOW
+          <span class="meta-time" data-field="time"></span>
+        </div>
+        <div class="content" data-group="now">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" data-slot="next">
+        <div class="label" data-slot-label="next">NEXT</div>
+        <div class="content" data-group="next">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" data-slot="later">
+        <div class="label" data-later-label data-slot-label="later">LATER</div>
+        <div class="content" data-group="later">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var SLOTS = ["now", "next", "later"];
+      var TITLE_BASE = { now: 196, next: 128, later: 108 };
+      var BODY_BASE = { now: 90, next: 74, later: 66 };
+      var TITLE_MIN = { now: 84, next: 64, later: 56 };
+      var BODY_MIN = 40;
+      var SHRINK_STEP = 4;
+      var OVERFLOW_EPS = 2;
+      var MARQUEE_PX_PER_SEC = 42;
+      var MARQUEE_GAP_PX = 120;
+
+      var current = { now: null, next: null, later: null };
+      var currentHighlightActive = null;
+      var slotLabelVisible = { next: true, later: true };
+      var marqueeLoops = new WeakMap();
+
+      function textOf(row, key) {
+        if (!row || typeof row !== "object") return "";
+        var alt = key === "description" ? "eventDescription" : key;
+        var value = row[key] != null ? row[key] : row[alt];
+        return typeof value === "string" ? value.trim() : "";
+      }
+
+      function rowsEqual(a, b) {
+        return textOf(a, "title") === textOf(b, "title") &&
+          textOf(a, "description") === textOf(b, "description") &&
+          textOf(a, "time") === textOf(b, "time");
+      }
+
+      function rowHasVisibleContent(row) {
+        return Boolean(textOf(row, "title") || textOf(row, "description"));
+      }
+
+      function getSlotSectionEl(slot) {
+        return document.querySelector('[data-slot="' + slot + '"]');
+      }
+
+      function syncSlotEmptyState(slot, nextRow, highlightActive) {
+        if (slot === "now") return;
+        var keepVisible =
+          rowHasVisibleContent(nextRow) ||
+          (slot === "later" && highlightActive === true);
+        var sectionEl = getSlotSectionEl(slot);
+        slotLabelVisible[slot] = keepVisible;
+        if (sectionEl) {
+          if (keepVisible) sectionEl.classList.remove("is-slot-empty");
+          else sectionEl.classList.add("is-slot-empty");
+        }
+        if (!keepVisible) {
+          applySlotContent(slot, null);
+        }
+      }
+
+      function getLoop(field) {
+        var loop = marqueeLoops.get(field);
+        if (!loop) {
+          loop = { epoch: 0, rafId: null };
+          marqueeLoops.set(field, loop);
+        }
+        return loop;
+      }
+
+      function stopMarquee(field) {
+        var loop = marqueeLoops.get(field);
+        if (!loop) return;
+        loop.epoch += 1;
+        if (loop.rafId != null) {
+          cancelAnimationFrame(loop.rafId);
+          loop.rafId = null;
+        }
+        var track = field.querySelector(".field-track");
+        if (track) track.style.transform = "translate3d(0,0,0)";
+      }
+
+      function clearTrackExtras(track) {
+        var gap = track.querySelector(".field-gap");
+        var clone = track.querySelector('[data-clone="1"]');
+        if (gap) gap.remove();
+        if (clone) clone.remove();
+      }
+
+      function setPrimaryText(track, value) {
+        var primary = track.querySelector(".field-text:not([data-clone])");
+        if (!primary) {
+          primary = document.createElement("span");
+          primary.className = "field-text";
+          track.appendChild(primary);
+        }
+        primary.textContent = value || "";
+        return primary;
+      }
+
+      function applyFontSize(texts, sizePx) {
+        for (var i = 0; i < texts.length; i++) {
+          texts[i].style.fontSize = sizePx + "px";
+        }
+      }
+
+      function fitField(field, slot, value) {
+        var kind = field.getAttribute("data-kind") || "title";
+        var track = field.querySelector(".field-track");
+        if (!track) return;
+
+        stopMarquee(field);
+        clearTrackExtras(track);
+        var primary = setPrimaryText(track, value);
+        track.style.transform = "translate3d(0,0,0)";
+
+        if (!value) {
+          primary.style.fontSize = "";
+          return;
+        }
+
+        var base = kind === "title" ? TITLE_BASE[slot] : BODY_BASE[slot];
+        var min = kind === "title" ? TITLE_MIN[slot] : BODY_MIN;
+        applyFontSize([primary], base);
+
+        var viewport = field.clientWidth;
+        if (viewport <= 0) return;
+
+        var size = base;
+        while (primary.scrollWidth > viewport + OVERFLOW_EPS && size > min) {
+          size = Math.max(min, size - SHRINK_STEP);
+          applyFontSize([primary], size);
+        }
+
+        if (primary.scrollWidth <= viewport + OVERFLOW_EPS) {
+          return;
+        }
+        startMarquee(field, primary, value, size);
+      }
+
+      function startMarquee(field, primary, value, sizePx) {
+        var track = field.querySelector(".field-track");
+        if (!track) return;
+
+        clearTrackExtras(track);
+        primary.textContent = value;
+        applyFontSize([primary], sizePx);
+
+        var gap = document.createElement("span");
+        gap.className = "field-gap";
+        gap.style.width = MARQUEE_GAP_PX + "px";
+        gap.setAttribute("aria-hidden", "true");
+
+        var clone = primary.cloneNode(true);
+        clone.setAttribute("data-clone", "1");
+        clone.setAttribute("aria-hidden", "true");
+
+        track.appendChild(gap);
+        track.appendChild(clone);
+
+        var loop = getLoop(field);
+        loop.epoch += 1;
+        var epoch = loop.epoch;
+        if (loop.rafId != null) {
+          cancelAnimationFrame(loop.rafId);
+          loop.rafId = null;
+        }
+
+        var primaryWidth = primary.scrollWidth;
+        var loopDistance = primaryWidth + MARQUEE_GAP_PX;
+        if (loopDistance <= 0) return;
+
+        var offset = 0;
+        var lastTs = 0;
+
+        function tick(ts) {
+          if (epoch !== loop.epoch) {
+            loop.rafId = null;
+            return;
+          }
+          if (!lastTs) lastTs = ts;
+          var dt = Math.min(48, ts - lastTs) / 1000;
+          lastTs = ts;
+          offset += MARQUEE_PX_PER_SEC * dt;
+          if (offset >= loopDistance) offset = offset % loopDistance;
+          track.style.transform = "translate3d(" + (-offset) + "px,0,0)";
+          loop.rafId = requestAnimationFrame(tick);
+        }
+
+        loop.rafId = requestAnimationFrame(tick);
+      }
+
+      function applySlotContent(slot, row) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        var titleField = group.querySelector('[data-field="title"]');
+        var descField = group.querySelector('[data-field="description"]');
+        if (titleField) fitField(titleField, slot, textOf(row, "title"));
+        if (descField) fitField(descField, slot, textOf(row, "description"));
+
+        if (slot === "now") {
+          var timeEl = document.querySelector('[data-slot="now"] [data-field="time"]');
+          if (timeEl) {
+            var time = textOf(row, "time");
+            timeEl.textContent = time ? time : "";
+            timeEl.hidden = !time;
+          }
+        }
+      }
+
+      function runCrossfade(slot, row) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        group.classList.add("is-crossfade");
+        window.setTimeout(function () {
+          applySlotContent(slot, row);
+          requestAnimationFrame(function () {
+            group.classList.remove("is-crossfade");
+          });
+        }, 140);
+      }
+
+      function applyLaterHighlight(schedule) {
+        var section = document.querySelector('[data-slot="later"]');
+        if (!section) return;
+        if (schedule && schedule.highlightActive) {
+          section.setAttribute("data-highlight", "1");
+        } else {
+          section.removeAttribute("data-highlight");
+        }
+        // Audience-facing heading stays LATER (Highlight only swaps title/description).
+      }
+
+      function render(payload) {
+        var schedule = payload && payload.schedule ? payload.schedule : payload || {};
+        var nextState = {
+          now: schedule.now || schedule.NOW || null,
+          next: schedule.next || schedule.NEXT || null,
+          later: schedule.later || schedule.LATER || null,
+        };
+        var nextHighlightActive = schedule.highlightActive === true;
+
+        applyLaterHighlight(schedule);
+
+        syncSlotEmptyState("next", nextState.next, nextHighlightActive);
+        syncSlotEmptyState("later", nextState.later, nextHighlightActive);
+
+        SLOTS.forEach(function (slot) {
+          var prev = current[slot];
+          var next = nextState[slot];
+          if (rowsEqual(prev, next)) return;
+          if (
+            slot !== "now" &&
+            !rowHasVisibleContent(next) &&
+            !(slot === "later" && nextHighlightActive)
+          ) {
+            return;
+          }
+          if (prev == null) {
+            applySlotContent(slot, next);
+          } else {
+            runCrossfade(slot, next);
+          }
+        });
+
+        current = nextState;
+        currentHighlightActive = nextHighlightActive;
+      }
+
+      function bindNeud() {
+        if (window.NEUDDisplay && typeof window.NEUDDisplay.subscribe === "function") {
+          window.NEUDDisplay.subscribe(function (event) {
+            var data = event && event.data ? event.data : event;
+            render(data);
+          });
+          return;
+        }
+        window.addEventListener("message", function (event) {
+          if (!event.data) return;
+          if (event.data.type === "neud-display-data" || event.data.schedule) {
+            render(event.data.data || event.data);
+          }
+        });
+      }
+
+      bindNeud();
+      window.__SEMA_SCHEDULE_FULLSCREEN_UHD__ = {
+        render: render,
+        stopMarquee: stopMarquee,
+        fitField: fitField,
+      };
+    })();
+  </script>
+</body>
+</html>

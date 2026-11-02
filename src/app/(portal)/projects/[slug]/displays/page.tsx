@@ -17,7 +17,10 @@ import { shouldUseLocalData } from "@/lib/local/mode";
 import { localGetEngineDetail } from "@/lib/local/api";
 import type { DisplayListItem } from "@/lib/displays/displays-list-types";
 import { resolveRendererKey } from "@/lib/displays/broad-arrow/resolve-renderer-key";
-import { projectSupportsSemaWorkflow } from "@/lib/projects/constants";
+import {
+  projectSupportsMicTallyWorkflow,
+  projectSupportsSemaWorkflow,
+} from "@/lib/projects/constants";
 
 type ProjectDisplaysPageProps = {
   params: Promise<{ slug: string }>;
@@ -348,16 +351,22 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
     );
   }
 
-  // SEMA package projects: same generic DisplaysPageClient as Broad Arrow.
+  // Installed package projects (SEMA, Mic Tally): same generic DisplaysPageClient as Broad Arrow.
   // First failing UI boundary (Pass 6): SEMA previously fell through to ProjectPlaceholderPage
   // ("vMix-ready…"), so Schedule Ticker never appeared even when installed/hydrated.
-  if (projectSupportsSemaWorkflow(access.project.project_type) && shouldUseLocalData()) {
+  // Mic Tally hit the same fallthrough: DB/API had mic-tally-three-mics-uhd but the page
+  // rendered the placeholder, so Displays looked empty after a successful hydrate/repair.
+  if (
+    (projectSupportsSemaWorkflow(access.project.project_type) ||
+      projectSupportsMicTallyWorkflow(access.project.project_type)) &&
+    shouldUseLocalData()
+  ) {
     const versionSummaries = (
       await localListDisplayVersionSummaries(slug).catch(() => ({ summaries: [] }))
     ).summaries;
     const { displays } = await localGetProjectDisplays(slug).catch(() => ({ displays: [] }));
     // Developer display rows are required to build package cards (name, published HTML).
-    // Always load them for SEMA; canManageSettings only gates Archived/Add controls.
+    // Always load them; canManageSettings only gates Archived/Add controls.
     const developerDisplays = (
       await localListDeveloperDisplays(slug).catch(() => ({ displays: [] }))
     ).displays;
@@ -370,6 +379,18 @@ export default async function ProjectDisplaysPage({ params }: ProjectDisplaysPag
       developerDisplays,
       versionSummaries,
     });
+
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[Displays][InstalledPackagePage]", {
+        projectSlug: slug,
+        projectId: access.project.id,
+        projectType: access.project.project_type,
+        projectDisplayCount: displays.length,
+        developerDisplayCount: developerDisplays.length,
+        visibleCardCount: displayItems.length,
+        archivedCount: archivedDisplays.length,
+      });
+    }
 
     return (
       <DisplaysPageClient

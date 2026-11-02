@@ -84,17 +84,18 @@ test("SEMA Displays route uses DisplaysPageClient — not ProjectPlaceholderPage
   assert.match(page, /DisplaysPageClient/);
   assert.match(page, /localGetProjectDisplays/);
   assert.match(page, /buildInstalledPackageDisplayItems/);
-  // SEMA path must construct DisplaysPageClient (not fall through to placeholder).
-  const semaBlockStart = page.indexOf("// SEMA package projects");
-  assert.ok(semaBlockStart > 0, "SEMA Displays path comment missing");
-  const semaBlock = page.slice(semaBlockStart);
-  assert.match(semaBlock, /projectSupportsSemaWorkflow/);
-  assert.match(semaBlock, /<DisplaysPageClient/);
-  // Within the SEMA branch, must not render the placeholder component.
-  const semaReturnEnd = semaBlock.indexOf("return (\n    <ProjectPlaceholderPage");
-  const semaExclusive = semaReturnEnd > 0 ? semaBlock.slice(0, semaReturnEnd) : semaBlock;
-  assert.match(semaExclusive, /<DisplaysPageClient/);
-  assert.doesNotMatch(semaExclusive, /<ProjectPlaceholderPage/);
+  // SEMA (and other installed packages) must construct DisplaysPageClient.
+  const packageBlockStart = page.indexOf("// Installed package projects");
+  assert.ok(packageBlockStart > 0, "Installed package Displays path comment missing");
+  const packageBlock = page.slice(packageBlockStart);
+  assert.match(packageBlock, /projectSupportsSemaWorkflow/);
+  assert.match(packageBlock, /<DisplaysPageClient/);
+  // Within the installed-package branch, must not render the placeholder component.
+  const packageReturnEnd = packageBlock.indexOf("return (\n    <ProjectPlaceholderPage");
+  const packageExclusive =
+    packageReturnEnd > 0 ? packageBlock.slice(0, packageReturnEnd) : packageBlock;
+  assert.match(packageExclusive, /<DisplaysPageClient/);
+  assert.doesNotMatch(packageExclusive, /<ProjectPlaceholderPage/);
   assert.doesNotMatch(page, new RegExp(OLD_VMIX_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(page, new RegExp(APPROVED_SUBHEADER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
@@ -197,7 +198,8 @@ test("Runtime: buildSemaPackageV1 writes ticker HTML + integrity; gate keys incl
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "neud-pass6-sema-"));
   try {
     const manifest = buildSemaPackageV1(tmp);
-    assert.equal(manifest.packageVersion, 8);
+    // Align with SEMA_PACKAGE_BASELINE_VERSION (v10); stale expected-8 drifts break packaging.
+    assert.equal(manifest.packageVersion, 10);
     assert.ok(manifest.displays.length >= 1);
     assert.equal(manifest.displays[0].slug, "schedule-ticker");
     assert.equal(manifest.displays[0].name, "Schedule Ticker");

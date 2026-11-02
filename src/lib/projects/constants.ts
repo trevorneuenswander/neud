@@ -14,6 +14,7 @@ export const ALL_PROJECT_DATA_TYPES = [
   "google-sheet-ingest",
   "bag-graphics",
   "sema-schedule",
+  "mic-tally",
 ] as const;
 
 export type ProjectDataType = (typeof ALL_PROJECT_DATA_TYPES)[number];
@@ -51,6 +52,7 @@ export const PROJECT_DATA_TYPE_LABELS: Record<ProjectDataType, string> = {
   "google-sheet-ingest": "Google Sheet Ingest",
   "bag-graphics": "BAG Graphics",
   "sema-schedule": "SEMA Schedule",
+  "mic-tally": "Mic Tally",
 };
 
 export const PROJECT_ACCESS_LEVEL_LABELS: Record<
@@ -69,6 +71,10 @@ export function projectSupportsBagController(projectType: string): boolean {
 
 export function projectSupportsSemaWorkflow(projectType: string): boolean {
   return projectType === "sema-schedule";
+}
+
+export function projectSupportsMicTallyWorkflow(projectType: string): boolean {
+  return projectType === "mic-tally";
 }
 
 export const DEFAULT_PROJECT_THEME = "default";

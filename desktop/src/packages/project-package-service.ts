@@ -7,6 +7,7 @@ import type { ProjectsRepository } from "../repositories/projects-repository";
 import type { ProjectPackagesRepository } from "../repositories/project-packages-repository";
 import { buildBroadArrowPackageV1 } from "./broad-arrow-package-builder";
 import { buildSemaPackageV1 } from "./sema-package-builder";
+import { buildMicTallyPackageV1 } from "./mic-tally-package-builder";
 import { buildModularPackageV1 } from "./modular-package-builder";
 import {
   BUILTIN_PROJECT_PACKAGE_CATALOG,
@@ -136,7 +137,16 @@ export class ProjectPackageService {
   }
 
   getInstalledDisplayKeys(projectId: string): Set<string> | null {
-    const install = this.packages.getInstallByProjectId(projectId);
+    let install = this.packages.getInstallByProjectId(projectId);
+    // Pass 6 / clean-install: install row may still be keyed to a prior local id
+    // after cloud identity realignment. Fall back by project slug so SEMA
+    // Displays do not disappear while reconcile catches up.
+    if (!install?.manifest) {
+      const project = this.projects.getById(projectId);
+      if (project?.slug) {
+        install = this.packages.getInstallBySlug(project.slug);
+      }
+    }
     if (!install?.manifest) {
       return null;
     }
@@ -599,6 +609,46 @@ export class ProjectPackageService {
         freshManifest = html
           ? buildSemaPackageV1(stagingSource, html)
           : buildSemaPackageV1(stagingSource);
+      } else if (slug === "mic-tally") {
+        freshManifest = buildMicTallyPackageV1(stagingSource);
+        const installedMicPath = path.join(
+          install.packageRoot,
+          "displays",
+          "mic-tally-three-mics-uhd-v1.html",
+        );
+        const freshMicPath = path.join(
+          stagingSource,
+          "displays",
+          "mic-tally-three-mics-uhd-v1.html",
+        );
+        const installedHash =
+          install.manifestHash ?? install.manifest?.integrity?.manifestHash ?? null;
+        const freshHash = freshManifest.integrity.manifestHash ?? null;
+        const htmlMismatch =
+          !fs.existsSync(installedMicPath) ||
+          !fs.existsSync(freshMicPath) ||
+          fs.readFileSync(installedMicPath, "utf8") !== fs.readFileSync(freshMicPath, "utf8");
+        const hashMismatch = Boolean(freshHash && installedHash && freshHash !== installedHash);
+        const missingDisplayDef = !install.manifest?.displays?.some(
+          (display) => display.slug === "mic-tally-three-mics-uhd",
+        );
+        if (!htmlMismatch && !hashMismatch && !missingDisplayDef) {
+          return { rebuilt: false, reason: "content_current", install };
+        }
+        const rebuilt = this.installBuiltinPackage(slug, {
+          existingProjectId: project?.id ?? install.projectId,
+          isUpdate: true,
+          legacyMigration: false,
+        });
+        return {
+          rebuilt: true,
+          reason: missingDisplayDef
+            ? "missing_display_definition"
+            : htmlMismatch
+              ? "html_content_changed"
+              : "manifest_hash_changed",
+          install: rebuilt,
+        };
       } else {
         return { rebuilt: false, reason: "unsupported_slug", install };
       }
@@ -625,12 +675,24 @@ export class ProjectPackageService {
         "displays",
         "schedule-ticker-editable-v1.html",
       );
+      const installedFullscreenPath = path.join(
+        install.packageRoot,
+        "displays",
+        "schedule-fullscreen-uhd-v1.html",
+      );
+      const freshFullscreenPath = path.join(
+        stagingSource,
+        "displays",
+        "schedule-fullscreen-uhd-v1.html",
+      );
       const installedHasTicker = fs.existsSync(installedTickerPath);
       const freshHasTicker = fs.existsSync(freshTickerPath);
       const installedHasPylon = fs.existsSync(installedPylonPath);
       const freshHasPylon = fs.existsSync(freshPylonPath);
       const installedHasEditable = fs.existsSync(installedEditablePath);
       const freshHasEditable = fs.existsSync(freshEditablePath);
+      const installedHasFullscreen = fs.existsSync(installedFullscreenPath);
+      const freshHasFullscreen = fs.existsSync(freshFullscreenPath);
       const installedHash = install.manifestHash ?? install.manifest?.integrity?.manifestHash ?? null;
       const freshHash = freshManifest.integrity.manifestHash ?? null;
       const tickerMismatch =
@@ -654,13 +716,24 @@ export class ProjectPackageService {
           freshHasEditable &&
           fs.readFileSync(installedEditablePath, "utf8") !==
             fs.readFileSync(freshEditablePath, "utf8"));
-      const htmlMismatch = tickerMismatch || pylonMismatch || editableMismatch;
+      const fullscreenMismatch =
+        !installedHasFullscreen ||
+        !freshHasFullscreen ||
+        (installedHasFullscreen &&
+          freshHasFullscreen &&
+          fs.readFileSync(installedFullscreenPath, "utf8") !==
+            fs.readFileSync(freshFullscreenPath, "utf8"));
+      const htmlMismatch =
+        tickerMismatch || pylonMismatch || editableMismatch || fullscreenMismatch;
       const hashMismatch = Boolean(freshHash && installedHash && freshHash !== installedHash);
       const missingDisplayDef =
         !install.manifest?.displays?.some((display) => display.slug === "schedule-ticker") ||
         !install.manifest?.displays?.some((display) => display.slug === "schedule-pylon") ||
         !install.manifest?.displays?.some(
           (display) => display.slug === "schedule-ticker-editable",
+        ) ||
+        !install.manifest?.displays?.some(
+          (display) => display.slug === "schedule-fullscreen-uhd",
         );
 
       if (!htmlMismatch && !hashMismatch && !missingDisplayDef) {
@@ -965,7 +1038,12 @@ export class ProjectPackageService {
         slug: catalog.slug,
         projectType: catalog.projectType,
         description: catalog.description,
-        icon: catalog.projectType === "bag-graphics" ? "bag" : "sema",
+        icon:
+          catalog.projectType === "bag-graphics"
+            ? "bag"
+            : catalog.projectType === "mic-tally"
+              ? "mic"
+              : "sema",
         id: preferredId,
       });
     }
@@ -1008,6 +1086,8 @@ export class ProjectPackageService {
         manifest = html
           ? buildSemaPackageV1(stagingSource, html)
           : buildSemaPackageV1(stagingSource);
+      } else if (slug === "mic-tally") {
+        manifest = buildMicTallyPackageV1(stagingSource);
       } else {
         throw new ProjectPackageValidationError(`No package builder for ${slug}`);
       }
@@ -1067,6 +1147,28 @@ export class ProjectPackageService {
         updatedAt: new Date().toISOString(),
       });
 
+      if (slug === "mic-tally") {
+        if (
+          !activated.manifest.displays.some(
+            (display) => display.slug === "mic-tally-three-mics-uhd",
+          )
+        ) {
+          throw new ProjectPackageValidationError(
+            "Mic Tally package is missing the Three Microphones UHD display definition.",
+          );
+        }
+        const micHtmlPath = path.join(
+          activated.packageRoot,
+          "displays",
+          "mic-tally-three-mics-uhd-v1.html",
+        );
+        if (!fs.existsSync(micHtmlPath)) {
+          throw new ProjectPackageValidationError(
+            "Mic Tally package is missing Three Microphones UHD HTML assets.",
+          );
+        }
+      }
+
       if (slug === "sema") {
         if (!activated.manifest.displays.some((display) => display.slug === "schedule-ticker")) {
           throw new ProjectPackageValidationError(
@@ -1085,6 +1187,15 @@ export class ProjectPackageService {
         ) {
           throw new ProjectPackageValidationError(
             "SEMA package is missing the Schedule Ticker Editable display definition.",
+          );
+        }
+        if (
+          !activated.manifest.displays.some(
+            (display) => display.slug === "schedule-fullscreen-uhd",
+          )
+        ) {
+          throw new ProjectPackageValidationError(
+            "SEMA package is missing the SEMA Fullscreen Schedule display definition.",
           );
         }
         const tickerHtmlPath = path.join(
@@ -1117,16 +1228,40 @@ export class ProjectPackageService {
             "SEMA package is missing Schedule Ticker Editable HTML assets.",
           );
         }
+        const fullscreenHtmlPath = path.join(
+          activated.packageRoot,
+          "displays",
+          "schedule-fullscreen-uhd-v1.html",
+        );
+        if (!fs.existsSync(fullscreenHtmlPath)) {
+          throw new ProjectPackageValidationError(
+            "SEMA package is missing SEMA Fullscreen Schedule HTML assets.",
+          );
+        }
       }
 
       if (!options.legacyMigration && !options.isUpdate && this.onFirstInstallHooks) {
         void this.onFirstInstallHooks(project.id, activated.manifest);
       }
       if (this.onPackageActivated) {
-        void this.onPackageActivated(project.id, activated.manifest, {
+        // SEMA hydration is synchronous and must be allowed to fail the install.
+        // Do not wrap in void/try here — callers that need nonfatal behavior catch locally.
+        const activatedResult = this.onPackageActivated(project.id, activated.manifest, {
           isUpdate: options.isUpdate,
           legacyMigration: options.legacyMigration,
         });
+        if (
+          activatedResult &&
+          typeof (activatedResult as Promise<void>).then === "function"
+        ) {
+          void (activatedResult as Promise<void>).catch((error) => {
+            console.warn(
+              `[packages] Package activation handler failed (async): ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
+        }
       }
 
       this.emit({
