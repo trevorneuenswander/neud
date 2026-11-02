@@ -1,18 +1,20 @@
 # DeckLink setup
 
-Phase 2A sends one Fill signal. Key + Fill is not implemented.
+NEUD talks to **Blackmagic Desktop Video** through the DeckLink SDK. Fill output is the default. **Key + Fill** is offered only when the SDK reports a supported transport (`nativeExternalKey` or `pairedPorts`). Do not assume every UltraStudio / Duo / Quad supports Key/Fill.
+
+Physical Key/Fill and multi-card behavior require hardware verification. See `docs/alpha-v0.3.2/rc-validation/blackmagic-compatibility-matrix.md`.
 
 ## Prerequisite
 
 Install **Blackmagic Desktop Video** on the computer that will output SDI. NEUD does not ship the DeckLink driver or the DeckLink SDK. If Desktop Video is missing, NEUD still starts and the Output page reports that Blackmagic DeckLink is unavailable.
 
-Supported for this phase:
+Supported platforms:
 
 - Windows x64
 - macOS Apple Silicon
-- A DeckLink or UltraStudio output that Desktop Video can see
+- Any DeckLink / UltraStudio / compatible Desktop Video output the SDK enumerates
 
-The exact cards are whatever the installed Desktop Video SDK enumerates. NEUD does not keep its own model list.
+The exact cards are whatever the installed Desktop Video SDK enumerates. NEUD does not keep its own model-name allowlist.
 
 ## Development
 

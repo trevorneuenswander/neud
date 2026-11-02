@@ -1,0 +1,31 @@
+{
+  "assumptions": {
+    "avgHtmlBytes": 82326,
+    "metaRowBytes": 256,
+    "displays": 18,
+    "revisionsPerDisplay": 1,
+    "note": "Model only — not a production invoice. Assumes selective path used on idle sync."
+  },
+  "v031": {
+    "intervalSec": 60,
+    "bytesPerCycle": 1481868,
+    "monthlyBytes": 64016697600,
+    "monthlyGb": 64.02
+  },
+  "v032": {
+    "intervalSec": 180,
+    "coldStartBytes": 1486476,
+    "warmBytesPerCycle": 4608,
+    "monthlyBytes": 108184680,
+    "monthlyGb": 0.11
+  },
+  "projectedReduction": {
+    "ratio": 0.998,
+    "percent": "99.8%"
+  },
+  "fleet": {
+    "instances1": 0.11,
+    "instances5": 0.54,
+    "instances10": 1.08
+  }
+}

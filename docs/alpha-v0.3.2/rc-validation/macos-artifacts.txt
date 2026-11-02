@@ -1,0 +1,16 @@
+# NEUD v0.3.2 macOS Apple Silicon local RC (not published)
+
+NEUD-0.3.2-arm64.dmg
+SHA256 a88001e836fa18c930836e4b6ffcea758d69f90ce159d68c757c1957bb1d6bc3
+SIZE 269M
+PATH desktop/release/NEUD-0.3.2-arm64.dmg
+
+NEUD-0.3.2-arm64.zip
+SHA256 e9950b6378ba8a59409399e8bf28d9084a2f85b511c80ba55560fbf429fcd0e6
+SIZE 261M
+PATH desktop/release/NEUD-0.3.2-arm64.zip
+
+DeckLink meta (packaged): stub=false electronTarget=33.4.11 arch=arm64 sdkRoot=~/DeckLinkSDK
+Signing: adhoc / linker-signed (local RC; not Developer ID notarized)
+App version: 0.3.2
+Build log: docs/alpha-v0.3.2/rc-validation/package-mac-0.3.2.log

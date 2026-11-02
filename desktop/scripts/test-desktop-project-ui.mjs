@@ -37,8 +37,10 @@ test("project nav hides settings for non-admin roles", () => {
   const layoutFrame = readSrc("src/components/projects/ProjectLayoutFrame.tsx");
   const layout = readSrc("src/app/(portal)/projects/[slug]/layout.tsx");
 
+  // Settings is capability-gated via canManageSettings (not a separate settingsOnly flag).
   assert.ok(nav.includes("canManageSettings"));
-  assert.ok(nav.includes("settingsOnly"));
+  assert.match(nav, /if\s*\(\s*!isViewer\s*&&\s*canManageSettings\s*\)/);
+  assert.match(nav, /href:\s*"\/settings"/);
   assert.ok(layoutFrame.includes("canManageSettings"));
   assert.ok(layout.includes("canManageSettings={access.canManageSettings}"));
 });
@@ -67,7 +69,7 @@ test("advanced settings uses developer tools disclosure section", () => {
   );
   const disclosure = readSrc("src/components/ui/DisclosureSection.tsx");
 
-  assert.ok(settingsForm.includes('title="Advanced settings"'));
+  assert.ok(settingsForm.includes('title="Advanced Settings"'));
   assert.ok(settingsForm.includes("DisclosureSection"));
   assert.ok(disclosure.includes("aria-expanded"));
   assert.ok(disclosure.includes("grid-rows-[1fr]"));
@@ -90,8 +92,12 @@ test("developer tools drawer label matches scraper page order", () => {
 
   assert.ok(drawer.includes("Developer Tools"));
   assert.ok(drawer.includes("DisclosureSection"));
+  // Engine detail inlines the Developer Tools heading after URL configuration.
   assert.ok(detail.includes("BroadArrowConfigurationForm"));
-  assert.ok(detail.indexOf("BroadArrowConfigurationForm") < detail.indexOf("DeveloperDrawer"));
+  assert.ok(detail.includes("Developer Tools"));
+  assert.ok(
+    detail.indexOf("BroadArrowConfigurationForm") < detail.indexOf("Developer Tools"),
+  );
 });
 
 test("overview statistics cards match requested layout", () => {
@@ -133,7 +139,9 @@ test("overview metadata shows creator and hides removed fields", () => {
   assert.ok(overview.includes("Creator"));
   assert.ok(overview.includes("creator.name"));
   assert.ok(overview.includes("creator.email"));
-  assert.ok(overview.includes("Webpage Scraper"));
+  // Capabilities replace the hard-coded "Webpage Scraper" metadata row.
+  assert.ok(overview.includes('text-muted">Capabilities'));
+  assert.ok(overview.includes("ProjectCapabilityTags"));
 });
 
 test("project activity route renders full activity view", () => {
