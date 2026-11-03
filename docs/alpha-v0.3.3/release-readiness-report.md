@@ -54,3 +54,28 @@ All pre-`125316a` v0.3.3 RC installers remain superseded and were **not** publis
 - Feed-level auto-update verification (latest.yml / latest-mac.yml version `0.3.3`) is performed publicly.
 - Installed-app upgrade from a running v0.3.2 binary was **not** executed in this publication pass.
 - Windows `NEUD-Setup-0.3.3-x64.exe.blockmap` was regenerated locally with `app-builder blockmap` from the verified installer (CI engineering artifact omitted blockmaps).
+
+### Vercel production
+
+| Item | Value |
+|---|---|
+| Deployment | `dpl_3h9AEMhjfgH46HR6dZXnCsoUNhHb` |
+| URL | https://neud-f9hh2vdos-trevorneu.vercel.app |
+| Git commit | `4c0f361` (catalog flip) |
+| Aliases | https://www.neud.io , https://neud-graphics.vercel.app |
+| Local `vercel deploy --prod` | Failed (100 MB limit from local `desktop/release/`); GitHub integration deploy succeeded |
+
+### Post-publication public checks
+
+| Check | Result |
+|---|---|
+| GitHub release `v0.3.3` public | PASS |
+| Tag target | `04e0ce2` |
+| Downloaded artifact SHA-256 | PASS (all three) |
+| www.neud.io shows Alpha 0.3.3 | PASS |
+| /download links to v0.3.3 Win + Mac | PASS |
+| `latest.yml` / `latest-mac.yml` version 0.3.3 | PASS |
+| `/releases/latest/download/latest.yml` → 0.3.3 | PASS |
+| v0.3.2 installer still downloadable | PASS |
+| Installed-app upgrade smoke | Not performed |
+
