@@ -1,25 +1,39 @@
 # NEUD Alpha v0.3.3 — Release-Readiness Report
 
 **Date:** 2026-11-02  
-**Branch:** `feature/v0.3.3-fixes`  
+**Branch:** `feature/v0.3.3-fixes` → `origin/feature/v0.3.3-fixes`  
 **Base:** `main` @ `b8adb45` (published **v0.3.2**)  
-**RC commit:** `9a78398c6edc73f8639bfa3139c67989f2d052a5` — *NEUD v0.3.3 release candidate*  
+**Product RC commit:** `9a78398c6edc73f8639bfa3139c67989f2d052a5`  
+**Docs tip at Windows CI:** `cb1d68916825ab32a80fde340d8c282bffd3adf3`  
 **Canonical version:** **0.3.3**  
-**Decision:** **GO for Owner publish gate** / **NO-GO until** merge, Windows CI, tag, upload, and catalog flip are explicitly authorized
+**Decision:** **GO for Owner publication authorization** / **NO-GO until** merge, tag, installer upload, and catalog/feed flip are explicitly authorized
 
-No merge into `main`, tag, push, GitHub release publish, Vercel deploy, installer upload, or update-feed publish was performed.
+No merge into `main`, no tag, no GitHub Release publish, no production Vercel deploy, no public installer upload, and no update-feed publish were performed.
 
 ---
 
-## 1. Release-candidate commit SHA
+## 1. Release-candidate commits
 
 | Item | Value |
 |---|---|
-| Branch | `feature/v0.3.3-fixes` (no upstream) |
-| Commit | `9a78398c6edc73f8639bfa3139c67989f2d052a5` |
-| Message | `NEUD v0.3.3 release candidate` |
+| Branch | `feature/v0.3.3-fixes` (tracking `origin/feature/v0.3.3-fixes`) |
+| Product RC | `9a78398` — *NEUD v0.3.3 release candidate* |
+| Readiness (pre-Windows) | `cb1d689` — packaging gate docs |
+| Windows CI head SHA | `cb1d68916825ab32a80fde340d8c282bffd3adf3` |
 | Merge-base with `main` | `b8adb45` |
-| Excluded from commit | `workers/data-engine/dist-local/package.json` (local noise) |
+| Excluded from commits | `workers/data-engine/dist-local/package.json` |
+
+### Push safety (performed before Windows CI)
+
+| Check | Result |
+|---|---|
+| Auto-trigger `build-windows-dev` on feature push | **No** (only `workflow_dispatch` + push to `develop`) |
+| Auto-trigger `release-windows` / `release-macos` | **No** (`workflow_dispatch` only; release steps require inputs) |
+| Push creates GitHub Release / uploads to release assets | **No** |
+| Public catalog / feeds | Untouched |
+| Vercel production | Not deployed; preview may exist for the feature branch (non-production) |
+
+Windows CI was started via **manual** `workflow_dispatch` of **Build Windows Development** only.
 
 ---
 
@@ -27,146 +41,150 @@ No merge into `main`, tag, push, GitHub release publish, Vercel deploy, installe
 
 | Surface | Value |
 |---|---|
-| Root `package.json` | **0.3.3** |
-| `desktop/package.json` | **0.3.3** |
-| Packaged `Info.plist` `CFBundleShortVersionString` / `CFBundleVersion` | **0.3.3** |
-| `latest-mac.yml` `version` | **0.3.3** (local only; not uploaded) |
-| `src/lib/releases/neud-releases.ts` | Still **0.3.2** — **untouched** |
-| Docs: latest **published** | **v0.3.2** |
-| Docs: current package | **v0.3.3** (RC) |
+| Root / `@neud/desktop` | **0.3.3** |
+| macOS Info.plist | **0.3.3** |
+| Windows `build-info.json` `appVersion` | **0.3.3** |
+| Windows installer filename | `NEUD-Setup-0.3.3-x64.exe` |
+| `neud-releases.ts` catalog | Still **0.3.2** — untouched |
+| Latest published GitHub release | **v0.3.2** |
 
 ---
 
 ## 3. Release scope included
 
-1. **Mic Tally colors** — LIVE `#FF2020`, MUTED/FADER DOWN `#527D65`, UNKNOWN `#777777` + safe upgrade hash  
-2. **Simultaneous UltraStudio / DeckLink sessions** — `gSessions`, endpoint-scoped start/stop/push/metrics, LIVE health reconcile  
-3. **Output rename focus** — NeudModal mount-only focus; LIVE rename continuity  
-4. **SEMA Ticker marquee** — 57/52 fonts, 40px/s, highlight-stable controllers  
-5. **SEMA Fullscreen marquee** — per-slot fonts preserved, highlight-stable  
-6. **Fullscreen speed** — **50px/s** (ease 1s, holds 4s unchanged)  
-7. **Hydration delivery** — allowlist intermediate ticker `bede95a1…` and fullscreen 40px/s `48da36be…`
+1. Mic Tally colors — LIVE `#FF2020`, MUTED/FADER DOWN `#527D65`, UNKNOWN `#777777`  
+2. Simultaneous UltraStudio / DeckLink native sessions (`gSessions`, endpoint-scoped API)  
+3. Output rename focus (NeudModal mount-only focus)  
+4. SEMA Ticker marquee — 57/52 @ **40px/s**, highlight-stable  
+5. SEMA Fullscreen marquee — per-slot fonts, highlight-stable  
+6. Fullscreen speed — **50px/s**  
+7. Hydration allowlists for intermediate ticker `bede95a1…` and fullscreen 40px/s `48da36be…`
 
-No production SQL migrations added. Migration 039 **test fixture** only.
+No production SQL migrations added.
 
 ---
 
-## 4. Final regression results
-
-### Critical / v0.3.3-focused — PASS
+## 4. Regression (engineering)
 
 | Suite | Result |
 |---|---|
-| Batch A (Output Engine, DeckLink, Mic Tally, rename, SEMA ticker/fullscreen/hydration, release-version, modal) | **115/115** |
-| `test-output-engine.mjs` alone | **35/35** (039 fixture PASS) |
-| SEMA Batch B (fullscreen UHD, clean install, upgrade, activity noise, redesign, visibility/highlight, directory) | **40/40** |
+| Critical Batch A | **115/115** |
+| SEMA Batch B | **40/40** |
 | `desktop` `test:packages` | **48/48** |
-| Auth / BA / activity sample Batch C | **76 pass / 0 fail / 1 skipped** |
+| Auth/BA sample | **76 pass / 1 skip** |
 | Root + desktop `tsc --noEmit` | **PASS** |
-
-### Pre-existing failures (not introduced by v0.3.3)
-
-| Test | Baseline evidence | Risk |
-|---|---|---|
-| `test-broad-arrow-controller-ui.mjs` — 3 fails (`onPollIntervalChange`, poll-interval copy, Advanced settings title) | Reconfirmed **29/32**; controller UI **not** in v0.3.3 diff | **Low** — track separately |
-| Packaged-browser / DisplayCard order / v0.3.1 stabilization catalog pairing (prior readiness) | Darwin host / stale expectations; not Owner-validated paths | **Low–Medium** — do not block RC publish of validated fixes |
+| Pre-existing BA controller UI | **3 fails** (unrelated to v0.3.3) |
+| Migration 039 | Test fixture only; production SQL unchanged |
 
 ---
 
-## 5. macOS packaging results — **PASS**
-
-Built locally with `NEUD_REQUIRE_REAL_DECKLINK=1` and `NEUD_DECKLINK_SDK=$HOME/DeckLinkSDK` (SDK 16.0 headers; Desktop Video runtime 16.4.0).
+## 5. macOS packaging — **PASS** (preserved)
 
 | Artifact | Size | SHA-256 |
 |---|---|---|
-| `desktop/release/NEUD-0.3.3-arm64.dmg` | 269M (`282064698` bytes) | `c9e6363dd80ab66af9f2ce8cee69cd0911d1b0a4235eee07b85931faacee01bf` |
-| `desktop/release/NEUD-0.3.3-arm64.zip` | 261M (`273494739` bytes) | `1e45e958b1052fefea308902df4f86fb4fc8cf38cdb5863612e0d7ad72dadcef` |
-| `NEUD-0.3.3-arm64.dmg.blockmap` / `.zip.blockmap` | present | — |
-| `latest-mac.yml` | local only | version **0.3.3** |
+| `desktop/release/NEUD-0.3.3-arm64.dmg` | 269M | `c9e6363dd80ab66af9f2ce8cee69cd0911d1b0a4235eee07b85931faacee01bf` |
+| `desktop/release/NEUD-0.3.3-arm64.zip` | 261M | `1e45e958b1052fefea308902df4f86fb4fc8cf38cdb5863612e0d7ad72dadcef` |
 
-### Native DeckLink (packaged Electron runtime)
+Packaged DeckLink: **`stub: false`**, loads in Electron, hardware `endpointCount: 2` on Owner Mac. GitHub `v0.3.3` download → **404**.
+
+---
+
+## 6. Windows CI packaging — **PASS** (build verification)
+
+| Item | Value |
+|---|---|
+| Workflow | **Build Windows Development** (`build-windows-dev.yml`) |
+| Run | https://github.com/trevorneuenswander/neud/actions/runs/41547932549 |
+| Conclusion | **success** (~9m17s job) |
+| Head SHA | `cb1d68916825ab32a80fde340d8c282bffd3adf3` |
+| Env | `NEUD_REQUIRE_REAL_DECKLINK=1`, `NEUD_WITH_FFMPEG=1` |
+| Publishing | CI **artifact upload only** — no `gh release`, no public feed |
+
+### Windows installer
+
+| Field | Value |
+|---|---|
+| Filename | `NEUD-Setup-0.3.3-x64.exe` |
+| Size | **444M** (`465491603` bytes) |
+| SHA-256 | `6de7bff3f142b2d2bc79560c58806efad5534d56cca899449c669fbe0902a47f` |
+| Type | PE32 Nullsoft Installer (x64 NSIS) |
+| Also in artifact | `NEUD-Setup-latest-x64.exe` (identical hash; **not** uploaded to public feeds) |
+
+### Native DeckLink (Windows packaged path)
 
 | Check | Result |
 |---|---|
-| `neud_decklink.meta.json` | `stub: false`, Electron **33.4.11**, arch **arm64** |
-| `verify-packaged-decklink-addon.mjs --packaged` | **PASS** `stub: false` |
-| `verify-decklink-addon-load.mjs --packaged` | **PASS** — loads packaged `.node` in Electron; `discoverOk`; `endpointCount: 2`; SDK runtime **16.4.0** |
-| Multi-session marker | Packaged binary contains `endpointId` string; source uses `gSessions` |
-| Silent stub fallback | **Not observed** |
-| App version in bundle | `CFBundleShortVersionString` / `CFBundleVersion` = **0.3.3** |
+| Artifact `neud_decklink.meta.json` | `stub: false`, arch **x64**, Electron **33.4.11**, real SDK root on runner |
+| CI `verify-packaged-decklink-addon.mjs --packaged` | **PASS** (`stub: false`) |
+| CI `verify-decklink-addon-load.mjs --packaged` | **PASS** (`stub: false`; `endpointCount: 0` on runner — **no Desktop Video hardware**; not a physical dual-UltraStudio claim) |
+| Multi-session source | Present in RC commit (`gSessions` / `endpointId` API) |
+| Silent stub fallback | **Not observed** under `NEUD_REQUIRE_REAL_DECKLINK=1` |
+
+### Bundled dependencies (artifact / CI)
+
+| Dependency | Evidence |
+|---|---|
+| LGPL FFmpeg | Artifact includes `dist/platform/windows/ffmpeg/*.dll` + provenance; ProRes/H.264 smokes **PASS** |
+| Packaged Chrome | Build synced packaged Chrome profiles; targeted packaged-browser resolver tests **PASS** |
+| `build-info.json` | `appVersion: 0.3.3`, `gitCommit: cb1d689…`, `withFfmpegLgpl: true`, `developmentBuildId: activity-sync-aliases-1` (workflow env label only) |
+
+### Distinction: CI build vs physical Windows hardware
+
+| Claim | Status |
+|---|---|
+| Windows x64 installer builds with real DeckLink addon (`stub: false`) | **Verified in CI** |
+| Packaged addon loads under Electron on the Windows runner | **Verified in CI** |
+| Dual UltraStudio / Key/Fill on a physical Windows machine | **Not re-run in this CI step** — Owner hardware PASS was previously recorded for dual UltraStudio; recommend a short Windows packaged smoke before public publish if desired |
 
 ### Public availability
 
-`https://github.com/trevorneuenswander/neud/releases/download/v0.3.3/NEUD-0.3.3-arm64.dmg` → **HTTP 404** (not published).
+- GitHub release tag `v0.3.3` → **404**  
+- Installer download URL for `v0.3.3` → **404**  
+- Latest published release remains **v0.3.2**
 
 ---
 
-## 6. Windows packaging results — **BLOCKED pending push approval**
-
-| Item | Status |
-|---|---|
-| Local win32 build on this Darwin host | **Not possible** (real Windows DeckLink/MIDL required) |
-| Branch upstream | **None** — `feature/v0.3.3-fixes` has never been pushed |
-| CI workflows | `build-windows-dev.yml` / `release-windows.yml` are `workflow_dispatch` with `NEUD_REQUIRE_REAL_DECKLINK=1` |
-| Action taken | **Stopped** — a push is required before Windows CI can build; Owner approval requested before any push |
-
-Required Windows CI checks after authorized push:
-
-1. Dispatch `build-windows-dev` (or `release-windows`) on `feature/v0.3.3-fixes` / RC SHA  
-2. Confirm packaged `neud_decklink.meta.json` `stub: false`  
-3. `verify-packaged-decklink-addon.mjs --packaged` + `verify-decklink-addon-load.mjs --packaged`  
-4. `verify-packaged-no-decklink-sdk.mjs`  
-5. Confirm installer reports **0.3.3**; retain local `latest.yml` without uploading  
-
----
-
-## 7. Upgrade and hydration safety
+## 7. Upgrade / hydration safety
 
 | Path | Status |
 |---|---|
-| Mic Tally prior packaged hash allowlist | Present |
-| SEMA ticker prior hashes | v0.3.2 `9a86a7fb…` + intermediate `bede95a1…` |
-| SEMA fullscreen prior hashes | v0.3.2 `b5ad9fad…` + 40px/s `48da36be…` |
-| Hydration delivery test | **PASS** — stuck intermediate ticker upgrades to highlight-stable build  
-| Customized displays | Still preserved (unknown hashes not auto-upgraded) |
-| v0.3.2 user data / Output routes | No new SQLite migration; preserved by design |
+| Mic Tally / SEMA ticker / SEMA fullscreen prior-hash allowlists | Present in RC |
+| Intermediate ticker delivery test | **PASS** |
+| Customized displays | Not auto-overwritten |
+| v0.3.2 local data / Output routes | No new SQLite migration |
 
 ---
 
-## 8. Artifact inventory (completed)
+## 8. Artifact inventory
 
-| Platform | Filename | Size | SHA-256 | Build env | DeckLink | Smoke |
+| Platform | Filename | Size | SHA-256 | Env | DeckLink | Notes |
 |---|---|---|---|---|---|---|
-| macOS arm64 | `NEUD-0.3.3-arm64.dmg` | 269M | `c9e6363d…acee01bf` | Darwin 25.5 / local `package:mac` | Real, packaged load **PASS** | Packaged addon + version gates **PASS** |
-| macOS arm64 | `NEUD-0.3.3-arm64.zip` | 261M | `1e45e958…72dadcef` | same | same | same |
-| Windows x64 | `NEUD-Setup-0.3.3-x64.exe` | — | — | **Not built** | Pending CI | Pending |
+| macOS arm64 | `NEUD-0.3.3-arm64.dmg` | 269M | `c9e6363d…acee01bf` | Local `package:mac` | Real, packaged load PASS | Preserved locally |
+| macOS arm64 | `NEUD-0.3.3-arm64.zip` | 261M | `1e45e958…72dadcef` | Local | Real | Preserved locally |
+| Windows x64 | `NEUD-Setup-0.3.3-x64.exe` | 444M / 465491603 B | `6de7bff3…0902a47f` | GH Actions run `41547932549` | Real `stub:false` | CI artifact only |
 
 ---
 
-## 9. Remaining publication steps (Owner-gated)
+## 9. Remaining Owner-gated publication steps
 
-1. Approve **push** of `feature/v0.3.3-fixes` for Windows CI (if desired before merge).  
-2. Complete Windows RC build + DeckLink `stub:false` verification.  
-3. Optional packaged smoke: Mic Tally colors, dual UltraStudio, rename, SEMA ticker after relaunch hydration.  
-4. Authorize **merge to `main`**.  
-5. Authorize **tag `v0.3.3`**, upload installers, flip `neud-releases.ts`, publish GitHub release notes, update feeds.  
-6. Do **not** deploy unrelated Vercel/Supabase changes as part of this release.
+1. Optional: short Windows packaged smoke (Mic Tally / Outputs / SEMA) on Owner hardware.  
+2. Authorize **merge to `main`**.  
+3. Authorize **tag `v0.3.3`**, upload macOS + Windows installers, flip `neud-releases.ts`, publish GitHub release notes + update feeds.  
+4. Do not deploy unrelated Vercel/Supabase changes as part of this release.
 
 ---
 
 ## 10. Final GO / NO-GO
 
-### **GO (release candidate)**
+### **GO (engineering + packaging verification)**
 
-- Version **0.3.3** committed on `feature/v0.3.3-fixes` @ `9a78398`  
-- Owner-validated six-item scope + SEMA hydration delivery included  
-- Critical regressions green; production SQL untouched  
-- macOS Apple Silicon RC DMG/ZIP built with **real** DeckLink addon verified in packaged Electron  
+- v0.3.3 RC committed and pushed for CI only  
+- macOS Apple Silicon RC artifacts verified with real DeckLink  
+- Windows x64 RC installer verified in CI with **`stub: false`**, version **0.3.3**, Chrome/FFmpeg present  
+- No public release assets or feeds updated  
 
-### **NO-GO (publish)**
+### **NO-GO (publication)**
 
-- Not merged / not tagged / not pushed  
-- Windows x64 RC installer **not yet built**  
-- Catalog, feeds, and GitHub release assets must not move without explicit Owner publish authorization  
+Until Owner authorizes merge, tag, public installer upload, catalog flip, and update-feed publish.
 
-**Stop here. Await Owner approval before push, Windows CI, merge, tag, or publish.**
+**Stop here. Await Owner publication approval.**
