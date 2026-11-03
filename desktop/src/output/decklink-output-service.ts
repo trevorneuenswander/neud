@@ -71,8 +71,10 @@ export class ScriptedFrameRenderer implements DeckLinkFrameRenderer {
         this.waiters.set(input.routeId, resolve);
       });
     }
-    if (this.closed.includes(input.routeId)) {
-      return { ok: false as const, error: "Output stopped" };
+    // Allow reopen after stop (independent dual-output restart coverage).
+    const closedAt = this.closed.lastIndexOf(input.routeId);
+    if (closedAt >= 0) {
+      this.closed.splice(closedAt, 1);
     }
     this.revisions.set(input.routeId, 1);
     this.repaints.set(input.routeId, 1);

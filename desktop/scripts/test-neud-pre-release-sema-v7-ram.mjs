@@ -49,6 +49,10 @@ test("hydration publishes when packaged HTML hash changes (update path)", () => 
   assert.match(hydration, /publishedHash === sourceHash/);
   assert.match(hydration, /Updated SEMA display from project package/);
   assert.match(hydration, /editableGraphicSchema/);
+  // Schedule Ticker / Fullscreen UHD use Mic Tally–style prior-hash safe upgrade.
+  assert.match(hydration, /SEMA_SCHEDULE_TICKER_PREVIOUS_PACKAGED_SOURCE_HASHES/);
+  assert.match(hydration, /SEMA_SCHEDULE_FULLSCREEN_UHD_PREVIOUS_PACKAGED_SOURCE_HASHES/);
+  assert.match(hydration, /leaving published .* content unchanged/);
 });
 
 test("Performance Monitor compact RAM shows percent and GB", () => {

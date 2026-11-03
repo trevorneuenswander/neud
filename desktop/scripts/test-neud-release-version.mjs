@@ -15,7 +15,7 @@ function readJson(relativePath) {
 }
 
 function createVersionApi() {
-  const BUILD_APP_VERSION = "0.3.2";
+  const BUILD_APP_VERSION = "0.3.3";
 
   function stripChannelSuffix(version, channel) {
     const pattern = new RegExp(`[-.]?${channel}.*$`, "i");
@@ -117,22 +117,22 @@ test("alpha suffix does not duplicate Alpha prefix", () => {
 });
 
 test("missing runtime data does not render Alpha undefined", () => {
-  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.3.2");
-  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.3.2");
+  assert.equal(versionApi.getDisplayVersion(""), "Alpha 0.3.3");
+  assert.equal(versionApi.getDisplayVersion("   "), "Alpha 0.3.3");
   assert.ok(!versionApi.getDisplayVersion("").includes("undefined"));
   assert.ok(!versionApi.getDisplayVersion("").includes("null"));
 });
 
-test("0.1.4 still formats as Alpha 0.1.4 (latest published baseline)", () => {
+test("0.1.4 still formats as Alpha 0.1.4 (historical baseline)", () => {
   assert.equal(versionApi.getDisplayVersion("0.1.4"), "Alpha 0.1.4");
 });
 
-test("canonical package metadata stays at 0.3.2 in root and desktop packages", () => {
+test("canonical package metadata stays at 0.3.3 in root and desktop packages", () => {
   const rootPkg = readJson("package.json");
   const desktopPkg = readJson("desktop/package.json");
 
-  assert.equal(rootPkg.version, "0.3.2");
-  assert.equal(desktopPkg.version, "0.3.2");
+  assert.equal(rootPkg.version, "0.3.3");
+  assert.equal(desktopPkg.version, "0.3.3");
   assert.equal(rootPkg.version, desktopPkg.version);
 });
 test("renderer build config sources version from root package metadata", () => {
@@ -222,11 +222,14 @@ test("release versioning policy is documented", () => {
   assert.match(doc, /getCanonicalReleaseVersion\(\)/);
   assert.match(doc, /Do not add automatic version bumps/);
   assert.match(doc, /Latest published release.*v0\.3\.2/);
+  assert.match(doc, /Current version.*v0\.3\.3/);
   assert.match(milestones, /Latest published release.*v0\.3\.2/);
+  assert.match(milestones, /Current package\.json.*v0\.3\.3/);
   assert.match(milestones, /v0\.2\.2 → v0\.2\.3/);
   assert.match(milestones, /v0\.3\.0.*Output Engine/);
   assert.match(milestones, /v0\.3\.1/);
   assert.match(milestones, /v0\.3\.2/);
+  assert.match(milestones, /v0\.3\.3/);
   assert.match(milestones, /v0\.4\.0.*modular project packages/);
   assert.doesNotMatch(milestones, /LAN-accessible[\s\S]*ships in v0\.2\.0/i);
   assert.match(githubRelease, /NEUD-Setup-latest-x64\.exe/);

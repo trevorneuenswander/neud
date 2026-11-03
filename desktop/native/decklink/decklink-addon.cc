@@ -28,21 +28,24 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value PushFrame(const Napi::CallbackInfo& info) {
-  if (!info[0].IsBuffer()) return info.Env().Undefined();
-  Napi::Buffer<uint8_t> buffer = info[0].As<Napi::Buffer<uint8_t>>();
-  int width = info[1].IsNumber() ? info[1].As<Napi::Number>().Int32Value() : 0;
-  int height = info[2].IsNumber() ? info[2].As<Napi::Number>().Int32Value() : 0;
-  DeckLinkPushFrame(buffer.Data(), buffer.Length(), width, height);
+  std::string endpoint = info[0].IsString() ? info[0].As<Napi::String>().Utf8Value() : "";
+  if (!info[1].IsBuffer()) return info.Env().Undefined();
+  Napi::Buffer<uint8_t> buffer = info[1].As<Napi::Buffer<uint8_t>>();
+  int width = info[2].IsNumber() ? info[2].As<Napi::Number>().Int32Value() : 0;
+  int height = info[3].IsNumber() ? info[3].As<Napi::Number>().Int32Value() : 0;
+  DeckLinkPushFrame(endpoint, buffer.Data(), buffer.Length(), width, height);
   return info.Env().Undefined();
 }
 
 Napi::Value Stop(const Napi::CallbackInfo& info) {
-  DeckLinkStop();
+  std::string endpoint = info[0].IsString() ? info[0].As<Napi::String>().Utf8Value() : "";
+  DeckLinkStop(endpoint);
   return info.Env().Undefined();
 }
 
 Napi::Value Metrics(const Napi::CallbackInfo& info) {
-  return Napi::String::New(info.Env(), DeckLinkMetricsJson());
+  std::string endpoint = info[0].IsString() ? info[0].As<Napi::String>().Utf8Value() : "";
+  return Napi::String::New(info.Env(), DeckLinkMetricsJson(endpoint));
 }
 
 Napi::Value AdapterInfo(const Napi::CallbackInfo& info) {

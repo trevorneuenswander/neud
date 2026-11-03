@@ -7,7 +7,6 @@ import {
   DECKLINK_PIXEL_FORMAT_UNSUPPORTED,
   EXTERNAL_DESKTOP_VIDEO_UNAVAILABLE,
   EXTERNAL_DEVICE_STUB_BUILD,
-  EXTERNAL_DEVICE_SUPPORT_UNAVAILABLE,
   EXTERNAL_NATIVE_ADDON_FAILED,
   formatDisplayOnlyFps,
   formatExternalPortLabel,
@@ -29,14 +28,15 @@ type DeckLinkAddon = {
   probe: () => { sdkAvailable: boolean; sdkVersion: string; reason: string };
   discover: () => string;
   start: (endpointId: string, modeId: string, preroll: number, externalKeying?: boolean) => string;
-  pushFrame: (frame: Buffer, width: number, height: number) => void;
-  stop: () => void;
-  metrics: () => string;
+  pushFrame: (endpointId: string, frame: Buffer, width: number, height: number) => void;
+  stop: (endpointId: string) => void;
+  metrics: (endpointId: string) => string;
   getAdapterInfo?: () => string;
 };
 
 type ActiveRoute = {
   routeId: string;
+  endpointId: string;
   deviceModel: string;
   persistentId: string;
   endpointIndex: number;
@@ -148,7 +148,10 @@ class NativeDeckLinkPort implements DeckLinkEnginePort {
     modes: DeckLinkVideoMode[];
     capabilities?: DeckLinkEndpointCapabilitiesRaw;
   }> = [];
-  private active: ActiveRoute | null = null;
+  /** Independent live sessions keyed by route id. */
+  private readonly activeByRoute = new Map<string, ActiveRoute>();
+  /** Endpoint → route ownership (one live route per physical endpoint). */
+  private readonly routeByEndpoint = new Map<string, string>();
 
   constructor(
     private readonly addon: DeckLinkAddon,
@@ -209,9 +212,12 @@ class NativeDeckLinkPort implements DeckLinkEnginePort {
   onDeviceLost(_listener: (deviceId: string) => void): void {}
 
   metrics(routeId: string): DeckLinkLiveMetrics | null {
-    if (this.active?.routeId !== routeId) return null;
-    const active = this.active;
-    const raw = JSON.parse(this.addon.metrics()) as Record<string, number | string | boolean | null>;
+    const active = this.activeByRoute.get(routeId);
+    if (!active) return null;
+    const raw = JSON.parse(this.addon.metrics(active.endpointId)) as Record<
+      string,
+      number | string | boolean | null
+    >;
     const frame = this.renderer.frame(routeId);
     const frameDuration = Number(raw.frameDuration ?? active.frameRateDenominator);
     const frameTimescale = Number(raw.frameTimescale ?? active.frameRateNumerator);
@@ -258,8 +264,8 @@ class NativeDeckLinkPort implements DeckLinkEnginePort {
       rendererRevision: frame?.revision ?? 0,
       rendererRepaints: frame?.repaints ?? 0,
       playbackStartedAt: active.playbackStartedAt,
-      playbackStarted: Boolean(raw.playbackStarted ?? true),
-      outputEnabled: Boolean(raw.outputEnabled ?? true),
+      playbackStarted: Boolean(raw.playbackStarted ?? false),
+      outputEnabled: Boolean(raw.outputEnabled ?? false),
       lastError,
       nativeError: lastError,
       startStage: active.startStage,
@@ -282,7 +288,20 @@ class NativeDeckLinkPort implements DeckLinkEnginePort {
       };
     }
 
-    // 1–5: resolve mode + open offscreen renderer at exact output surface; wait for first paint.
+    const endpointId = deckLinkEndpointId(
+      input.device.capabilities.persistentId,
+      input.device.capabilities.endpointIndex,
+    );
+
+    // If this route already owns a different endpoint, stop only that route's session.
+    const existingForRoute = this.activeByRoute.get(input.routeId);
+    if (existingForRoute) {
+      this.addon.stop(existingForRoute.endpointId);
+      this.routeByEndpoint.delete(existingForRoute.endpointId);
+      this.activeByRoute.delete(input.routeId);
+      this.renderer.close(input.routeId);
+    }
+
     const opened = await this.renderer.open({
       routeId: input.routeId,
       url: input.renderUrl,
@@ -307,16 +326,9 @@ class NativeDeckLinkPort implements DeckLinkEnginePort {
         nativeError: "wait-first-frame",
       };
     }
-    // Push Chromium paint BGRA (verified premultiplied).
-    // Fill-only: native composites over black. Key+Fill: native unpremultiplies to straight + enables keyer.
-    this.addon.pushFrame(frame.bgra, frame.width, frame.height);
+    this.addon.pushFrame(endpointId, frame.bgra, frame.width, frame.height);
 
-    const endpointId = deckLinkEndpointId(
-      input.device.capabilities.persistentId,
-      input.device.capabilities.endpointIndex,
-    );
     const externalKeying = input.presentationMode === "keyFill";
-    // 6–12: enable output (+ optional IDeckLinkKeyer), DoesSupport BGRA, preroll, StartScheduledPlayback.
     const started = JSON.parse(this.addon.start(endpointId, mode.id, 3, externalKeying)) as {
       ok: boolean;
       code?: string;
@@ -343,8 +355,9 @@ class NativeDeckLinkPort implements DeckLinkEnginePort {
       typeof started.playbackStartedAt === "number" && started.playbackStartedAt > 0
         ? new Date(started.playbackStartedAt).toISOString()
         : new Date().toISOString();
-    this.active = {
+    const active: ActiveRoute = {
       routeId: input.routeId,
+      endpointId,
       deviceModel: input.device.capabilities.modelName,
       persistentId: input.device.capabilities.persistentId,
       endpointIndex: input.device.capabilities.endpointIndex,
@@ -358,21 +371,26 @@ class NativeDeckLinkPort implements DeckLinkEnginePort {
       playbackStartedAt,
       startStage: started.stage || "live",
     };
+    this.activeByRoute.set(input.routeId, active);
+    this.routeByEndpoint.set(endpointId, input.routeId);
+
     let lastPushedRevision = frame.revision;
     this.renderer.onFrame(input.routeId, (next) => {
-      if (this.active?.routeId !== input.routeId) return;
-      // Skip duplicate revisions; native already holds the last good frame for SDI cadence.
+      const current = this.activeByRoute.get(input.routeId);
+      if (!current || current.endpointId !== endpointId) return;
       if (next.revision === lastPushedRevision) return;
       lastPushedRevision = next.revision;
-      this.addon.pushFrame(next.bgra, next.width, next.height);
+      this.addon.pushFrame(endpointId, next.bgra, next.width, next.height);
     });
     return { ok: true as const };
   }
 
   stop(routeId: string): void {
-    if (this.active?.routeId === routeId) {
-      this.addon.stop();
-      this.active = null;
+    const active = this.activeByRoute.get(routeId);
+    if (active) {
+      this.addon.stop(active.endpointId);
+      this.routeByEndpoint.delete(active.endpointId);
+      this.activeByRoute.delete(routeId);
     }
     this.renderer.close(routeId);
   }

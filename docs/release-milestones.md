@@ -9,27 +9,30 @@ This document tracks **product milestones** separately from SQLite migration num
 | **Latest published release** | **v0.3.2** | Mic Tally (SQ-5), UltraStudio Key/Fill hardware PASS, SEMA UHD/hydration, DeckLink packaging stability |
 | **Previous published release** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, last-Team-Admin guard, Output type persistence |
 | **Prior published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
-| **Current package.json** | **v0.3.2** | Canonical root + `@neud/desktop` |
+| **Current package.json** | **v0.3.3** | Release candidate — Mic Tally colors, dual UltraStudio sessions, Output rename focus, SEMA marquee |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → v0.3.1 → v0.3.2
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → v0.3.1 → v0.3.2 → v0.3.3 (RC)
 ```
 
-Expected packaged artifacts for v0.3.2:
+Expected packaged artifacts for v0.3.3 (RC; not yet published):
 
 ```text
-NEUD-Setup-0.3.2-x64.exe
-NEUD-Setup-0.3.2-x64.exe.blockmap
-NEUD-Setup-latest-x64.exe
-latest.yml
-NEUD-0.3.2-arm64.dmg
-NEUD-0.3.2-arm64.zip
-latest-mac.yml
+NEUD-Setup-0.3.3-x64.exe
+NEUD-Setup-0.3.3-x64.exe.blockmap
+NEUD-0.3.3-arm64.dmg
+NEUD-0.3.3-arm64.zip
 ```
 
-Canonical **published** application version is **`0.3.2`**. Apple Silicon only. Intel Macs are not supported. Preserve prior installer artifacts and tags (`v0.3.1`, `v0.3.0`, …).
+Canonical **published** application version remains **`0.3.2`** until Owner authorizes tag + installer upload. Apple Silicon only. Intel Macs are not supported. Preserve prior installer artifacts and tags (`v0.3.2`, `v0.3.1`, `v0.3.0`, …).
+
+## Alpha v0.3.3
+
+Mic Tally status colors (LIVE `#FF2020`, MUTED/FADER DOWN `#527D65`, UNKNOWN `#777777`); simultaneous independent Blackmagic UltraStudio / DeckLink native sessions; Output rename modal focus stability; SEMA Schedule Ticker fixed 57/52 fonts + 40px/s marquee with highlight-stable animation; SEMA Fullscreen Schedule marquee at 50px/s with highlight continuity; safe display hydration for intermediate SEMA ticker/fullscreen revisions. Includes all v0.3.2 functionality.
+
+**Owner validation (required before publish):** Mic Tally colors, dual UltraStudio, Output rename, SEMA Ticker highlight continuity after hydration upgrade, Fullscreen marquee speed.
 
 ## Alpha v0.3.2
 

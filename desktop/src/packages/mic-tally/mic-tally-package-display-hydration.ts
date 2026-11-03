@@ -30,6 +30,10 @@ export const MIC_TALLY_UHD_PREVIOUS_PACKAGED_SOURCE_HASHES: ReadonlySet<string> 
   "a47319d98440441a37ceaa6f709aff7009fefac31a0ac9e82eba78100ada8cfc",
   // Intermediate top-row compact (status column 220px)
   "8fd2ad28dcdbc40f3f5aca29f7923c7f13bc66cd90b49d0d5b5d3039ecdea13c",
+  // v0.3.2 shipped colors (LIVE=green, MUTED/FADER_DOWN=red, UNKNOWN=gray-600)
+  "2dc02a2639ed35f08912e4f7f4f6f0c668cea4eaad86b136b75a92401d147f7d",
+  // v0.3.3 RC colors (LIVE=#FF2020 …) before left/right visual swap
+  "40597dd3ec774457912318928f08db09c36471235c2a1e2bf552a3806a996a93",
 ]);
 
 /**
@@ -135,7 +139,7 @@ export class MicTallyPackageDisplayHydration {
             actorUserId,
             importKey,
             description,
-            changeNote: "Updated Mic Tally packaged display layout (bundled revision).",
+            changeNote: "Updated Mic Tally packaged display (bundled revision).",
           });
           return {
             slug: definition.slug,

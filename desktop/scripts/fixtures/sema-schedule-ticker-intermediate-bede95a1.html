@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=3840, height=2160, initial-scale=1.0" />
+  <title>Schedule Ticker</title>
+  <style>
+    :root {
+      --frame-w: 3840px;
+      --frame-h: 2160px;
+      --bar-h: 280px;
+      --bar-pad-x: 56px;
+      /* Vertical pad tuned so 57/52px type fits in 280px bar */
+      --bar-pad-y: 24px;
+            --gap: 0px;
+
+      /* SEMA Live — near-black foundation (match Schedule Pylon) */
+      --bar-bg: rgba(8, 8, 10, 0.85);
+      --bar-edge: rgba(220, 30, 40, 0.55);
+      --divider: rgba(220, 30, 40, 0.28);
+      --text: rgba(248, 248, 250, 0.96);
+      --text-muted: rgba(210, 212, 220, 0.72);
+
+      /* Brand */
+      --sema-red: #DC1E28;
+      --live-magenta: #E020F0;
+      --live-glow: rgba(224, 32, 240, 0.35);
+
+      /* Schedule accents — tuned toward SEMA red/magenta family */
+      --now-accent: #3DDC84;
+      --next-accent: #5BA8FF;
+      --later-accent: #F0A030;
+
+      /* Standardized type — one size per role across NOW/NEXT/LATER.
+         IMPORTANT: fitField() applies inline font-size from TITLE_BASE/BODY_BASE.
+         Keep those JS constants in sync with these CSS variables.
+         Font size never shrinks; overflow uses marquee instead. */
+      --label-size: calc(28px + 7pt);
+      --title-size: 57px;
+      --body-size: 52px;
+      /* Shared fixed rows — identical baselines across NOW / NEXT / LATER */
+      --label-row: calc(var(--label-size) * 1.15 + 10px);
+      --title-row: calc(var(--title-size) * var(--line-title) + 0.06em);
+      --desc-row: calc(var(--body-size) * var(--line-body) + 0.08em);
+      --content-rows: calc(var(--title-row) + var(--desc-row) + 4px);
+      --line-title: 1.28;
+      --line-body: 1.3;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: var(--frame-w);
+      height: var(--frame-h);
+      overflow: hidden;
+      background: transparent;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .stage {
+      position: relative;
+      width: var(--frame-w);
+      height: var(--frame-h);
+      background: transparent;
+      overflow: hidden;
+    }
+
+    .bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      height: var(--bar-h);
+      padding: var(--bar-pad-y) var(--bar-pad-x);
+      background: var(--bar-bg);
+      border-top: 3px solid var(--sema-red);
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      column-gap: var(--gap);
+      align-items: stretch;
+    }
+
+
+    .section {
+      position: relative;
+      min-width: 0;
+      display: grid;
+      /* Fixed two-band layout: label row + fixed content block */
+      grid-template-rows: var(--label-row) var(--content-rows);
+      align-content: center;
+      align-items: stretch;
+      row-gap: 0;
+      padding: 8px 48px;
+      overflow: hidden;
+    }
+/* NOW emphasized via accent / weight / brightness — not larger type */
+    .section[data-slot="now"] { opacity: 1; }
+    .section[data-slot="next"] { opacity: 0.92; }
+    .section[data-slot="later"] { opacity: 0.84; }
+
+    .section[data-slot="now"] .label {
+      font-weight: 900;
+      text-shadow: 0 0 12px color-mix(in srgb, var(--now-accent) 35%, transparent);
+    }
+
+    .section[data-slot="now"]::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 10%;
+      bottom: 10%;
+      width: 4px;
+      background: var(--now-accent);
+      box-shadow: 0 0 10px color-mix(in srgb, var(--now-accent) 40%, transparent);
+      pointer-events: none;
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      height: var(--label-row);
+      box-sizing: border-box;
+      font-size: var(--label-size);
+      font-weight: 800;
+      font-style: italic;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 0;
+      padding-bottom: 10px;
+      line-height: 1.15;
+      flex-shrink: 0;
+      transform: skewX(-4deg);
+      transform-origin: left center;
+      transition: opacity 220ms ease;
+    }
+
+    .label.is-crossfade {
+      opacity: 0;
+    }
+
+    /* Empty NEXT / LATER: fade the label with the same easing as content crossfade. */
+    .label.is-empty-exit {
+      opacity: 0;
+      transition: opacity 380ms cubic-bezier(0.33, 0, 0.2, 1);
+    }
+
+    .label.is-empty-enter {
+      opacity: 0;
+    }
+
+    .section.is-slot-empty .content {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Angular accent mark — match Pylon (not a rounded pill/dot) */
+    .label::before {
+      content: "";
+      width: 14px;
+      height: 14px;
+      background: currentColor;
+      clip-path: polygon(0 0, 100% 15%, 85% 100%, 0 100%);
+      flex-shrink: 0;
+      box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 20%, transparent);
+    }
+
+    .section[data-slot="now"] .label { color: var(--now-accent); }
+    .section[data-slot="next"] .label { color: var(--next-accent); }
+    .section[data-slot="later"] .label { color: var(--later-accent); }
+
+    .content {
+      position: relative;
+      min-width: 0;
+      width: 100%;
+      height: var(--content-rows);
+      display: grid;
+      grid-template-rows: var(--title-row) var(--desc-row);
+      align-content: start;
+      align-items: stretch;
+      row-gap: 4px;
+      transform: translate3d(0, 0, 0);
+      opacity: 1;
+      transition:
+        transform 480ms cubic-bezier(0.33, 0, 0.2, 1),
+        opacity 380ms cubic-bezier(0.33, 0, 0.2, 1);
+      will-change: transform, opacity;
+    }
+
+    .content.is-exit {
+      transform: translate3d(0, 42%, 0);
+      opacity: 0;
+    }
+
+    .content.is-enter {
+      transform: translate3d(0, 42%, 0);
+      opacity: 0;
+    }
+
+    .content.is-crossfade {
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+
+    .field {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .field + .field {
+      margin-top: 0;
+    }
+
+    .field[data-kind="title"],
+    .field[data-kind="description"] {
+      display: flex;
+      align-items: center;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .field-track {
+      display: inline-flex;
+      align-items: baseline;
+      white-space: nowrap;
+      will-change: transform;
+      transform: translate3d(0, 0, 0);
+    }
+
+    .field-text {
+      display: inline-block;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .field-gap {
+      display: inline-block;
+      width: 96px;
+      flex-shrink: 0;
+    }
+
+    .field[data-kind="title"] .field-text {
+      font-size: var(--title-size);
+      font-weight: 700;
+      line-height: var(--line-title);
+      padding-bottom: 0.06em; /* descender safety */
+    }
+
+    .field[data-kind="description"] .field-text {
+      font-size: var(--body-size);
+      font-weight: 400;
+      color: var(--text-muted);
+      line-height: var(--line-body);
+      padding-bottom: 0.08em; /* descender safety */
+    }
+
+    .section[data-slot="now"] .field[data-kind="title"] .field-text {
+      font-weight: 800;
+    }
+
+    /* No scrollbars anywhere */
+    .stage, .bar, .section, .field, .content { scrollbar-width: none; }
+    .stage::-webkit-scrollbar,
+    .bar::-webkit-scrollbar,
+    .section::-webkit-scrollbar,
+    .field::-webkit-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage" data-display="schedule-ticker" data-frame="3840x2160">
+    <div class="bar" aria-label="SEMA Live schedule ticker" role="region">
+<section class="section" data-slot="now">
+        <div class="label">NOW</div>
+        <div class="content" data-group="now">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+      <section class="section" data-slot="next">
+        <div class="label" data-slot-label="next">NEXT</div>
+        <div class="content" data-group="next">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+      <section class="section" data-slot="later">
+        <div class="label" data-later-label data-slot-label="later">LATER</div>
+        <div class="content" data-group="later">
+          <div class="field" data-kind="title" data-field="title">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+          <div class="field" data-kind="description" data-field="description">
+            <div class="field-track"><span class="field-text"></span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function () {
+      "use strict";
+
+      var SLOTS = ["now", "next", "later"];
+      var STAGGER_MS = { now: 0, next: 160, later: 320 };
+      var EXIT_MS = 360;
+      /* Must match --title-size / --body-size (inline styles override CSS). */
+      var TITLE_BASE = 57;
+      var BODY_BASE = 52;
+      /* Overflow gate — match Broad Arrow / legacy ticker tolerance. */
+      var OVERFLOW_TOLERANCE_PX = 2;
+      /* Broad Arrow marquee kinematics (legacy-ticker-marquee.js defaults). */
+      var MARQUEE_PX_PER_SEC = 40;
+      var MARQUEE_EASE_SEC = 1;
+      var MARQUEE_PAUSE_MS = 4000;
+      var MARQUEE_GAP_PX = 96;
+      var MEASURE_EPS = 0.5;
+
+      var current = { now: null, next: null, later: null };
+      var currentLaterLabel = null;
+      var currentHighlightActive = null;
+      var currentIndexToken = null;
+      var advanceEpoch = 0;
+      /** Whether NEXT/LATER labels are currently shown (NOW always stays visible). */
+      var slotLabelVisible = { next: true, later: true };
+
+      /** @type {WeakMap<Element, { epoch: number, rafId: number|null }>} */
+      var marqueeLoops = new WeakMap();
+      /** @type {WeakMap<Element, { slot: string, value: string, viewport: number }>} */
+      var fieldStates = new WeakMap();
+
+      function textOf(row, key) {
+        if (!row || typeof row !== "object") return "";
+        var alt = key === "description" ? "eventDescription" : key;
+        var value = row[key] != null ? row[key] : row[alt];
+        return typeof value === "string" ? value.trim() : "";
+      }
+
+      function rowsEqual(a, b) {
+        return textOf(a, "title") === textOf(b, "title") &&
+          textOf(a, "description") === textOf(b, "description");
+      }
+
+      function rowHasVisibleContent(row) {
+        return Boolean(textOf(row, "title") || textOf(row, "description"));
+      }
+
+      function getSlotLabelEl(slot) {
+        return document.querySelector('[data-slot-label="' + slot + '"]') ||
+          document.querySelector('[data-slot="' + slot + '"] > .label');
+      }
+
+      function getSlotSectionEl(slot) {
+        return document.querySelector('[data-slot="' + slot + '"]');
+      }
+
+      /**
+       * Fade NEXT/LATER labels (and section emptiness) when those slots have no event.
+       * Highlight keeps LATER visible even with no scheduled later row.
+       * NOW is never emptied by this path.
+       */
+      function syncSlotEmptyState(slot, nextRow, highlightActive) {
+        if (slot === "now") return;
+        var keepVisible =
+          rowHasVisibleContent(nextRow) ||
+          (slot === "later" && highlightActive === true);
+        var wasVisible = slotLabelVisible[slot] !== false;
+        var labelEl = getSlotLabelEl(slot);
+        var sectionEl = getSlotSectionEl(slot);
+
+        if (keepVisible === wasVisible) {
+          if (sectionEl) {
+            if (keepVisible) sectionEl.classList.remove("is-slot-empty");
+            else sectionEl.classList.add("is-slot-empty");
+          }
+          return;
+        }
+
+        slotLabelVisible[slot] = keepVisible;
+        if (!labelEl) return;
+
+        if (!keepVisible) {
+          labelEl.classList.remove("is-empty-enter", "is-crossfade");
+          labelEl.classList.add("is-empty-exit");
+          if (sectionEl) sectionEl.classList.add("is-slot-empty");
+          window.setTimeout(function () {
+            if (slotLabelVisible[slot]) return;
+            applySlotContent(slot, null);
+          }, EXIT_MS);
+          return;
+        }
+
+        labelEl.classList.remove("is-empty-exit");
+        labelEl.classList.add("is-empty-enter");
+        if (sectionEl) sectionEl.classList.remove("is-slot-empty");
+        // Force reflow so opacity:0 → 1 animates.
+        void labelEl.offsetWidth;
+        requestAnimationFrame(function () {
+          labelEl.classList.remove("is-empty-enter");
+        });
+      }
+
+      function getLoop(field) {
+        var loop = marqueeLoops.get(field);
+        if (!loop) {
+          loop = { epoch: 0, rafId: null };
+          marqueeLoops.set(field, loop);
+        }
+        return loop;
+      }
+
+      function stopMarquee(field) {
+        var loop = marqueeLoops.get(field);
+        if (!loop) return;
+        loop.epoch += 1;
+        if (loop.rafId != null) {
+          cancelAnimationFrame(loop.rafId);
+          loop.rafId = null;
+        }
+        var track = field.querySelector(".field-track");
+        if (track) {
+          track.style.transform = "translate3d(0,0,0)";
+        }
+      }
+
+      function clearTrackExtras(track) {
+        var gap = track.querySelector(".field-gap");
+        var clone = track.querySelector('[data-clone="1"]');
+        if (gap) gap.remove();
+        if (clone) clone.remove();
+      }
+
+      function setPrimaryText(track, value) {
+        var primary = track.querySelector(".field-text:not([data-clone])");
+        if (!primary) {
+          primary = document.createElement("span");
+          primary.className = "field-text";
+          track.appendChild(primary);
+        }
+        primary.textContent = value || "";
+        return primary;
+      }
+
+      /**
+       * Standardized sizes — same title/body for NOW, NEXT, and LATER.
+       * Labels use CSS --label-size only (never set via inline style / fitField).
+       * Font size is fixed; long copy marquees instead of shrinking.
+       */
+
+      function baseFontSize(_slot, kind) {
+        return kind === "title" ? TITLE_BASE : BODY_BASE;
+      }
+
+      function applyFontSize(texts, sizePx) {
+        for (var i = 0; i < texts.length; i++) {
+          texts[i].style.fontSize = sizePx + "px";
+        }
+      }
+
+      function computeLoopKinematics(loopWidth) {
+        var safeLoopWidth = Math.max(loopWidth, 1e-6);
+        var acceleration = MARQUEE_PX_PER_SEC / MARQUEE_EASE_SEC;
+        var defaultEaseDistance = 0.5 * acceleration * MARQUEE_EASE_SEC * MARQUEE_EASE_SEC;
+        var maxEaseDistance = safeLoopWidth / 2;
+        var easeDistance = Math.min(defaultEaseDistance, maxEaseDistance);
+        var cruiseDistance = Math.max(0, safeLoopWidth - 2 * easeDistance);
+        var cruiseSec = cruiseDistance / MARQUEE_PX_PER_SEC;
+        var totalSec = MARQUEE_EASE_SEC + cruiseSec + MARQUEE_EASE_SEC;
+        return {
+          loopWidth: safeLoopWidth,
+          easeDistance: easeDistance,
+          cruiseDistance: cruiseDistance,
+          cruiseSec: cruiseSec,
+          totalSec: totalSec,
+          totalMs: totalSec * 1000,
+          acceleration: acceleration,
+        };
+      }
+
+      function distanceAt(ms, kinematics) {
+        var seconds = ms / 1000;
+        var V = MARQUEE_PX_PER_SEC;
+        var EASE_SEC = MARQUEE_EASE_SEC;
+        var acceleration = kinematics.acceleration;
+        var easeDistance = kinematics.easeDistance;
+        var cruiseDistance = kinematics.cruiseDistance;
+        var cruiseSec = kinematics.cruiseSec;
+        var totalSec = kinematics.totalSec;
+        var loopWidth = kinematics.loopWidth;
+        var distance = 0;
+        if (seconds <= 0) {
+          distance = 0;
+        } else if (seconds <= EASE_SEC) {
+          distance = 0.5 * acceleration * seconds * seconds;
+        } else if (seconds <= EASE_SEC + cruiseSec) {
+          distance = easeDistance + V * (seconds - EASE_SEC);
+        } else if (seconds <= totalSec) {
+          var tail = seconds - (EASE_SEC + cruiseSec);
+          distance = easeDistance + cruiseDistance + (V * tail - 0.5 * acceleration * tail * tail);
+        } else {
+          distance = loopWidth;
+        }
+        return Math.min(Math.max(distance, 0), loopWidth);
+      }
+
+      /**
+       * Fit pipeline: fixed original font size → static if it fits → eased marquee on overflow.
+       * Title and description fields are measured and animated independently.
+       */
+      function fitField(field, slot, value) {
+        var kind = field.getAttribute("data-kind") || "title";
+        var track = field.querySelector(".field-track");
+        if (!track) return;
+
+        stopMarquee(field);
+        clearTrackExtras(track);
+        var primary = setPrimaryText(track, value);
+        track.style.transform = "translate3d(0,0,0)";
+        fieldStates.set(field, { slot: slot, value: value || "", viewport: field.clientWidth });
+
+        if (!value) {
+          primary.style.fontSize = "";
+          return;
+        }
+
+        var base = baseFontSize(slot, kind);
+        applyFontSize([primary], base);
+
+        var viewport = field.clientWidth;
+        if (viewport <= 0) return;
+
+        var textWidth = Math.max(primary.scrollWidth || 0, primary.offsetWidth || 0);
+        var overflowPx = Math.max(0, textWidth - viewport);
+        if (overflowPx <= OVERFLOW_TOLERANCE_PX) {
+          return;
+        }
+
+        startMarquee(field, primary, value, base);
+      }
+
+      function startMarquee(field, primary, value, sizePx) {
+        var track = field.querySelector(".field-track");
+        if (!track) return;
+
+        clearTrackExtras(track);
+        primary.textContent = value;
+        applyFontSize([primary], sizePx);
+
+        var gap = document.createElement("span");
+        gap.className = "field-gap";
+        gap.style.width = MARQUEE_GAP_PX + "px";
+        gap.setAttribute("aria-hidden", "true");
+
+        var clone = primary.cloneNode(true);
+        clone.setAttribute("data-clone", "1");
+        clone.setAttribute("aria-hidden", "true");
+
+        track.appendChild(gap);
+        track.appendChild(clone);
+
+        var loop = getLoop(field);
+        loop.epoch += 1;
+        var epoch = loop.epoch;
+        if (loop.rafId != null) {
+          cancelAnimationFrame(loop.rafId);
+          loop.rafId = null;
+        }
+
+        var primaryWidth = Math.max(primary.scrollWidth || 0, primary.offsetWidth || 0);
+        var loopDistance = primaryWidth + MARQUEE_GAP_PX;
+        if (loopDistance <= MEASURE_EPS) return;
+
+        var kinematics = computeLoopKinematics(loopDistance);
+        var phase = "prepause";
+        var startedAt = 0;
+
+        function tick(now) {
+          if (epoch !== loop.epoch) {
+            loop.rafId = null;
+            return;
+          }
+          if (!startedAt) startedAt = now;
+
+          if (phase === "prepause") {
+            track.style.transform = "translate3d(0,0,0)";
+            if (now - startedAt >= MARQUEE_PAUSE_MS) {
+              phase = "scroll";
+              startedAt = now;
+            }
+            loop.rafId = requestAnimationFrame(tick);
+            return;
+          }
+
+          var elapsed = now - startedAt;
+          if (elapsed >= kinematics.totalMs - 0.1) {
+            // Seamless reset onto the cloned copy, then hold at the start.
+            track.style.transform = "translate3d(0,0,0)";
+            phase = "prepause";
+            startedAt = now;
+            loop.rafId = requestAnimationFrame(tick);
+            return;
+          }
+
+          var distance = distanceAt(elapsed, kinematics);
+          track.style.transform = "translate3d(" + (-distance) + "px,0,0)";
+          loop.rafId = requestAnimationFrame(tick);
+        }
+
+        loop.rafId = requestAnimationFrame(tick);
+      }
+
+      function remasureAllFields() {
+        SLOTS.forEach(function (slot) {
+          var group = document.querySelector('[data-group="' + slot + '"]');
+          if (!group) return;
+          ["title", "description"].forEach(function (kind) {
+            var field = group.querySelector('[data-field="' + kind + '"]');
+            if (!field) return;
+            var state = fieldStates.get(field);
+            if (!state) return;
+            fitField(field, state.slot, state.value);
+          });
+        });
+      }
+
+      function scheduleStableRemeasure() {
+        function afterFonts(next) {
+          if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+            document.fonts.ready.then(next).catch(next);
+          } else {
+            next();
+          }
+        }
+        afterFonts(function () {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              remasureAllFields();
+            });
+          });
+        });
+      }
+
+      function applySlotContent(slot, row) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        var titleField = group.querySelector('[data-field="title"]');
+        var descField = group.querySelector('[data-field="description"]');
+        // Title + Event/Description only — never date/time
+        if (titleField) fitField(titleField, slot, textOf(row, "title"));
+        if (descField) fitField(descField, slot, textOf(row, "description"));
+        // Remeasure after fonts settle so overflow decisions use final glyph metrics.
+        scheduleStableRemeasure();
+      }
+
+      function runAdvance(slot, row, epoch) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        var delay = STAGGER_MS[slot] || 0;
+
+        group.classList.remove("is-enter", "is-crossfade");
+        group.classList.add("is-exit");
+
+        window.setTimeout(function () {
+          if (epoch !== advanceEpoch) return;
+          applySlotContent(slot, row);
+          group.classList.add("is-enter");
+          group.classList.remove("is-exit");
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              if (epoch !== advanceEpoch) return;
+              group.classList.remove("is-enter");
+            });
+          });
+        }, EXIT_MS + delay);
+      }
+
+      function runCrossfade(slot, row) {
+        var group = document.querySelector('[data-group="' + slot + '"]');
+        if (!group) return;
+        group.classList.remove("is-exit", "is-enter");
+        group.classList.add("is-crossfade");
+        window.setTimeout(function () {
+          applySlotContent(slot, row);
+          requestAnimationFrame(function () {
+            group.classList.remove("is-crossfade");
+          });
+        }, 200);
+      }
+
+      function applyLaterLabel(schedule) {
+        var labelEl = document.querySelector("[data-later-label]");
+        if (!labelEl) return;
+        // Audience-facing heading is always LATER (Highlight only swaps title/description).
+        var text = "LATER";
+        var section = document.querySelector('[data-slot="later"]');
+        if (section) {
+          if (schedule && schedule.highlightActive) {
+            section.setAttribute("data-highlight", "1");
+          } else {
+            section.removeAttribute("data-highlight");
+          }
+        }
+        if (currentLaterLabel === text) {
+          return;
+        }
+        currentLaterLabel = text;
+        labelEl.classList.remove("is-crossfade", "is-exit", "is-enter");
+        labelEl.textContent = text;
+      }
+
+      function render(payload) {
+        var schedule = payload && payload.schedule ? payload.schedule : payload || {};
+        var nextState = {
+          now: schedule.now || schedule.NOW || null,
+          next: schedule.next || schedule.NEXT || null,
+          later: schedule.later || schedule.LATER || null,
+        };
+        var indexToken =
+          schedule.currentRowId ||
+          schedule.currentIndex ||
+          schedule.selectedIndex ||
+          null;
+        var advanced =
+          currentIndexToken != null &&
+          indexToken != null &&
+          indexToken !== currentIndexToken;
+        var nextHighlightActive = schedule.highlightActive === true;
+        var highlightToggled =
+          currentHighlightActive != null &&
+          currentHighlightActive !== nextHighlightActive;
+
+        applyLaterLabel(schedule);
+
+        // Empty-state label fades for NEXT / LATER (Highlight keeps LATER visible).
+        syncSlotEmptyState("next", nextState.next, nextHighlightActive);
+        syncSlotEmptyState("later", nextState.later, nextHighlightActive);
+
+        if (advanced) {
+          advanceEpoch += 1;
+          var epoch = advanceEpoch;
+          SLOTS.forEach(function (slot) {
+            var prev = current[slot];
+            var next = nextState[slot];
+            // Skip unchanged slots (e.g. Highlight later while NOW/NEXT advance).
+            if (rowsEqual(prev, next)) {
+              return;
+            }
+            // Empty NEXT/LATER: content cleared via syncSlotEmptyState; skip re-advance.
+            if (
+              slot !== "now" &&
+              !rowHasVisibleContent(next) &&
+              !(slot === "later" && nextHighlightActive)
+            ) {
+              return;
+            }
+            runAdvance(slot, next, epoch);
+          });
+        } else {
+          advanceEpoch += 1;
+          var contentEpoch = advanceEpoch;
+          SLOTS.forEach(function (slot) {
+            var prev = current[slot];
+            var next = nextState[slot];
+            if (rowsEqual(prev, next)) {
+              return;
+            }
+            if (
+              slot !== "now" &&
+              !rowHasVisibleContent(next) &&
+              !(slot === "later" && nextHighlightActive)
+            ) {
+              return;
+            }
+            if (prev == null && next != null && currentIndexToken == null) {
+              applySlotContent(slot, next);
+              return;
+            }
+            // Highlight activate / remove / content edit uses the same exit→enter
+            // advance animation as NOW/NEXT (label dissolves separately above).
+            if (slot === "later" && (highlightToggled || nextHighlightActive || currentHighlightActive)) {
+              runAdvance(slot, next, contentEpoch);
+              return;
+            }
+            // Becoming available again after empty: entrance advance.
+            if (prev == null && next != null) {
+              runAdvance(slot, next, contentEpoch);
+              return;
+            }
+            if (prev != null) {
+              runCrossfade(slot, next);
+            } else {
+              applySlotContent(slot, next);
+            }
+          });
+        }
+
+        current = nextState;
+        currentHighlightActive = nextHighlightActive;
+        if (indexToken != null) {
+          currentIndexToken = indexToken;
+        }
+      }
+
+      function bindNeud() {
+        if (window.NEUDDisplay && typeof window.NEUDDisplay.subscribe === "function") {
+          window.NEUDDisplay.subscribe(function (event) {
+            var data = event && event.data ? event.data : event;
+            render(data);
+          });
+          return;
+        }
+        window.addEventListener("message", function (event) {
+          if (!event.data) return;
+          if (event.data.type === "neud-display-data" || event.data.schedule) {
+            render(event.data.data || event.data);
+          }
+        });
+      }
+
+      bindNeud();
+      scheduleStableRemeasure();
+      if (typeof ResizeObserver === "function") {
+        var stageEl = document.getElementById("stage");
+        if (stageEl) {
+          var resizeTimer = null;
+          var observer = new ResizeObserver(function () {
+            if (resizeTimer != null) window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(function () {
+              remasureAllFields();
+            }, 80);
+          });
+          observer.observe(stageEl);
+        }
+      } else {
+        window.addEventListener("resize", function () {
+          scheduleStableRemeasure();
+        });
+      }
+
+      window.__SEMA_SCHEDULE_TICKER__ = {
+        render: render,
+        stopMarquee: stopMarquee,
+        fitField: fitField,
+        remasureAllFields: remasureAllFields,
+        TITLE_BASE: TITLE_BASE,
+        BODY_BASE: BODY_BASE,
+        MARQUEE_PX_PER_SEC: MARQUEE_PX_PER_SEC,
+        MARQUEE_EASE_SEC: MARQUEE_EASE_SEC,
+        MARQUEE_PAUSE_MS: MARQUEE_PAUSE_MS,
+        OVERFLOW_TOLERANCE_PX: OVERFLOW_TOLERANCE_PX,
+      };
+    })();
+  </script>
+</body>
+</html>

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   buildDeckLinkRenderUrl,
   DECKLINK_DEVICE_REMOVED,
+  DECKLINK_OUTPUT_STOPPED_UNEXPECTEDLY,
   DECKLINK_DEVICE_UNAVAILABLE,
   DECKLINK_FILL_BACKGROUND,
   DECKLINK_FILL_PIXEL_FORMAT,
@@ -715,6 +716,7 @@ export class OutputEngine {
   }
 
   list(): OutputRouteView[] {
+    this.reconcileDeckLinkRuntimeHealth();
     const devices = this.discoverDevices();
     return this.deps.store.list().map((route) => this.toView(route, devices));
   }
@@ -1541,6 +1543,33 @@ export class OutputEngine {
   private releaseRouteOutput(routeId: string): void {
     this.deps.windows.close(routeId);
     this.deps.decklink?.stop(routeId);
+  }
+
+  /**
+   * If the native DeckLink session reports playback is no longer running while the
+   * engine still thinks the route is LIVE, mark the route as errored. LIVE means
+   * "native playback running", not merely "start was accepted".
+   */
+  private reconcileDeckLinkRuntimeHealth(): void {
+    if (!this.deps.decklink) return;
+    for (const route of this.deps.store.list()) {
+      if (route.adapterType !== "decklink") continue;
+      const session = this.sessions.get(route.id);
+      if (!session || session.status !== "live") continue;
+      const metrics = this.deps.decklink.metrics(route.id);
+      const playbackRunning =
+        metrics != null && metrics.playbackStarted === true && metrics.outputEnabled === true;
+      if (playbackRunning) continue;
+      this.releaseRouteOutput(route.id);
+      this.setSession(route.id, {
+        routeId: route.id,
+        status: "error",
+        startedAt: session.startedAt,
+        lastError: metrics?.lastError || DECKLINK_OUTPUT_STOPPED_UNEXPECTEDLY,
+        renderUrl: session.renderUrl,
+        windowBounds: session.windowBounds,
+      });
+    }
   }
 
   private markEndpointLost(deviceId: string): void {

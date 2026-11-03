@@ -101,9 +101,19 @@ test("UHD graphic uses compact top-row layout", () => {
   assert.match(html, /data-slot="2"/);
   assert.match(html, /data-slot="3"/);
   assert.match(html, /\.card\[data-slot="1"\]/);
-  assert.match(html, /left:\s*215px/);
-  assert.match(html, /left:\s*1495px/);
-  assert.match(html, /left:\s*2775px/);
+  // Visual order: slot 3 (left) | slot 2 (center) | slot 1 (right); mic IDs unchanged.
+  assert.match(
+    html,
+    /\.card\[data-slot="1"\]\s*\{\s*left:\s*2775px/,
+  );
+  assert.match(
+    html,
+    /\.card\[data-slot="2"\]\s*\{\s*left:\s*1495px/,
+  );
+  assert.match(
+    html,
+    /\.card\[data-slot="3"\]\s*\{\s*left:\s*215px/,
+  );
   assert.doesNotMatch(html, /height:\s*1480px/);
 });
 

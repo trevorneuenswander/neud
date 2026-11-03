@@ -140,7 +140,8 @@ export class MicTallyService {
       autoConnect: row.auto_connect === 1,
       reconnectEnabled: row.reconnect_enabled === 1,
       freshnessTimeoutMs: row.freshness_timeout_ms,
-      connectionStatus: row.connection_status,
+      // Runtime-gated: never report Connected without a verified live socket.
+      connectionStatus: this.effectiveConnectionStatus(projectId, row),
       lastError: row.last_error,
       inputChannelOptions: Array.from({ length: SQ5_INPUT_CHANNEL_COUNT }, (_, i) => ({
         value: i + 1,
@@ -445,8 +446,10 @@ export class MicTallyService {
   toDisplayPayload(projectId: string): MicTallyDisplayPayload {
     this.ensureStateRow(projectId);
     const row = this.getRow(projectId)!;
-    const connected = isMicTallyTransportLive(row.connection_status);
     const simulation = row.simulation_enabled === 1;
+    // Live SQ-5 transport requires a verified in-process socket. Persisted
+    // connection_status alone must never present stale LIVE/MUTED as connected.
+    const connected = this.isTransportLiveForProject(projectId, row);
     const slots: MicTallySlotPayload[] = [1, 2, 3].map((slot) => {
       const inputChannel = this.slotInput(row, slot as 1 | 2 | 3);
       const override = this.slotLabel(row, slot as 1 | 2 | 3);
@@ -509,10 +512,31 @@ export class MicTallyService {
     };
   }
 
+  /**
+   * Application quit / process teardown.
+   * Closes sockets, stops reconnect/health timers, invalidates live channel
+   * confidence, and persists Disconnected — silently (no UI prompts).
+   */
   shutdown(): void {
-    for (const projectId of [...this.clients.keys()]) {
-      this.clearReconnect(projectId);
-      this.disconnectSocket(projectId);
+    const projectIds = new Set<string>([
+      ...this.clients.keys(),
+      ...this.reconnectTimers.keys(),
+      ...this.listProjectIdsWithTransientTransport(),
+    ]);
+    for (const projectId of projectIds) {
+      this.markProcessDisconnected(projectId, "Application exit");
+    }
+  }
+
+  /**
+   * Fresh process launch: connection status is transient runtime state.
+   * Never restore Connected / Connecting / Reconnecting from SQLite.
+   * Preserves host/port/slots/labels/auto_connect settings and simulation mode.
+   * Does not start auto-connect (column exists but launch auto-connect is not wired).
+   */
+  reconcileStaleTransportOnStartup(): void {
+    for (const projectId of this.listProjectIdsWithTransientTransport()) {
+      this.markProcessDisconnected(projectId, "Startup — no live SQ-5 session");
     }
   }
 
@@ -649,6 +673,73 @@ export class MicTallyService {
     if (wantReconnect) {
       this.scheduleReconnect(projectId);
     }
+  }
+
+  /**
+   * Quiet process-boundary disconnect: stop timers/sockets, invalidate live
+   * mic confidence, persist disconnected. Skips simulation-mode rows.
+   */
+  private markProcessDisconnected(projectId: string, reason: string): void {
+    const row = this.getRow(projectId);
+    if (!row) return;
+    if (row.simulation_enabled === 1) {
+      // Simulation has no TCP session; leave simulation status alone but still
+      // drop any in-memory reconnect desire leftover from a prior live attempt.
+      this.autoReconnectDesired.set(projectId, false);
+      this.clearReconnect(projectId);
+      this.disconnectSocket(projectId);
+      return;
+    }
+    this.autoReconnectDesired.set(projectId, false);
+    this.clearReconnect(projectId);
+    this.disconnectSocket(projectId);
+    this.invalidateAllChannels(projectId);
+    this.setReconnectAttemptCount(projectId, 0);
+    this.setConnectionStatus(projectId, "disconnected", null);
+    this.pushDiagnostic(projectId, "info", reason);
+    this.publish(projectId);
+  }
+
+  private listProjectIdsWithTransientTransport(): string[] {
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT project_id FROM mic_tally_state
+           WHERE simulation_enabled = 0
+             AND connection_status IN (
+               'connected', 'connecting', 'reconnecting', 'connection-lost'
+             )`,
+        )
+        .all() as Array<{ project_id: string }>;
+      return rows.map((r) => r.project_id);
+    } catch {
+      return [];
+    }
+  }
+
+  private isTransportLiveForProject(projectId: string, row: PersistedRow): boolean {
+    if (!isMicTallyTransportLive(row.connection_status)) {
+      return false;
+    }
+    if (row.simulation_enabled === 1) {
+      return row.connection_status === "simulation";
+    }
+    const client = this.clients.get(projectId);
+    return client?.connected === true;
+  }
+
+  private effectiveConnectionStatus(projectId: string, row: PersistedRow): string {
+    if (row.simulation_enabled === 1) {
+      return row.connection_status;
+    }
+    // Only "connected" requires a verified live socket. Transitional statuses
+    // (connecting / reconnecting / connection-lost) remain valid in-process;
+    // startup reconcile clears them after a process boundary.
+    if (row.connection_status === "connected") {
+      const client = this.clients.get(projectId);
+      return client?.connected === true ? "connected" : "disconnected";
+    }
+    return row.connection_status;
   }
 
   private scheduleReconnect(projectId: string): void {

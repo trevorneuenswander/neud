@@ -581,6 +581,21 @@ test("migration 039 registers output_routes and a route survives reload", async 
       return `INSERT INTO schema_migrations (version, name) VALUES (${version}, 'seeded-${version}');`;
     }).join("\n"),
   );
+  // Migrations 1–38 are marked applied without executing them. Later migrations
+  // (040+) FK-reference projects/displays, so stub those tables the same way
+  // production would have after a real 001_initial_schema apply.
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      project_type TEXT NOT NULL DEFAULT 'bag-graphics'
+    );
+    CREATE TABLE IF NOT EXISTS displays (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL
+    );
+  `);
   const db = {
     exec(sql) { raw.exec(sql); },
     prepare(sql) {

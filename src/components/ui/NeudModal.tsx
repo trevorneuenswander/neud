@@ -46,15 +46,24 @@ export function NeudModal({
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
+  // Stable identity so parent re-renders (e.g. controlled form typing) do not
+  // recreate Escape/backdrop handlers and re-run mount-only focus below.
   const handleClose = useCallback(() => {
-    onClose();
-  }, [onClose]);
+    onCloseRef.current();
+  }, []);
 
+  // Focus the dialog once on mount. Do NOT re-focus when parent passes a new
+  // onClose identity — that steals focus from inputs after every keystroke.
   useEffect(() => {
     const focusTarget = initialFocusRef?.current ?? dialogRef.current;
     focusTarget?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only initial focus
+  }, []);
 
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (closeOnEscape && event.key === "Escape") {
         event.preventDefault();
@@ -64,7 +73,7 @@ export function NeudModal({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [closeOnEscape, handleClose, initialFocusRef]);
+  }, [closeOnEscape, handleClose]);
 
   return (
     <div
