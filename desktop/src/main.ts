@@ -590,6 +590,8 @@ function attachMainWindowCloseHandler() {
     if (action === "force") {
       forceCloseConfirmed = true;
       isQuitting = true;
+      // before-quit returns early when isQuitting is already set — still drop SQ-5.
+      micTallyService?.shutdown();
       mainWindow?.destroy();
       app.quit();
       return;
@@ -977,6 +979,9 @@ async function createMainWindow() {
   // Keep each configured sheet cache fresh (public CSV; unchanged hash = no display update).
   semaScheduleService.startPollingConfiguredProjects();
   micTallyService = new MicTallyService(localDatabase);
+  // Connection status is transient runtime state — never restore Connected
+  // from a previous process. Saved host/port/slots remain; live tallies clear.
+  micTallyService.reconcileStaleTransportOnStartup();
   localDataService.setMicTally(micTallyService);
   localDataService.setAccessAuthorization(accessAuthorizationService);
 
