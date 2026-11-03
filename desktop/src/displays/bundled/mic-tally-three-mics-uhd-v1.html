@@ -21,6 +21,7 @@
       /*
         Top-row compact layout:
         three equal 1280px zones across 3840; cards 850×250 centered in each zone.
+        Visual order (v0.3.3): slot 3 | slot 2 | slot 1 — mic identities unchanged.
         Outer margin ≈ 80px; top margin ≈ 60px. Bottom of canvas stays empty/transparent.
       */
       .stage {
@@ -47,13 +48,13 @@
         padding: 28px 36px;
       }
       .card[data-slot="1"] {
-        left: 215px; /* zone 0–1280 center 640 → card left 640-425 */
+        left: 2775px; /* visual right — zone 2560–3840 center 3200 → 3200-425 */
       }
       .card[data-slot="2"] {
-        left: 1495px; /* zone 1280–2560 center 1920 → 1920-425 */
+        left: 1495px; /* visual center — zone 1280–2560 center 1920 → 1920-425 */
       }
       .card[data-slot="3"] {
-        left: 2775px; /* zone 2560–3840 center 3200 → 3200-425 */
+        left: 215px; /* visual left — zone 0–1280 center 640 → 640-425 */
       }
       .label {
         flex: 1 1 auto;
