@@ -6,18 +6,18 @@ This document tracks **product milestones** separately from SQLite migration num
 
 | Label | Version | Notes |
 | --- | --- | --- |
-| **Latest published release** | **v0.3.2** | Mic Tally (SQ-5), UltraStudio Key/Fill hardware PASS, SEMA UHD/hydration, DeckLink packaging stability |
-| **Previous published release** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, last-Team-Admin guard, Output type persistence |
-| **Prior published release** | **v0.3.0** | Output Engine, Record to Disk, native video, Performance Monitor; Windows x64 + Apple Silicon |
-| **Current package.json** | **v0.3.3** | Release candidate — Mic Tally colors, dual UltraStudio sessions, Output rename focus, SEMA marquee |
+| **Latest published release** | **v0.3.3** | Mic Tally colors/layout, SQ-5 lifecycle, dual UltraStudio sessions, Output rename focus, SEMA marquee |
+| **Previous published release** | **v0.3.2** | Mic Tally (SQ-5), UltraStudio Key/Fill hardware PASS, SEMA UHD/hydration, DeckLink packaging stability |
+| **Prior published release** | **v0.3.1** | SEMA worksheets/Jump/highlight, Team Admin access, last-Team-Admin guard, Output type persistence |
+| **Current package.json** | **v0.3.3** | Matches published release |
 
 There is **no** published v0.1.5 release. Historical update paths:
 
 ```text
-v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → v0.3.1 → v0.3.2 → v0.3.3 (RC)
+v0.1.4 → v0.2.0 → v0.2.1 → v0.2.2 → v0.2.3 → v0.2.4 → v0.3.0 → v0.3.1 → v0.3.2 → v0.3.3
 ```
 
-Expected packaged artifacts for v0.3.3 (RC; not yet published):
+Published packaged artifacts for v0.3.3:
 
 ```text
 NEUD-Setup-0.3.3-x64.exe
@@ -26,13 +26,13 @@ NEUD-0.3.3-arm64.dmg
 NEUD-0.3.3-arm64.zip
 ```
 
-Canonical **published** application version remains **`0.3.2`** until Owner authorizes tag + installer upload. Apple Silicon only. Intel Macs are not supported. Preserve prior installer artifacts and tags (`v0.3.2`, `v0.3.1`, `v0.3.0`, …).
+Canonical **published** application version is **`0.3.3`**. Apple Silicon only. Intel Macs are not supported. Preserve prior installer artifacts and tags (`v0.3.2`, `v0.3.1`, `v0.3.0`, …).
 
 ## Alpha v0.3.3
 
-Mic Tally status colors (LIVE `#FF2020`, MUTED/FADER DOWN `#527D65`, UNKNOWN `#777777`); simultaneous independent Blackmagic UltraStudio / DeckLink native sessions; Output rename modal focus stability; SEMA Schedule Ticker fixed 57/52 fonts + 40px/s marquee with highlight-stable animation; SEMA Fullscreen Schedule marquee at 50px/s with highlight continuity; safe display hydration for intermediate SEMA ticker/fullscreen revisions. Includes all v0.3.2 functionality.
+Mic Tally status colors (LIVE `#FF2020`, MUTED/FADER DOWN `#527D65`, UNKNOWN `#777777`); Mic Tally visual order slot 3/2/1; SQ-5 disconnect-on-quit and no stale Connected restore; simultaneous independent Blackmagic UltraStudio / DeckLink native sessions; Output rename modal focus stability; SEMA Schedule Ticker fixed 57/52 fonts + 40px/s marquee with highlight-stable animation; SEMA Fullscreen Schedule marquee at 50px/s with highlight continuity; safe display hydration for intermediate SEMA ticker/fullscreen revisions. Includes all v0.3.2 functionality.
 
-**Owner validation (required before publish):** Mic Tally colors, dual UltraStudio, Output rename, SEMA Ticker highlight continuity after hydration upgrade, Fullscreen marquee speed.
+**Owner validation:** Mic Tally colors, layout, dual UltraStudio, Output rename, SEMA marquee, SQ-5 connection lifecycle — **PASSED**.
 
 ## Alpha v0.3.2
 

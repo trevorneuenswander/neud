@@ -117,9 +117,9 @@ Before making a large change:
 
 **Alpha v0.1.1** functional development is complete at application version **0.1.1**. See [docs/alpha-v0.1.1-online-delivery-plan.md](./docs/alpha-v0.1.1-online-delivery-plan.md) and [docs/alpha-v0.1.1-packaging-validation.md](./docs/alpha-v0.1.1-packaging-validation.md).
 
-**Latest published release:** v0.3.2. **Current version:** v0.3.3 (canonical `package.json` version; RC until publish). See [docs/release-milestones.md](./docs/release-milestones.md).
+**Latest published release:** v0.3.3. **Current version:** v0.3.3 (canonical `package.json` version). See [docs/release-milestones.md](./docs/release-milestones.md).
 
-The **current release milestone** is v0.3.3 (Mic Tally colors, dual UltraStudio sessions, Output rename focus, SEMA ticker/fullscreen marquee) on top of the v0.3.2 / v0.3.1 / v0.3.0 Output Engine baseline. Cross-platform packaging (Windows x64 + macOS Apple Silicon), bundled Puppeteer Chrome, installation validation, and automatic updates remain in place. See [docs/windows-packaging.md](./docs/windows-packaging.md).
+The **current release milestone** is v0.3.3 (Mic Tally colors/layout, SQ-5 connection lifecycle, dual UltraStudio sessions, Output rename focus, SEMA ticker/fullscreen marquee) on top of the v0.3.2 / v0.3.1 / v0.3.0 Output Engine baseline. Cross-platform packaging (Windows x64 + macOS Apple Silicon), bundled Puppeteer Chrome, installation validation, and automatic updates remain in place. See [docs/windows-packaging.md](./docs/windows-packaging.md).
 
 Do not alter or regress the Alpha v0.1.0 display baseline (Stream Bid Display, Stream Ticker, Legacy Pylon, Legacy Ticker) unless a compatible delivery-only change is explicitly required.
 
